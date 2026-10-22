@@ -1,6 +1,6 @@
 ---
 name: train
-description: "Use when the owner types /train, or when two or more branches from parallel agents must reach {{INTEGRATION_BRANCH}}. Runs the ship train: agents report READY, one orchestrator merges every ready branch onto a fresh {{INTEGRATION_BRANCH}}, one typecheck + one build, one PR, merge, deploy Ready. Also says when NOT to use a train (a single branch ships as its own PR)."
+description: "Use when the owner types /train, or when two or more branches from parallel AI coding agents (each in its own git worktree) must reach {{INTEGRATION_BRANCH}}: batch them into a merge train instead of one PR per branch. One orchestrator merges every ready branch onto a fresh {{INTEGRATION_BRANCH}}, runs one typecheck and one build, opens one PR, merges only on green checks and waits for the deploy. Also for builds or typechecks that run out of RAM or crash the machine when several agents build at once (machine-wide heavy-job lock, server_wait). Says when NOT to use a train (a single branch ships as its own PR)."
 argument-hint: "[optional: branches/worktrees already ready]"
 ---
 
@@ -10,7 +10,7 @@ argument-hint: "[optional: branches/worktrees already ready]"
 
 A **train** carries every ready branch to `{{INTEGRATION_BRANCH}}` in one go: merged together on a fresh `origin/{{INTEGRATION_BRANCH}}`, checked by **one** typecheck and **one** build, shipped as **one** PR. A laptop fits maybe two big builds in RAM; one build can check any number of branches. That is the point.
 
-Settings (paths, commands, branch) live in the jstack config the scripts read (`~/.jstack/config.sh`, see `ADAPT.md`). The scripts are in `{{JSTACK_TOOLS}}`.
+Settings (paths, commands, branch) live in the jstack config the scripts read (`~/.jstack/config.sh`, see `ADAPT.md`). The scripts are in `{{JSTACK_TOOLS}}`. If this file still has unfilled placeholders (names in double curly braces, for example when installed as a plugin), read `~/.jstack/config.sh` and use the matching `JSTACK_*` value; without a config, the tools folder is `${CLAUDE_PLUGIN_ROOT}/tools` and the rest come from the table in ADAPT.md, asking the owner for anything unknown.
 
 ## 1. Train or single PR
 

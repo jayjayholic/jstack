@@ -1,6 +1,18 @@
-# jstack
+# jstack: Claude Code skills for parallel AI coding agents on one laptop
 
-My setup for shipping with a bunch of AI coding agents in parallel, on one laptop, without the laptop dying. It's a Claude Code skill (`/train`), a handful of scripts and a list of rules. Every rule is there because something broke.
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757)](#quickstart)
+[![Skills](https://img.shields.io/badge/skills-%2Ftrain%20%C2%B7%20%2Foptimize-blue)](skills)
+[![GitHub stars](https://img.shields.io/github/stars/jayjayholic/jstack?style=flat)](https://github.com/jayjayholic/jstack/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/jayjayholic/jstack)](CHANGELOG.md)
+
+Claude Code skills and scripts for people running a bunch of parallel AI coding agents, each in its own git worktree, on one machine. Their branches ship as a train: one build, one PR, one CI run. One machine-wide lock keeps builds from eating all your RAM (Turbopack, I'm looking at you). Plus `/optimize`, a speed agent that proves its fixes with A/B stats.
+
+```text
+/plugin marketplace add jayjayholic/jstack
+/plugin install jstack@jstack
+```
+
+Or tell your agent "follow ADAPT.md in jayjayholic/jstack for my project". Every rule in here exists because something broke, usually my laptop.
 
 > Made by João Lima ([@jayjayholic](https://github.com/jayjayholic)) while building [Hakutaku](https://hakutaku.ai). Most of the rules were written by the agents themselves, right after they broke something.
 
@@ -64,6 +76,9 @@ If there's only one branch and nothing else going on, skip the train and open a 
 ## What's in the repo
 
 ```
+.claude-plugin/          Claude Code plugin + marketplace manifests (/plugin marketplace add jayjayholic/jstack)
+AGENTS.md                notes for coding agents installing or changing this repo
+llms.txt                 a short index of the docs, for LLMs
 ADAPT.md                 step by step guide (for your agent, or you) to fit jstack to your stack
 HOW-I-WORK.md            the rest of my workflow: grilled plans, two-arm research, prototypes, A/B everything
 skills/train/
@@ -85,6 +100,8 @@ tools/
 Every agent gets its own worktree from `new-worktree.sh`, so eight of them can edit the same repo without stepping on each other. The memory watcher is the last line of defense. It's not pretty, but a killed build beats a frozen laptop and a zeroed `.git/config` (yes, that happened).
 
 ## Quickstart
+
+The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train` and `/jstack:optimize`.
 
 The lazy way: clone it and tell your coding agent "follow ADAPT.md in jstack for my project at <path>". It detects your stack, fills in the settings, installs everything and checks it works. That's what I'd do.
 

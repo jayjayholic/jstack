@@ -1,0 +1,32 @@
+# jstack
+
+> Claude Code skills and scripts for shipping the work of many parallel AI coding agents from one machine: a merge train (/train) that verifies many git worktree branches with one build and one PR, a machine-wide heavy-job lock so parallel builds don't run out of RAM, and a web performance skill (/optimize) that proves fixes with A/B statistics.
+
+Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack` and `/plugin install jstack@jstack`, or copy the files and follow ADAPT.md. Everything machine-specific is a `{{PLACEHOLDER}}` in the skills or a `JSTACK_*` env var for the scripts.
+
+## Docs
+
+- [README](https://github.com/jayjayholic/jstack/blob/main/README.md): what it is, why it exists, quickstart, FAQ
+- [ADAPT.md](https://github.com/jayjayholic/jstack/blob/main/ADAPT.md): step-by-step guide for an agent to fit jstack to any stack, with every placeholder and how to find its value
+- [AGENTS.md](https://github.com/jayjayholic/jstack/blob/main/AGENTS.md): notes for coding agents installing or changing this repo
+- [HOW-I-WORK.md](https://github.com/jayjayholic/jstack/blob/main/HOW-I-WORK.md): the workflow around it (grilled plans, prototypes, A/B everything, /simplify)
+
+## Skills
+
+- [/train](https://github.com/jayjayholic/jstack/blob/main/skills/train/SKILL.md): merge train for parallel agents: one orchestrator, one typecheck, one build, one PR, merge on green
+- [orchestrator brief](https://github.com/jayjayholic/jstack/blob/main/skills/train/orchestrator-brief.md): prompt for the orchestrator agent
+- [worker clause](https://github.com/jayjayholic/jstack/blob/main/skills/train/worker-clause.md): block pasted into every coding agent's prompt
+- [/optimize](https://github.com/jayjayholic/jstack/blob/main/skills/optimize/SKILL.md): measure LCP, INP, TTFB, long tasks, API waterfall and bundle size, fix the top cost, prove it with interleaved A/B runs
+
+## Scripts
+
+- [heavy-lock.sh](https://github.com/jayjayholic/jstack/blob/main/tools/heavy-lock.sh): one machine-wide slot for builds, typechecks and pushes, plus server_wait
+- [train.sh](https://github.com/jayjayholic/jstack/blob/main/tools/train.sh): assemble, build and ship a train
+- [new-worktree.sh](https://github.com/jayjayholic/jstack/blob/main/tools/new-worktree.sh): one ready-to-run git worktree per agent
+- [config.example.sh](https://github.com/jayjayholic/jstack/blob/main/tools/config.example.sh): every setting in one file
+
+## Optional
+
+- [CHANGELOG](https://github.com/jayjayholic/jstack/blob/main/CHANGELOG.md): what changed and why
+- [coordinator-build.sh](https://github.com/jayjayholic/jstack/blob/main/tools/coordinator-build.sh): one capped build at a time
+- [node-memory-watch.ps1](https://github.com/jayjayholic/jstack/blob/main/tools/node-memory-watch.ps1): Windows memory watcher that kills runaway node/bun processes

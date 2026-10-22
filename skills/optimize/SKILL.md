@@ -8,7 +8,7 @@ agent: general-purpose
 
 # /optimize: measure first, fix the biggest cost, prove it
 
-Run this as one agent from start to finish. The method, earlier results and what didn't work live in
+Run this as one agent from start to finish. If this file still has unfilled placeholders (names in double curly braces, for example when installed as a plugin), read `~/.jstack/config.sh` for the shared values, use `${CLAUDE_PLUGIN_ROOT}/tools` as the tools folder, and find the rest as the /optimize section of ADAPT.md describes, asking the owner for anything unknown. The method, earlier results and what didn't work live in
 `{{PLAYBOOK_FILE}}`; read it before measuring (create it from the sections in step 5 if it doesn't exist yet).
 `$ARGUMENTS` says what feels slow; with none, measure the whole suite of `{{MAIN_ROUTE}}`.
 

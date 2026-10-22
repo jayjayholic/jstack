@@ -1,0 +1,17 @@
+{
+  "name": "jstack",
+  "description": "jstack: Claude Code skills for shipping the work of many parallel AI coding agents from one laptop (merge trains, one build and one PR, a machine-wide build lock, web performance A/B).",
+  "owner": {
+    "name": "João Lima",
+    "url": "https://github.com/jayjayholic"
+  },
+  "plugins": [
+    {
+      "name": "jstack",
+      "source": "./",
+      "description": "/train ships many agent branches as one build and one PR; /optimize measures and proves speed fixes. Plus the heavy-job lock and worktree scripts.",
+      "category": "development-workflow",
+      "tags": ["parallel-agents", "git-worktree", "merge-train", "ci", "performance"]
+    }
+  ]
+}
