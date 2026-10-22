@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: when GitHub is degraded and the deploy goes quiet
+
+**What:** three new lessons in `skills/train/SKILL.md`. Missing host statuses during a GitHub incident get ONE check with the host CLI (`vercel ls`), never a loop. If no deploy appears about 10 min after a merge, deploy the target branch by hand from a clean `git archive` export (link, delete the pulled `.env.local`, deploy to the env, delete the scratch dir). And editing a file through the GitHub contents API from Git Bash on Windows: build the content from `git show`, base64 it from a file, diff before merging.
+
+**Why:** during a GitHub incident the deploy statuses disappeared while deploys kept running, and another merge got no deploy at all because the webhook never fired. Watching it with a CLI loop once grew to 4 GB. And `jq -r .content | base64 -d` broke on `\r\n` and committed a truncated file without a word of complaint.
+
 ## 2026-10-22: what the train does when GitHub Actions won't run
 
 **What:** a new lesson in `skills/train/SKILL.md`: when Actions won't start jobs (credits, billing, spending limit), the train runs the same checks locally (merge-strategy guard, Prettier on changed files, typecheck, unit suites under `heavy_capped`), merges with `gh pr merge --admin` only if all are green, writes the results in the PR body, and confirms the deploy from the commit statuses. Actions-only jobs wait.
