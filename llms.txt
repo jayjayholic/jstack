@@ -15,6 +15,8 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 
 - [/train](https://github.com/jayjayholic/jstack/blob/main/skills/train/SKILL.md): merge train for parallel agents: one orchestrator, one typecheck, one build, one PR, merge on green
 - [/train-queue](https://github.com/jayjayholic/jstack/blob/main/skills/train-queue/SKILL.md): read-only status board of the train: live, in flight, queue, what each agent is doing
+- [/grill-me](https://github.com/jayjayholic/jstack/blob/main/skills/grill-me/SKILL.md) and [/grilling](https://github.com/jayjayholic/jstack/blob/main/skills/grilling/SKILL.md): Matt Pocock's plan interview, copied as-is (MIT)
+- [/wayfinder](https://github.com/jayjayholic/jstack/blob/main/skills/wayfinder/SKILL.md): Matt Pocock's planning map of decision tickets, copied as-is (MIT)
 - [orchestrator brief](https://github.com/jayjayholic/jstack/blob/main/skills/train/orchestrator-brief.md): prompt for the orchestrator agent
 - [worker clause](https://github.com/jayjayholic/jstack/blob/main/skills/train/worker-clause.md): block pasted into every coding agent's prompt
 - [/optimize](https://github.com/jayjayholic/jstack/blob/main/skills/optimize/SKILL.md): measure LCP, INP, TTFB, long tasks, API waterfall and bundle size, fix the top cost, prove it with interleaved A/B runs

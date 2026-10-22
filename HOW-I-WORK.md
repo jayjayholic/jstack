@@ -4,9 +4,9 @@ The train is the last step. This is everything before it, with real examples fro
 
 ## 1. Plans get grilled, then mapped
 
-Before any code, the plan gets interrogated with [/grill-me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), Matt Pocock's skill that asks you one hard question after another until the plan stops having holes. It's uncomfortable. That's how you know it works.
+Before any code, the plan gets interrogated with [/grill-me](skills/grill-me) (copied here with [/grilling](skills/grilling), which does the actual work), Matt Pocock's skill that asks you one hard question after another until the plan stops having holes. It's uncomfortable. That's how you know it works.
 
-Then [/wayfinder](https://github.com/mattpocock/skills/tree/main/skills/engineering/wayfinder) (also Matt's) turns it into a map: a coverage ledger of everything the change touches, and small tickets, each with an acceptance check you can actually test.
+Then [/wayfinder](skills/wayfinder) (also Matt's, also copied here) turns it into a map: a coverage ledger of everything the change touches, and small tickets, each with an acceptance check you can actually test.
 
 Example: moving the whole UI to a WhatsApp-style app. The ledger listed 284 surfaces. That became 87 tickets in 6 phases, each phase behind its own switch, with one rule on top: nothing gets removed without my sign-off. Agents love deleting things. I love having things.
 
@@ -38,7 +38,7 @@ Then the fix gets proven on real conversations: replay before, replay after, cos
 
 ## 6. /simplify after every feature
 
-Right after a feature works, [/simplify](https://code.claude.com/docs/en/commands) runs (it's built into Claude Code: parallel review agents look for reuse, simplification, efficiency and the right level of abstraction, then apply the fixes). Agents write code that works. They don't always write code you'd want to read. This is the cleanup crew.
+Right after a feature works, [/simplify](skills/simplify) runs (it's built into Claude Code, so jstack only points at it: parallel review agents look for reuse, simplification, efficiency and the right level of abstraction, then apply the fixes). Agents write code that works. They don't always write code you'd want to read. This is the cleanup crew.
 
 ## 7. Then the train
 

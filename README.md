@@ -1,7 +1,7 @@
 # jstack: Claude Code skills for parallel AI coding agents on one laptop
 
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757)](#quickstart)
-[![Skills](https://img.shields.io/badge/skills-%2Ftrain%20%C2%B7%20%2Ftrain--queue%20%C2%B7%20%2Foptimize-blue)](skills)
+[![Skills](https://img.shields.io/badge/skills-%2Ftrain%20%C2%B7%20%2Ftrain--queue%20%C2%B7%20%2Foptimize%20%C2%B7%20%2Fgrill--me%20%C2%B7%20%2Fwayfinder-blue)](skills)
 [![GitHub stars](https://img.shields.io/github/stars/jayjayholic/jstack?style=flat)](https://github.com/jayjayholic/jstack/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/jayjayholic/jstack)](CHANGELOG.md)
 
@@ -22,8 +22,8 @@ Curious how the rest of the work happens before a branch ever boards a train? Th
 
 **This is for detailed, planned work.** jstack is the shipping end. It doesn't make vague ideas faster, it makes planned ones land. So before any agent touches code:
 
-1. Grill the plan with [/grill-me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) until it stops having holes.
-2. Map it with [/wayfinder](https://github.com/mattpocock/skills/tree/main/skills/engineering/wayfinder): a map, a ledger of every surface the change touches, and tickets with their dependencies and the files each one owns.
+1. Grill the plan with [/grill-me](skills/grill-me) until it stops having holes.
+2. Map it with [/wayfinder](skills/wayfinder): a map, a ledger of every surface the change touches, and tickets with their dependencies and the files each one owns.
 3. Prototype the UI before writing tickets for it.
 4. Only then let the agents loose.
 
@@ -104,6 +104,11 @@ skills/train-queue/
   SKILL.md               the /train-queue skill: one status board (live, in flight, queue, what each agent is doing)
 skills/optimize/
   SKILL.md               the /optimize skill: the speed agent. Measures the built app and staging, fixes the top cost, proves it with A/B stats
+skills/grill-me/         /grill-me, from mattpocock/skills (MIT, LICENSE inside): just calls /grilling
+skills/grilling/         /grilling, from mattpocock/skills (MIT): asks hard questions in rounds until the plan has no holes
+skills/wayfinder/        /wayfinder, from mattpocock/skills (MIT): turns a big plan into a map of decision tickets
+skills/simplify/
+  README.md              /simplify is built into Claude Code, so this is only a pointer (its licence doesn't allow a copy)
 tools/
   config.example.sh      every setting in one file; copy it to ~/.jstack/config.sh
   jstack-env.sh          loads your config and fills in defaults (the other scripts source it)
@@ -119,7 +124,7 @@ Every agent gets its own worktree from `new-worktree.sh`, so eight of them can e
 
 ## Quickstart
 
-The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train`, `/jstack:train-queue` and `/jstack:optimize`.
+The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train`, `/jstack:train-queue`, `/jstack:optimize`, `/jstack:grill-me`, `/jstack:grilling` and `/jstack:wayfinder`. `/simplify` is already in Claude Code.
 
 The lazy way: clone it and tell your coding agent "follow ADAPT.md in jstack for my project at <path>". It detects your stack, fills in the settings, installs everything and checks it works. That's what I'd do.
 
@@ -137,6 +142,7 @@ The hands-on way:
 3. Install the skill for Claude Code. This is user-wide; for a single project use `<your-repo>/.claude/skills/` instead.
    ```bash
    mkdir -p ~/.claude/skills && cp -r jstack/skills/train jstack/skills/train-queue ~/.claude/skills/
+   cp -r jstack/skills/grill-me jstack/skills/grilling jstack/skills/wayfinder ~/.claude/skills/   # the planning ones, nothing to fill in
    ```
 4. Fill the `{{PLACEHOLDERS}}` in the installed skill files (the table in [ADAPT.md](ADAPT.md) says what each one is). When `grep -rn "{{" ~/.claude/skills/train ~/.claude/skills/train-queue` prints nothing, you're done.
 5. Paste `worker-clause.md` into every coding agent's prompt. `/train` hands `orchestrator-brief.md` to the one agent that runs trains.

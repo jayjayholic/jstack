@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: the planning skills ship with jstack
+
+**What:** `/grill-me`, `/grilling` and `/wayfinder` are now in `skills/`, copied as-is from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT, licence file in each folder), so `/plugin install` brings them too. `/simplify` gets `skills/simplify/README.md` instead of a copy: it's built into Claude Code and its licence doesn't allow redistributing it, and you already have it anyway. README, HOW-I-WORK.md and AGENTS.md now point at the in-repo copies.
+
+**Why:** the README says plan first, but the planning skills lived in another repo, so people had to install things separately before jstack even made sense. Now it's one install. Heads up: `/wayfinder` also calls Matt's `research`, `prototype` and `domain-modeling` skills and expects an issue tracker set up with his `setup-matt-pocock-skills`; those still come from his repo.
+
 ## 2026-10-22: README says who this is for, and what plan to bring
 
 **What:** a new section near the top of the README: jstack is for detailed, planned and prototyped work (grill the plan, map it with /wayfinder into tickets with dependencies and owned files, prototype the UI, then start the agents), and a recommendation for a Claude Max 20x plan or equivalent high limits.
