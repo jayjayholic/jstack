@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: real reds, out-of-memory deploys and one big train
+
+**What:** four new lessons in `skills/train/SKILL.md`. Read every failing line before calling it a flake, and bisect against the previous merges when unsure. When the host build dies with "Killed / exit 137" after an account or billing switch, measure peak memory with one capped local build, then check the host's build machine size through its API (Vercel: `resourceConfig.buildMachineType`) and only change it with the owner's go, since it hits the bill. When the host was blocked, board every waiting ready branch into ONE big train, drop the conflicting ones, ship the rest. And workers never start their own app servers: component gallery and test scripts, one shared server at most.
+
+**Why:** a train merged on a real red because half its failures were dismissed as "worktree state" (one was a real test mock regression). A deploy kept dying out of memory while local builds were green, because the build machine had silently dropped back to standard 8 GB and the build needs about 9.8 GB. A pile of ready branches was about to crawl through many small trains. And a handful of per-worker app servers plus typechecks took the 32 GB laptop down to 2% free RAM.
+
 ## 2026-10-22: when GitHub is degraded and the deploy goes quiet
 
 **What:** three new lessons in `skills/train/SKILL.md`. Missing host statuses during a GitHub incident get ONE check with the host CLI (`vercel ls`), never a loop. If no deploy appears about 10 min after a merge, deploy the target branch by hand from a clean `git archive` export (link, delete the pulled `.env.local`, deploy to the env, delete the scratch dir). And editing a file through the GitHub contents API from Git Bash on Windows: build the content from `git show`, base64 it from a file, diff before merging.
