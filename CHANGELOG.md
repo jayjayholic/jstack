@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: what the train does when GitHub Actions won't run
+
+**What:** a new lesson in `skills/train/SKILL.md`: when Actions won't start jobs (credits, billing, spending limit), the train runs the same checks locally (merge-strategy guard, Prettier on changed files, typecheck, unit suites under `heavy_capped`), merges with `gh pr merge --admin` only if all are green, writes the results in the PR body, and confirms the deploy from the commit statuses. Actions-only jobs wait.
+
+**Why:** the credits ran out mid-night and every check failed in 2 s without running anything. The train stood still on a red that wasn't a test result, while the checks it needed are a handful of commands the laptop can run on its own.
+
 ## 2026-10-22: copy fix in new-worktree.sh
 
 **What:** reused generated folders and copied local folders are now replaced, not copied into themselves.
