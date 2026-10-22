@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: README says who this is for, and what plan to bring
+
+**What:** a new section near the top of the README: jstack is for detailed, planned and prototyped work (grill the plan, map it with /wayfinder into tickets with dependencies and owned files, prototype the UI, then start the agents), and a recommendation for a Claude Max 20x plan or equivalent high limits.
+
+**Why:** the dependency graph from planning is what makes one agent per chain work. The night the latest rules came from, the planned and prototyped UI flowed while the process changes improvised live cost rework. And with 10 to 13 agents at once, lower limits killed agents mid-task, and each one had to be resumed by hand.
+
 ## 2026-10-22: typecheck lane, drop don't fix, chains, and "measure it"
 
 **What:**

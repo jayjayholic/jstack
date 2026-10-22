@@ -18,6 +18,19 @@ Or tell your agent "follow ADAPT.md in jayjayholic/jstack for my project". Every
 
 Curious how the rest of the work happens before a branch ever boards a train? That's in [HOW-I-WORK.md](HOW-I-WORK.md).
 
+## Before you start: plan first, and bring big rate limits
+
+**This is for detailed, planned work.** jstack is the shipping end. It doesn't make vague ideas faster, it makes planned ones land. So before any agent touches code:
+
+1. Grill the plan with [/grill-me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) until it stops having holes.
+2. Map it with [/wayfinder](https://github.com/mattpocock/skills/tree/main/skills/engineering/wayfinder): a map, a ledger of every surface the change touches, and tickets with their dependencies and the files each one owns.
+3. Prototype the UI before writing tickets for it.
+4. Only then let the agents loose.
+
+The ticket dependency graph is what makes the chains possible (one agent per chain, see the rules below), and chains are what keep ticket time down. Honest lesson from the night these rules came from: the UI that was planned and prototyped flowed. The process changes I improvised live, mid-run, cost rework. Plan the work AND the process, then leave both alone.
+
+**Bring high usage limits.** With 10 to 13 agents in parallel, lower plans hit rate limits and agents die mid-task. That night agents died on limits and on account switches and had to be resumed one by one. I recommend a Claude Max 20x plan, or anything with equally high limits. My laptop already crashes enough, it doesn't need help from the rate limiter.
+
 ## The short version
 
 Eight agents finish their branches at the same time. If each one opens its own PR, that's eight builds and eight CI runs. My laptop gives up around build three.
