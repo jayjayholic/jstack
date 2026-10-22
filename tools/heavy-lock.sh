@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# One machine-wide slot for HEAVY jobs: builds, full typechecks and `git push` (if your pre-push hook typechecks).
-# Usage: source "$JSTACK_TOOLS/heavy-lock.sh"; heavy_acquire <name>; <heavy command>; heavy_release
+# One machine-wide slot for HEAVY jobs: builds and full typechecks (and `git push` only while a pre-push hook typechecks).
+# Usage: source "$JSTACK_TOOLS/heavy-lock.sh"; heavy_acquire <name>; heavy_capped "<heavy command>"; heavy_release
 # Before starting a server: server_wait [min_free_gb] (waits for a free slot and enough RAM).
-# Tests, installs and browser checks run without the slot. heavy_acquire also caps the Node heap (JSTACK_HEAP_MB);
-# some bundlers (Turbopack) ignore that cap, which is why only one heavy job runs at a time.
+# Servers, screenshot runs, live proofs, tests and installs run WITHOUT the slot. heavy_acquire also caps the Node heap
+# (JSTACK_HEAP_MB); some bundlers (Turbopack) ignore that cap, which is why heavy_capped puts a hard RAM ceiling on
+# the whole process tree as well.
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/jstack-env.sh"
 mkdir -p "$(dirname "$JSTACK_LOCK_DIR")"
@@ -48,4 +49,40 @@ server_wait() {
     if [ "$held" = 0 ] && [ "${free:-0}" -ge "$need" ]; then return 0; fi
     sleep 30
   done
+}
+
+# Runs one heavy command with a hard RAM ceiling for its whole process tree (JSTACK_CAP_GB) and the env in
+# JSTACK_BUILD_ENV (use it to cap the build tool's workers). Past the ceiling the command dies with OOM instead of
+# freezing the machine. Call it inside the slot: heavy_acquire <name>; heavy_capped "<cmd>"; heavy_release
+#   Windows (Git Bash): a Job Object via run-capped.ps1. Tested.
+#   Linux with systemd: systemd-run --user --scope -p MemoryMax. UNVERIFIED, test it on your machine first.
+#   Anything else (macOS, Linux without systemd): runs uncapped with a warning. ulimit -v caps each process, not the
+#   tree, and macOS mostly ignores it, so it is not used.
+heavy_capped() {
+  local cmd="$1" script
+  script=$(mktemp "${TMPDIR:-/tmp}/jstack-capped.XXXXXX")
+  {
+    echo 'set -o pipefail'
+    for kv in $JSTACK_BUILD_ENV; do printf 'export %q\n' "$kv"; done
+    printf 'cd %q || exit 1\n' "$PWD"
+    printf '%s\n' "$cmd"
+  } > "$script"
+  local code
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$JSTACK_TOOLS/run-capped.ps1")" \
+        -LimitGB "$JSTACK_CAP_GB" -Exe "$(cygpath -w "$(command -v bash)")" -Command "\"$(cygpath -w "$script")\"" \
+        -WorkingDirectory "$(pwd -W)"
+      code=$? ;;
+    *)
+      if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope -q true >/dev/null 2>&1; then
+        systemd-run --user --scope -q -p MemoryMax="${JSTACK_CAP_GB}G" -p MemorySwapMax=0 bash "$script"
+      else
+        echo "heavy_capped: no hard RAM cap on this OS, running uncapped" >&2
+        bash "$script"
+      fi
+      code=$? ;;
+  esac
+  rm -f "$script"
+  return $code
 }

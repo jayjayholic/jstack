@@ -19,3 +19,8 @@ export JSTACK_PR_TEMPLATE=".github/pull_request_template.md"
 export JSTACK_MIN_FREE_GB=8                              # free RAM needed before a build or a server starts
 export JSTACK_HEAP_MB=4096                               # NODE_OPTIONS heap cap inside the slot
 export JSTACK_STALE_MINUTES=45                           # keep above your longest build
+export JSTACK_CAP_GB=12                                  # hard RAM ceiling for the whole build process tree (heavy_capped)
+export JSTACK_BUILD_ENV="CIRCLE_NODE_TOTAL=5"             # env for capped builds; this one makes Next.js use 4 build workers
+export JSTACK_TRAIN_BUILD="deploy"                       # local = the train builds; deploy = the integration deploy is the build check
+export JSTACK_CODEGEN_INPUTS="schema bun.lock"           # what generated code depends on (paths in the repo)
+export JSTACK_CODEGEN_REUSE_PATHS=".generated"           # generated folders a new worktree may copy from a sibling with the same inputs

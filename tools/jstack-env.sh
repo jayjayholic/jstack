@@ -25,6 +25,11 @@ JSTACK_PR_TEMPLATE="${JSTACK_PR_TEMPLATE:-.github/pull_request_template.md}"
 JSTACK_MIN_FREE_GB="${JSTACK_MIN_FREE_GB:-8}"
 JSTACK_HEAP_MB="${JSTACK_HEAP_MB:-4096}"
 JSTACK_STALE_MINUTES="${JSTACK_STALE_MINUTES:-45}"
+JSTACK_CAP_GB="${JSTACK_CAP_GB:-12}"
+JSTACK_BUILD_ENV="${JSTACK_BUILD_ENV:-}"
+JSTACK_TRAIN_BUILD="${JSTACK_TRAIN_BUILD:-local}"
+JSTACK_CODEGEN_INPUTS="${JSTACK_CODEGEN_INPUTS:-}"
+JSTACK_CODEGEN_REUSE_PATHS="${JSTACK_CODEGEN_REUSE_PATHS:-}"
 
 # Free physical RAM in whole GB. Linux reads /proc/meminfo (MemAvailable, or MemFree where that's missing, like
 # Git Bash on Windows), macOS vm_stat, Windows PowerShell. Set JSTACK_FREE_GB_CMD to any command that prints a

@@ -2,9 +2,11 @@
 # The train. Settings come from jstack-env.sh (env vars or ~/.jstack/config.sh).
 # Usage:
 #   train.sh build <wt1> <wt2> ...        merge the branches onto a fresh integration branch in the train worktree,
-#                                         then one typecheck + one build
+#                                         then one typecheck, plus one local build when JSTACK_TRAIN_BUILD=local
+#                                         (with JSTACK_TRAIN_BUILD=deploy the integration deploy is the build check)
 #   train.sh assemble <wt1> <wt2> ...     merge only, no build
 #   train.sh typebuild                    typecheck + build of the tree already assembled
+#                                         (JSTACK_TRAIN_BUILD=local train.sh typebuild = the one capped repro build)
 #   train.sh shiptrain <branch> "<PR title>" <body-file>
 #                                         push the train as <branch>, open ONE PR, merge only when every check passed
 #   train.sh ship "<wt>|<title>" ...      ship single branches as their own PRs (no train, no rebuild)
@@ -66,7 +68,7 @@ typecheck_tree() {
     eval "$JSTACK_CODEGEN_CMD" > artifacts/train-typecheck.log 2>&1 || { echo "TRAIN-FAIL codegen"; tail -5 artifacts/train-typecheck.log; return 1; }
   fi
   heavy_acquire "train-typecheck"
-  eval "$JSTACK_TYPECHECK_CMD" >> artifacts/train-typecheck.log 2>&1; local code=$?
+  heavy_capped "$JSTACK_TYPECHECK_CMD" >> artifacts/train-typecheck.log 2>&1; local code=$?
   heavy_release
   [ $code -eq 0 ] || { echo "TRAIN-FAIL typecheck"; grep -iE "error" artifacts/train-typecheck.log | head -20; return 1; }
   echo "typecheck PASS"
@@ -76,6 +78,7 @@ build_tree() {
   ram_wait "$JSTACK_MIN_FREE_GB" || true
   echo "free=$(jstack_free_gb) GB"
   typecheck_tree || return 0
+  if [ "$JSTACK_TRAIN_BUILD" = deploy ]; then echo "TRAIN-GREEN (typecheck only; the deploy is the build check)"; return 0; fi
   local r; r=$(bash "$JSTACK_TOOLS/coordinator-build.sh" "$T" 2>&1 | tail -1); echo "$r"
   case "$r" in PASS*) echo "TRAIN-GREEN";; *) echo "TRAIN-FAIL build"; grep -nE "Error|error" "$T/artifacts/coordinator-build.log" | head -20;; esac
 }
@@ -106,9 +109,19 @@ open_and_merge() { # $1 branch, $2 title, $3 body file
   case "$s" in *MERGED) echo "MERGED $1 $s";; *) echo "NOT-MERGED $1 $s";; esac
 }
 
-push_branch() { # $1 branch; HEAVY because a pre-push hook may typecheck
+# A push is heavy only while a pre-push hook exists (it usually typechecks). Better: delete a hook that repeats CI.
+has_pre_push_hook() {
+  local dir; dir=$(git config core.hooksPath || git rev-parse --git-path hooks)
+  [ -f "$dir/pre-push" ]
+}
+
+push_branch() { # $1 branch
   local out
-  heavy_acquire "push:$1"; out=$(git push -u origin "$1" 2>&1); heavy_release
+  if has_pre_push_hook; then
+    heavy_acquire "push:$1"; out=$(git push -u origin "$1" 2>&1); heavy_release
+  else
+    out=$(git push -u origin "$1" 2>&1)
+  fi
   echo "$out" | grep -v '^remote:' | tail -1
   ! echo "$out" | grep -q "error: failed to push"
 }
@@ -149,5 +162,5 @@ case "$mode" in
       open_and_merge "$b" "$title" artifacts/pr-body.md
     done ;;
   *)
-    sed -n '2,10p' "$0"; exit 2 ;;
+    sed -n '2,12p' "$0"; exit 2 ;;
 esac
