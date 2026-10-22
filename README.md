@@ -107,6 +107,9 @@ skills/optimize/
 skills/grill-me/         /grill-me, from mattpocock/skills (MIT, LICENSE inside): just calls /grilling
 skills/grilling/         /grilling, from mattpocock/skills (MIT): asks hard questions in rounds until the plan has no holes
 skills/wayfinder/        /wayfinder, from mattpocock/skills (MIT): turns a big plan into a map of decision tickets
+skills/research/         skills/prototype/         | what /wayfinder calls, also from mattpocock/skills (MIT), copied as-is
+skills/domain-modeling/   | so nothing else needs installing. setup-matt-pocock-skills
+skills/setup-matt-pocock-skills/ /  tells wayfinder where your issue tracker lives
 skills/simplify/
   README.md              /simplify is built into Claude Code, so this is only a pointer (its licence doesn't allow a copy)
 tools/
@@ -124,7 +127,7 @@ Every agent gets its own worktree from `new-worktree.sh`, so eight of them can e
 
 ## Quickstart
 
-The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train`, `/jstack:train-queue`, `/jstack:optimize`, `/jstack:grill-me`, `/jstack:grilling` and `/jstack:wayfinder`. `/simplify` is already in Claude Code.
+The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train`, `/jstack:train-queue`, `/jstack:optimize`, `/jstack:grill-me`, `/jstack:grilling` and `/jstack:wayfinder` (plus the skills wayfinder calls: research, prototype, domain-modeling, setup-matt-pocock-skills). `/simplify` is already in Claude Code.
 
 The lazy way: clone it and tell your coding agent "follow ADAPT.md in jstack for my project at <path>". It detects your stack, fills in the settings, installs everything and checks it works. That's what I'd do.
 
@@ -142,7 +145,7 @@ The hands-on way:
 3. Install the skill for Claude Code. This is user-wide; for a single project use `<your-repo>/.claude/skills/` instead.
    ```bash
    mkdir -p ~/.claude/skills && cp -r jstack/skills/train jstack/skills/train-queue ~/.claude/skills/
-   cp -r jstack/skills/grill-me jstack/skills/grilling jstack/skills/wayfinder ~/.claude/skills/   # the planning ones, nothing to fill in
+   cp -r jstack/skills/{grill-me,grilling,wayfinder,research,prototype,domain-modeling,setup-matt-pocock-skills} ~/.claude/skills/   # the planning ones, nothing to fill in
    ```
 4. Fill the `{{PLACEHOLDERS}}` in the installed skill files (the table in [ADAPT.md](ADAPT.md) says what each one is). When `grep -rn "{{" ~/.claude/skills/train ~/.claude/skills/train-queue` prints nothing, you're done.
 5. Paste `worker-clause.md` into every coding agent's prompt. `/train` hands `orchestrator-brief.md` to the one agent that runs trains.
