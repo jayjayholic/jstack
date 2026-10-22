@@ -70,7 +70,11 @@ tools/
   heavy-lock.sh          ONE machine-wide slot for heavy jobs (build, typecheck, push) + server_wait
   coordinator-build.sh   one capped build at a time, waits for free RAM
   train.sh               assemble / build / ship a train
+  new-worktree.sh        one worktree per agent, like a fresh clone (copies the local env files git doesn't carry)
+  node-memory-watch.ps1  the bouncer: when RAM hits 98%, kills the fattest node/bun process (over 5 GB) before Windows does something worse
 ```
+
+Every agent gets its own worktree from `new-worktree.sh`, so eight of them can edit the same repo without stepping on each other. The memory watcher is the last line of defense. It's not pretty, but a killed build beats a frozen laptop and a zeroed `.git/config` (yes, that happened).
 
 ## Quickstart
 
@@ -108,6 +112,8 @@ These are my real scripts, so my machine is all over them. Fix these first.
 | Integration branch | `train.sh` and the skill files | `stage` |
 | Build command | `coordinator-build.sh` | `bun install`, `bun run db:generate`, `next build --turbopack` |
 | Free RAM check | `server_wait` in `heavy-lock.sh` | PowerShell, since I'm on Windows. Use `free -g` or `vm_stat` elsewhere |
+| Base branch and local files for worktrees | `--base` default and `LOCAL_FILES` in `new-worktree.sh` | `origin/stage`, `.env.keys .env.local .env.docker` + `.vercel/` |
+| Watcher limits | `LimitGB` / `PressurePercent` in `node-memory-watch.ps1` | 5 GB per process, 98% RAM. Windows only; run it in a background PowerShell |
 
 The skill files also mention rules from my own repo, like the PR template and `CLAUDE.md`. Keep the ideas and swap in your own.
 
