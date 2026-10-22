@@ -1,11 +1,11 @@
 # jstack: Claude Code skills for parallel AI coding agents on one laptop
 
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757)](#quickstart)
-[![Skills](https://img.shields.io/badge/skills-%2Ftrain%20%C2%B7%20%2Foptimize-blue)](skills)
+[![Skills](https://img.shields.io/badge/skills-%2Ftrain%20%C2%B7%20%2Ftrain--queue%20%C2%B7%20%2Foptimize-blue)](skills)
 [![GitHub stars](https://img.shields.io/github/stars/jayjayholic/jstack?style=flat)](https://github.com/jayjayholic/jstack/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/jayjayholic/jstack)](CHANGELOG.md)
 
-Claude Code skills and scripts for people running a bunch of parallel AI coding agents, each in its own git worktree, on one machine. Their branches ship as a train: one build, one PR, one CI run. One machine-wide lock keeps builds from eating all your RAM (Turbopack, I'm looking at you). Plus `/optimize`, a speed agent that proves its fixes with A/B stats.
+Claude Code skills and scripts for people running a bunch of parallel AI coding agents, each in its own git worktree, on one machine. Their branches ship as a train: one build, one PR, one CI run. One machine-wide lock and a hard RAM ceiling keep builds from eating all your RAM (Turbopack, I'm looking at you). `/train-queue` tells you where everything is. Plus `/optimize`, a speed agent that proves its fixes with A/B stats.
 
 ```text
 /plugin marketplace add jayjayholic/jstack
@@ -22,9 +22,9 @@ Curious how the rest of the work happens before a branch ever boards a train? Th
 
 Eight agents finish their branches at the same time. If each one opens its own PR, that's eight builds and eight CI runs. My laptop gives up around build three.
 
-So the agents don't build anything. They typecheck, run their own tests and say they're ready. Then one orchestrator agent merges all the ready branches together, builds once, opens one PR and merges it if nothing is red.
+So the agents don't build anything. Ever. They run their own tests, screenshot their UI on a component gallery and say they're ready. Then one orchestrator agent merges all the ready branches together, typechecks once, opens one PR and merges it if nothing is red. If your staging deploy runs a real build, that deploy is the build check, and the laptop only builds when the deploy fails.
 
-Builds, full typechecks and `git push` all share one slot for the whole machine. Only one of them runs at a time.
+Builds and full typechecks share one slot for the whole machine. Only one of them runs at a time, and it runs under a hard RAM ceiling, so the worst case is a dead build instead of a dead laptop.
 
 ## Why I made this
 
@@ -48,6 +48,8 @@ So I stopped shipping branches one at a time and started shipping trains.
 
 32 GB felt like a lot. Then six agents each decided to "just run a quick `next build`". One Turbopack build eats about 5 GB and ignores `--max-old-space-size`. A full `tsc` is about 4 GB, a `next start` 1 to 2 GB. Three builds plus two typechecks and the laptop doesn't get slow, it just turns off. It crashed three times in one day while I was writing these rules. My laptop is not a fan of parallelism.
 
+Then I fixed all that, ran one single build alone, and free RAM still hit 2%. Turns out `next build` quietly spawns one worker per CPU core minus one. On a 20-thread laptop that's 19 workers at 0.75 GB each. Nineteen. My laptop has fewer friends than that build had workers.
+
 ## How a train works
 
 ```
@@ -57,7 +59,7 @@ So I stopped shipping branches one at a time and started shipping trains.
                                       ▼
                fresh stage + merge A, B, C   (one train worktree)
                                       │
-               one typecheck + one build     (holds the heavy slot)
+               one typecheck (+ build if needed) (holds the heavy slot, capped)
                                       │
                one PR ─► zero failed checks ─► merge ─► deploy Ready
                                       │
@@ -66,8 +68,8 @@ So I stopped shipping branches one at a time and started shipping trains.
 
 1. Agents work in parallel, each in its own worktree. They check their work with typecheck and their own tests. They never run a build just to verify.
 2. When an agent is done it sends `READY FOR BUILD: <worktree> - <title>` to the orchestrator.
-3. The orchestrator merges every ready branch onto a fresh `stage` in one train worktree, runs one typecheck and one `next build`, opens one PR, merges it only if zero checks failed, and tells me when the stage deploy is live.
-4. While one train sits in CI, the next one gets put together.
+3. The orchestrator merges every ready branch onto a fresh `stage` in one train worktree, runs one typecheck (plus one build if nothing else builds it), opens one PR, merges it only if zero checks failed, and tells me when the stage deploy is live.
+4. While one train sits in CI, the next one boards. Two trains max: one moving, one boarding. More than that and you're just running a parking lot.
 
 One build can check ten branches. That's why this works on a laptop.
 
@@ -85,23 +87,26 @@ skills/train/
   SKILL.md               the /train skill: when to train, how to brief agents, the gates, and the Lessons log
   orchestrator-brief.md  the prompt for the one orchestrator agent
   worker-clause.md       the block pasted into every coding agent's prompt (build rules + READY format)
+skills/train-queue/
+  SKILL.md               the /train-queue skill: one status board (live, in flight, queue, what each agent is doing)
 skills/optimize/
   SKILL.md               the /optimize skill: the speed agent. Measures the built app and staging, fixes the top cost, proves it with A/B stats
 tools/
   config.example.sh      every setting in one file; copy it to ~/.jstack/config.sh
   jstack-env.sh          loads your config and fills in defaults (the other scripts source it)
-  heavy-lock.sh          ONE machine-wide slot for heavy jobs (build, typecheck, push) + server_wait
+  heavy-lock.sh          ONE machine-wide slot for heavy jobs (build, typecheck) + server_wait + heavy_capped (hard RAM ceiling)
+  run-capped.ps1         Windows Job Object: the whole build process tree gets a RAM ceiling, past it the build dies, not the PC
   coordinator-build.sh   one build at a time, waits for free RAM
   train.sh               assemble / build / ship a train, merges only when every check is green
-  new-worktree.sh        one worktree per agent, like a fresh clone (copies the local env files git doesn't carry)
-  node-memory-watch.ps1  the bouncer: when RAM hits 98%, kills the fattest node/bun process (over 5 GB) before Windows does something worse
+  new-worktree.sh        one worktree per agent, like a fresh clone (copies local env files, reuses generated code from a sibling)
+  node-memory-watch.ps1  the bouncer: when RAM runs out, kills the fattest node/bun process (never your agent CLI) before Windows does something worse
 ```
 
 Every agent gets its own worktree from `new-worktree.sh`, so eight of them can edit the same repo without stepping on each other. The memory watcher is the last line of defense. It's not pretty, but a killed build beats a frozen laptop and a zeroed `.git/config` (yes, that happened).
 
 ## Quickstart
 
-The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train` and `/jstack:optimize`.
+The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train`, `/jstack:train-queue` and `/jstack:optimize`.
 
 The lazy way: clone it and tell your coding agent "follow ADAPT.md in jstack for my project at <path>". It detects your stack, fills in the settings, installs everything and checks it works. That's what I'd do.
 
@@ -118,14 +123,14 @@ The hands-on way:
    ```
 3. Install the skill for Claude Code. This is user-wide; for a single project use `<your-repo>/.claude/skills/` instead.
    ```bash
-   mkdir -p ~/.claude/skills && cp -r jstack/skills/train ~/.claude/skills/
+   mkdir -p ~/.claude/skills && cp -r jstack/skills/train jstack/skills/train-queue ~/.claude/skills/
    ```
-4. Fill the `{{PLACEHOLDERS}}` in the installed skill files (the table in [ADAPT.md](ADAPT.md) says what each one is). When `grep -rn "{{" ~/.claude/skills/train` prints nothing, you're done.
+4. Fill the `{{PLACEHOLDERS}}` in the installed skill files (the table in [ADAPT.md](ADAPT.md) says what each one is). When `grep -rn "{{" ~/.claude/skills/train ~/.claude/skills/train-queue` prints nothing, you're done.
 5. Paste `worker-clause.md` into every coding agent's prompt. `/train` hands `orchestrator-brief.md` to the one agent that runs trains.
 6. Use the lock yourself too.
    ```bash
    source ~/jstack-tools/heavy-lock.sh
-   heavy_acquire my-build; npm run build; heavy_release   # anything heavy
+   heavy_acquire my-build; heavy_capped "npm run build"; heavy_release   # anything heavy, under the RAM ceiling
    server_wait 8                                          # before a server: no build running and 8 GB free
    ```
 7. When two or more branches are ready, type `/train`.
@@ -145,13 +150,25 @@ My own config, as an example:
 | `JSTACK_BUILD_CMD` | `rm -rf .next && bunx next build --turbopack` |
 | `JSTACK_LOCAL_ENV_FILES` / `JSTACK_LOCAL_DIRS` | my env files / `.vercel` |
 | `JSTACK_MIN_FREE_GB` | `8` |
-| `node-memory-watch.ps1` | `-LimitGB 5 -PressurePercent 98`, running in a background PowerShell |
+| `JSTACK_CAP_GB` | `12` (my build died at 6 and 8, the ceiling counts committed memory) |
+| `JSTACK_BUILD_ENV` | `CIRCLE_NODE_TOTAL=5` (Next.js reads it and uses 4 build workers instead of 19) |
+| `JSTACK_TRAIN_BUILD` | `deploy` (stage builds on every merge anyway, so the laptop doesn't have to) |
+| `JSTACK_CODEGEN_INPUTS` / `JSTACK_CODEGEN_REUSE_PATHS` | my schema folder + lockfile / the generated client folder |
+| `node-memory-watch.ps1` | `-LimitGB 5 -PressurePercent 95`, running in a background PowerShell |
 
 ## Rules that exist because something broke
 
 The full list with dates is in the Lessons section of `skills/train/SKILL.md`. The big ones:
 
-- One heavy slot for the whole machine. Builds, full typechecks and `git push` (my pre-push hook typechecks) all wait for the same lock. Before this, the train had its own lock and the agents had two more, so three Turbopack builds ran at once and the PC crashed. Twice.
+- One heavy slot for the whole machine. Builds and full typechecks wait for the same lock. Before this, the train had its own lock and the agents had two more, so three Turbopack builds ran at once and the PC crashed. Twice.
+- Only builds and typechecks hold the slot. Agents grabbed it for screenshot runs and "proofs" and trains sat in line for half an hour behind a screenshot. Servers and proofs use `server_wait`.
+- Agents never build. They did about 15 production builds in one night just to take screenshots. Screenshots now happen on a component gallery that starts in seconds, and live tests happen on staging after the merge.
+- Cap the build's workers and put a ceiling on the whole tree. One build with 19 workers took the laptop to 2% free RAM all by itself. `CIRCLE_NODE_TOTAL=5` for Next.js, `heavy_capped` for everything.
+- Build only when the deploy fails. Staging builds every merge anyway. The laptop reproduces it once, capped, only when that deploy goes red.
+- Two trains max. I once had four trains queued behind each other. That's not a train system, that's a traffic jam with extra steps.
+- Delete the pre-push hook if CI already runs the same thing. Mine ran a 4 GB typecheck on every push, which made `git push` a heavy job. Now a push is just a push.
+- Codegen once per schema. New worktrees copy the generated client from a sibling with the same schema hash instead of regenerating it for the 30th time that day.
+- The watch: every 15 minutes the main session checks RAM (below 5% free it kills the heaviest build, never the agent CLI), agents silent for over an hour, and servers left behind by agents that already finished.
 - No servers next to a build. `server_wait 8` waits until no build holds the slot and 8 GB is free before any `next start`. A "screenshot build" hit 7.7 GB while another agent had a server up, and free RAM dropped to 1.8 GB.
 - The stale slot race. The lock treated a slot as abandoned after 15 minutes, but a train build can take longer, so a second build started next to it. Now it's 45 minutes, and if the owner file vanishes the slot is not treated as stale.
 - Merge only with zero failed checks. My merge script didn't stop on red once and merged a PR with a failing job. It was a network flake that time. I got lucky.
@@ -167,16 +184,19 @@ The full list with dates is in the Lessons section of `skills/train/SKILL.md`. T
 No. The point is one heavy slot and one build for many branches. Set `JSTACK_BUILD_CMD` to whatever your expensive step is. Cargo, Gradle, Docker builds, all welcome. They eat RAM too.
 
 **Does it run on macOS or Linux?**
-Yes. The lock is plain bash and `mkdir`, and the free RAM check reads `/proc/meminfo` on Linux, `vm_stat` on macOS and PowerShell on Windows. The memory watcher is the only Windows-only piece.
+Yes. The lock is plain bash and `mkdir`, and the free RAM check reads `/proc/meminfo` on Linux, `vm_stat` on macOS and PowerShell on Windows. The memory watcher is Windows-only, and the hard RAM ceiling is only tested on Windows (see the RAM ceiling question below).
 
 **What if one branch breaks the train?**
 The orchestrator throws the whole train away, pushes nothing, finds the branch the error points to, tells its agent, and rebuilds without it. A bad branch slows the train down but never ships.
 
-**Why lock `git push`?**
-My pre-push hook runs a full typecheck, about 4 GB. So a push counts as a heavy job.
+**Why did `git push` use to take the lock?**
+My pre-push hook ran a full typecheck, about 4 GB, so a push was a heavy job. CI already runs that typecheck, so I deleted the hook. `train.sh` still takes the slot for a push if it finds a pre-push hook, in case yours is still there.
+
+**Does the RAM ceiling work on Linux and macOS?**
+Windows: yes, tested, it's a Job Object. Linux: `heavy_capped` uses `systemd-run --user --scope -p MemoryMax`, which should work but nobody has run it yet, so test it first (ADAPT.md has a one-liner). macOS: no tree-wide cap exists that I trust, so it runs uncapped and tells you. Worker caps and the one slot still apply.
 
 **How many agents at once?**
-On 32 GB, about six working agents. The rest wait in the backlog. More than that and my laptop starts making decisions for me.
+I run 13 on 32 GB. I once panicked and cut it to 6 after a RAM scare, then found out the culprit was one build with 19 workers. Agents that edit and test are cheap; builds are expensive. Cap the build, keep the agents. My laptop still makes some decisions for me, just fewer.
 
 ## Changelog
 

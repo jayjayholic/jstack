@@ -2,6 +2,22 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: hard RAM ceiling, agents never build, /train-queue
+
+**What:**
+- `heavy_capped "<cmd>"` in `heavy-lock.sh` runs a build or typecheck with a hard RAM ceiling on its whole process tree (`JSTACK_CAP_GB`, default 12). On Windows it's a Job Object through the new `tools/run-capped.ps1` (tested: a 1 GB cap stops a runaway allocation at 1 GB). On Linux it uses `systemd-run --user --scope -p MemoryMax`, UNVERIFIED. On macOS it runs uncapped and says so. `coordinator-build.sh` and the train's typecheck use it.
+- `JSTACK_BUILD_ENV` passes env to capped builds, mainly to cap the build tool's workers (`CIRCLE_NODE_TOTAL=5` makes Next.js use 4 instead of CPU count minus 1).
+- `JSTACK_TRAIN_BUILD=deploy`: the train only typechecks, and the integration deploy is the build check. A local build happens once, capped, only to reproduce a failed deploy.
+- Workers never build. Screenshots go on a component gallery (`{{GALLERY_CMD}}`), live tests on the integration deploy, and the full typecheck lives in the train.
+- Only builds and typechecks take the slot. `train.sh` takes it for a push only while a pre-push hook exists, and the docs suggest deleting a hook that repeats CI.
+- Max two trains: one in CI, one boarding.
+- New `/train-queue` skill: a read-only board of what's live, the train in flight, the queue and each agent's job. The orchestrator keeps the queue file (`{{QUEUE_FILE}}`) it reads.
+- `new-worktree.sh --install` copies generated code from a sibling worktree when the codegen inputs match (`JSTACK_CODEGEN_INPUTS`, `JSTACK_CODEGEN_REUSE_PATHS`). Each worktree stamps the inputs its code came from, so a sibling whose schema moved after its codegen is never copied.
+- The watch (section 6 of the train skill): kill the heaviest process tree below 5% free RAM, never the agent CLI; agents silent for over 60 minutes are suspects; servers left behind by finished agents get killed. `node-memory-watch.ps1` got `-Protect` (default `claude`) so it never kills the agent CLI, and a 95% default.
+- README, ADAPT.md, AGENTS.md, llms.txt and the plugin manifest (0.4.0) cover all of the above.
+
+**Why:** with the one-slot rule in place, a single `next build` still took the laptop to 2% free RAM: 19 workers at 0.75 GB each. `NODE_OPTIONS` caps one heap, not a tree, so the only real fix was a ceiling on the whole tree plus fewer workers. Then agents ran about 15 production builds in one night just to take screenshots, and held the slot for screenshot runs and proofs, so trains waited half an hour behind a screenshot. Four trains queued at once tripled the CI runs. And every new worktree regenerated the same ORM client from the same schema. Each rule here is one of those nights, made boring.
+
 ## 2026-10-22: findable and installable as a Claude Code plugin
 
 **What:** a Claude Code plugin marketplace (`.claude-plugin/marketplace.json` + `plugin.json`, checked with `claude plugin validate`), so `/plugin marketplace add jayjayholic/jstack` and `/plugin install jstack@jstack` work. When installed that way the skills read `~/.jstack/config.sh` for anything still in placeholders. New `AGENTS.md` (notes for coding agents, per agents.md) and `llms.txt` (a short doc index, per llmstxt.org). The README now says in its first lines what this is and who it's for, with the install lines and a few badges. Skill descriptions name the things people actually search for (parallel agents, git worktrees, merge train, out-of-RAM builds, LCP/INP/TTFB). The GitHub repo got a description and topics. `.gitattributes` keeps the scripts LF on Windows checkouts.

@@ -1,8 +1,8 @@
 {
   "name": "jstack",
   "displayName": "jstack",
-  "version": "0.3.0",
-  "description": "Claude Code skills for running many parallel AI coding agents on one machine: /train ships all ready git worktree branches with one build and one PR, a machine-wide heavy-job lock keeps builds from eating all your RAM, and /optimize measures and proves web performance fixes with A/B stats.",
+  "version": "0.4.0",
+  "description": "Claude Code skills for running many parallel AI coding agents on one machine: /train ships all ready git worktree branches with one build and one PR, /train-queue shows where everything is, a machine-wide heavy-job lock and a hard RAM ceiling keep builds from eating all your RAM, and /optimize measures and proves web performance fixes with A/B stats.",
   "author": {
     "name": "João Lima",
     "url": "https://github.com/jayjayholic"
