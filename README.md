@@ -1,8 +1,8 @@
 # jstack
 
-My setup for shipping with a bunch of AI coding agents in parallel, on one laptop, without the laptop dying. It's a Claude Code skill (`/train`), three shell scripts and a list of rules. Every rule is there because something broke.
+My setup for shipping with a bunch of AI coding agents in parallel, on one laptop, without the laptop dying. It's a Claude Code skill (`/train`), a handful of scripts and a list of rules. Every rule is there because something broke.
 
-> Made by João Lima ([@LimaTechnologies](https://github.com/LimaTechnologies)) while building [Hakutaku](https://hakutaku.ai). Most of the rules were written by the agents themselves, right after they broke something.
+> Made by João Lima ([@jayjayholic](https://github.com/jayjayholic)) while building [Hakutaku](https://hakutaku.ai). Most of the rules were written by the agents themselves, right after they broke something.
 
 ## The short version
 
@@ -62,14 +62,17 @@ If there's only one branch and nothing else going on, skip the train and open a 
 ## What's in the repo
 
 ```
+ADAPT.md                 step by step guide (for your agent, or you) to fit jstack to your stack
 skills/train/
   SKILL.md               the /train skill: when to train, how to brief agents, the gates, and the Lessons log
   orchestrator-brief.md  the prompt for the one orchestrator agent
   worker-clause.md       the block pasted into every coding agent's prompt (build rules + READY format)
 tools/
+  config.example.sh      every setting in one file; copy it to ~/.jstack/config.sh
+  jstack-env.sh          loads your config and fills in defaults (the other scripts source it)
   heavy-lock.sh          ONE machine-wide slot for heavy jobs (build, typecheck, push) + server_wait
-  coordinator-build.sh   one capped build at a time, waits for free RAM
-  train.sh               assemble / build / ship a train
+  coordinator-build.sh   one build at a time, waits for free RAM
+  train.sh               assemble / build / ship a train, merges only when every check is green
   new-worktree.sh        one worktree per agent, like a fresh clone (copies the local env files git doesn't carry)
   node-memory-watch.ps1  the bouncer: when RAM hits 98%, kills the fattest node/bun process (over 5 GB) before Windows does something worse
 ```
@@ -78,44 +81,49 @@ Every agent gets its own worktree from `new-worktree.sh`, so eight of them can e
 
 ## Quickstart
 
+The lazy way: clone it and tell your coding agent "follow ADAPT.md in jstack for my project at <path>". It detects your stack, fills in the settings, installs everything and checks it works. That's what I'd do.
+
+The hands-on way:
+
 1. Clone it.
    ```bash
-   git clone https://github.com/LimaTechnologies/jstack.git
+   git clone https://github.com/jayjayholic/jstack.git
    ```
-2. Install the skill for Claude Code. This is user-wide; for a single project use `<your-repo>/.claude/skills/` instead.
+2. Copy the tools somewhere that won't move, and make your config.
+   ```bash
+   mkdir -p ~/jstack-tools ~/.jstack && cp jstack/tools/* ~/jstack-tools/
+   cp ~/jstack-tools/config.example.sh ~/.jstack/config.sh   # then edit it
+   ```
+3. Install the skill for Claude Code. This is user-wide; for a single project use `<your-repo>/.claude/skills/` instead.
    ```bash
    mkdir -p ~/.claude/skills && cp -r jstack/skills/train ~/.claude/skills/
    ```
-3. Copy the tools somewhere that won't move, then fix the paths (see the next section).
-   ```bash
-   mkdir -p ~/jstack-tools && cp jstack/tools/*.sh ~/jstack-tools/
-   ```
-4. Paste `skills/train/worker-clause.md` into every coding agent's prompt. Give `skills/train/orchestrator-brief.md` to the one agent that runs trains.
-5. Use the lock yourself too.
+4. Fill the `{{PLACEHOLDERS}}` in the installed skill files (the table in [ADAPT.md](ADAPT.md) says what each one is). When `grep -rn "{{" ~/.claude/skills/train` prints nothing, you're done.
+5. Paste `worker-clause.md` into every coding agent's prompt. `/train` hands `orchestrator-brief.md` to the one agent that runs trains.
+6. Use the lock yourself too.
    ```bash
    source ~/jstack-tools/heavy-lock.sh
-   heavy_acquire my-build; bun run build; heavy_release   # anything heavy
+   heavy_acquire my-build; npm run build; heavy_release   # anything heavy
    server_wait 8                                          # before a server: no build running and 8 GB free
    ```
-6. When two or more branches are ready, type `/train`.
+7. When two or more branches are ready, type `/train`.
 
-## Change my paths to yours
+## Settings
 
-These are my real scripts, so my machine is all over them. Fix these first.
+The scripts don't have my paths in them anymore. Every setting is an env var with a default, and `~/.jstack/config.sh` is where you set yours. The skill files use `{{PLACEHOLDERS}}` for the same values, since they're prompts and not scripts. The full list, with how to find each value, is in [ADAPT.md](ADAPT.md).
 
-| What | Where | Mine |
-|---|---|---|
-| Lock directory (the heavy slot) | `HEAVY_SLOTS` in `heavy-lock.sh` and `coordinator-build.sh` | `/c/dev/hakutaku/.heavy-lock` |
-| Where `heavy-lock.sh` gets sourced from | `coordinator-build.sh`, `SKILL.md`, `worker-clause.md`, `orchestrator-brief.md` | `/c/dev/hakutaku/heavy-lock.sh` |
-| Tools directory | `train.sh`, `SKILL.md`, `orchestrator-brief.md` | `/c/dev/hakutaku/tools/` |
-| Repo root and train worktree | `R` and `TRAIN_DIR` in `train.sh` | `/c/dev/hakutaku/dashboard`, `.worktrees/coordinator-train` |
-| Integration branch | `train.sh` and the skill files | `stage` |
-| Build command | `coordinator-build.sh` | `bun install`, `bun run db:generate`, `next build --turbopack` |
-| Free RAM check | `server_wait` in `heavy-lock.sh` | PowerShell, since I'm on Windows. Use `free -g` or `vm_stat` elsewhere |
-| Base branch and local files for worktrees | `--base` default and `LOCAL_FILES` in `new-worktree.sh` | `origin/stage`, `.env.keys .env.local .env.docker` + `.vercel/` |
-| Watcher limits | `LimitGB` / `PressurePercent` in `node-memory-watch.ps1` | 5 GB per process, 98% RAM. Windows only; run it in a background PowerShell |
+My own config, as an example:
 
-The skill files also mention rules from my own repo, like the PR template and `CLAUDE.md`. Keep the ideas and swap in your own.
+| Setting | Mine |
+|---|---|
+| `JSTACK_LOCK_DIR` | a folder next to my repos, shared by every agent |
+| `JSTACK_INTEGRATION_BRANCH` | `stage` (production only gets release PRs) |
+| `JSTACK_INSTALL_CMD` / `JSTACK_CODEGEN_CMD` | `bun install` / `bun run db:generate` |
+| `JSTACK_TYPECHECK_CMD` | `bun run typecheck` |
+| `JSTACK_BUILD_CMD` | `rm -rf .next && bunx next build --turbopack` |
+| `JSTACK_LOCAL_ENV_FILES` / `JSTACK_LOCAL_DIRS` | my env files / `.vercel` |
+| `JSTACK_MIN_FREE_GB` | `8` |
+| `node-memory-watch.ps1` | `-LimitGB 5 -PressurePercent 98`, running in a background PowerShell |
 
 ## Rules that exist because something broke
 
@@ -134,10 +142,10 @@ The full list with dates is in the Lessons section of `skills/train/SKILL.md`. T
 ## FAQ
 
 **Do I need Next.js?**
-No. The point is one heavy slot and one build for many branches. Put your own expensive step in `coordinator-build.sh`.
+No. The point is one heavy slot and one build for many branches. Set `JSTACK_BUILD_CMD` to whatever your expensive step is. Cargo, Gradle, Docker builds, all welcome. They eat RAM too.
 
 **Does it run on macOS or Linux?**
-The lock is plain bash and `mkdir`. Only the free RAM check in `server_wait` calls PowerShell, so swap that one line.
+Yes. The lock is plain bash and `mkdir`, and the free RAM check reads `/proc/meminfo` on Linux, `vm_stat` on macOS and PowerShell on Windows. The memory watcher is the only Windows-only piece.
 
 **What if one branch breaks the train?**
 The orchestrator throws the whole train away, pushes nothing, finds the branch the error points to, tells its agent, and rebuilds without it. A bad branch slows the train down but never ships.
