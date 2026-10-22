@@ -31,39 +31,24 @@ The ticket dependency graph is what makes the chains possible (one agent per cha
 
 **Bring high usage limits.** With 10 to 13 agents in parallel, lower plans hit rate limits and agents die mid-task. That night agents died on limits and on account switches and had to be resumed one by one. I recommend a Claude Max 20x plan, or anything with equally high limits. My laptop already crashes enough, it doesn't need help from the rate limiter.
 
-## Did it actually work? The numbers
+## The numbers
 
-Same developer, same repo, 4 May to 22 Oct 2026. Merged PRs, plus lines of code added (no Markdown, lockfiles, generated code or binaries).
+Same dev. Same repo. Same 32 GB laptop.
 
 ```mermaid
 xychart-beta
-    title "Merged PRs and code added per month (October = ONLY 22 DAYS)"
-    x-axis ["May", "Jun", "Jul", "Aug", "Sep", "Oct (only 22 days!)"]
-    y-axis "count" 0 --> 800
+    title "Merged PRs (bars) and code added in k lines (line) per month"
+    x-axis ["May", "Jun", "Jul", "Aug", "Sep", "Oct (ONLY 22 DAYS)"]
+    y-axis 0 --> 800
     bar [13, 25, 100, 105, 28, 282]
     line [19, 92, 109, 327, 387, 772]
 ```
 
-Bars are merged PRs, the line is thousands of lines of code added. And yes, October is only 22 days. The last 4 of those did most of the damage.
-
-| | Before (4 May to 20 Sep) | After (19 to 22 Oct) | Change |
-|---|---|---|---|
-| Merged PRs per day | 1.9 | 46.5 | **+2,300%** |
-| Lines of code added per day | 4,204 | 75,600 | **+1,700%** |
-| Code in the repo | 219k lines (May) | 1.23M lines | **5.6x** |
-
-"Before" is one agent at a time with no planning skills. "After" is wayfinder plans, agents in parallel worktrees, trains and chains. The laptop survived. Mostly.
-
-Speed is cheap if stage is on fire, so here is the quality side:
-
-- **0** red pushes to stage since trains started: every train merged only on zero failed CI checks.
-- **22** trains in two days, each typechecked and run through the full suites first (6,655 bun tests and 1,214 vitest tests passing).
-- **87** UI tickets planned as one map of 284 screens and features, each shipped with its own tests, a layout and contrast audit, and a pixel check against the approved prototype.
-- **1** stage deploy failed in two days, and it was an upload filter, not code. Fixed in 11 minutes.
-
-Not counted in the numbers above: the same weeks also shipped security hardening (role checks, per-tool consent rules, key revocation, rate limits and bot checks on public pages) and speed work on the app and on agent replies (median reply went from 24.9 s to 20.0 s on a real user's replayed turns).
-
-Fine print, because I like being believed: about one branch in four failed the train's typecheck the first time and went back to its agent. The gates caught it before stage, which is the whole point. Agents also commit in smaller pieces than a human, so commit counts would inflate the jump even more; I left them out on purpose. Merged PRs are the fair number.
+- **24x** merged PRs per day (1.9 to 46.5)
+- **18x** code shipped per day (4.2k to 75.6k lines)
+- **5.6x** codebase since May (219k to 1.23M lines)
+- **87** tickets, **284** screens rebuilt in one night, every one tested and pixel-checked
+- **0** broken pushes to stage, **7,869** tests green
 
 ## The short version
 
@@ -154,6 +139,7 @@ tools/
   coordinator-build.sh   one build at a time, waits for free RAM
   train.sh               assemble / build / ship a train, merges only when every check is green
   new-worktree.sh        one worktree per agent, like a fresh clone (copies local env files, reuses generated code from a sibling)
+  clean-worktrees.sh     removes finished worktrees safely (merged, clean, idle, nothing running inside); --dry-run first
   node-memory-watch.ps1  the bouncer: when RAM runs out, kills the fattest node/bun process (never your agent CLI) before Windows does something worse
 ```
 

@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: the numbers, and worktree cleanup
+
+**What:** a short numbers section in the README with a monthly chart GitHub draws itself, and `tools/clean-worktrees.sh`, which removes finished worktrees only when the branch is merged, nothing is uncommitted, nothing runs inside and nothing changed in the last hour.
+
+**Why:** people asked if it actually works. And one night of parallel agents left 275 worktrees on the disk.
+
 ## 2026-10-22: the planning skills ship with jstack
 
 **What:** `/grill-me`, `/grilling` and `/wayfinder` (plus the four skills wayfinder calls) are now in `skills/`, copied as-is from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT, licence file in each folder), so `/plugin install` brings them too. `/simplify` gets `skills/simplify/README.md` instead of a copy: it's built into Claude Code and its licence doesn't allow redistributing it, and you already have it anyway. README, HOW-I-WORK.md and AGENTS.md now point at the in-repo copies.
