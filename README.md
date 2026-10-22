@@ -4,6 +4,8 @@ My setup for shipping with a bunch of AI coding agents in parallel, on one lapto
 
 > Made by João Lima ([@jayjayholic](https://github.com/jayjayholic)) while building [Hakutaku](https://hakutaku.ai). Most of the rules were written by the agents themselves, right after they broke something.
 
+Curious how the rest of the work happens before a branch ever boards a train? That's in [HOW-I-WORK.md](HOW-I-WORK.md).
+
 ## The short version
 
 Eight agents finish their branches at the same time. If each one opens its own PR, that's eight builds and eight CI runs. My laptop gives up around build three.
@@ -63,10 +65,13 @@ If there's only one branch and nothing else going on, skip the train and open a 
 
 ```
 ADAPT.md                 step by step guide (for your agent, or you) to fit jstack to your stack
+HOW-I-WORK.md            the rest of my workflow: grilled plans, two-arm research, prototypes, A/B everything
 skills/train/
   SKILL.md               the /train skill: when to train, how to brief agents, the gates, and the Lessons log
   orchestrator-brief.md  the prompt for the one orchestrator agent
   worker-clause.md       the block pasted into every coding agent's prompt (build rules + READY format)
+skills/optimize/
+  SKILL.md               the /optimize skill: the speed agent. Measures the built app and staging, fixes the top cost, proves it with A/B stats
 tools/
   config.example.sh      every setting in one file; copy it to ~/.jstack/config.sh
   jstack-env.sh          loads your config and fills in defaults (the other scripts source it)

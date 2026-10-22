@@ -93,3 +93,30 @@ Run each check and fix what fails.
 - [ ] A worktree comes out ready: `bash ~/jstack-tools/new-worktree.sh jstack-smoke-test`, check the local env files were copied, then `git -C <repo> worktree remove <path>` and `git -C <repo> branch -D jstack-smoke-test`.
 - [ ] The build runs inside the slot: `bash ~/jstack-tools/coordinator-build.sh <a worktree>` prints `PASS`.
 - [ ] Tell the human what was filled in, especially anything you guessed.
+
+## Extra: the /optimize skill
+
+`skills/optimize/SKILL.md` is the speed agent: it measures the built app and staging, ranks what costs the user the most time, fixes the top items and proves each fix with interleaved A/B runs. It reuses the train settings above (`{{JSTACK_TOOLS}}`, `{{BUILD_CMD}}`, `{{TYPECHECK_CMD}}`, `{{TEST_CMD}}`, `{{INSTALL_CMD}}`, `{{CODEGEN_CMD}}`, `{{INTEGRATION_BRANCH}}`, `{{PR_TEMPLATE}}`) plus these:
+
+| Placeholder | What it means | How to find it | Example |
+|---|---|---|---|
+| `{{APP_URL}}` | Staging (or preview) URL to measure | The deploy config or the latest deployment of the integration branch | `https://staging.example.com` |
+| `{{MAIN_ROUTE}}` | The page measured when nobody says what's slow | The app's main screen after sign-in | `/app` |
+| `{{SESSION_FILE}}` | Stored signed-in browser session for staging | Ask the human to sign in once in a persistent browser profile and save its state (Playwright `storageState`) | `$HOME/.jstack/staging-session.json` |
+| `{{LOCAL_SESSION_CMD}}` | How to get a session for a test user on the local build | The repo's test helpers or seed scripts; ask if none | `npm run test:session -- --out .auth/session.json` |
+| `{{SERVER_CMD}}` | Starts the production build locally | `start` script in `package.json` | `npm run start -- -p 3141` |
+| `{{PROFILE_SCRIPT}}` | Measures one surface once and writes JSON with the fields in the skill's table | Repo `scripts/perf/` if it exists, else write one (below) | `node scripts/perf/measure-load.mjs` |
+| `{{SUITE_SCRIPT}}` | Runs the profile script over every scenario N times | Same | `bash scripts/perf/suite.sh` |
+| `{{AB_SCRIPT}}` | Interleaved A/B: before and after builds in ABAB blocks, one server at a time | Same | `bash scripts/perf/ab-blocks.sh` |
+| `{{COMPARE_SCRIPT}}` | Summaries (n, median, p75, p95) and the before/after table with Hodges-Lehmann 95% CI and Cliff's delta | Same | `node scripts/perf/compare-runs.mjs` |
+| `{{BUNDLE_BUDGET_CMD}}` | First-load JS per route, checked against a budget file | Repo scripts; Next.js prints first-load JS in the build output | `npm run perf:budget` |
+| `{{BUNDLE_ANALYZE_CMD}}` | What's inside the bundle, per route | `@next/bundle-analyzer`, `next experimental-analyze` (Next 16), `source-map-explorer`, `vite-bundle-visualizer` | `npx next experimental-analyze --output` |
+| `{{PLAYBOOK_FILE}}` | Where runs write baselines, fixes and dead ends | Pick a docs path | `docs/perf/optimize-playbook.md` |
+
+If the repo has no perf scripts yet, the agent writes them before the first run. The minimum that works:
+
+- **Profile script:** Playwright opens the URL with the session, records `PerformanceNavigationTiming` (TTFB, FCP), LCP and Long Animation Frames through `PerformanceObserver`, every `fetch`/XHR with start and duration (for the waterfall), JS bytes from resource timing, and the time until each milestone selector appears. For a click: Event Timing duration (INP) and the time until the target selector appears. It also writes CPU use and free memory (`jstack_free_gb` from `heavy-lock.sh`).
+- **A/B script:** for each block, move the arm's build into place, start `{{SERVER_CMD}}`, wait for it, run the suite, stop the server. Order A B A B. Refuse a busy port.
+- **Compare script:** per metric, the median and p75 of each arm, the Hodges-Lehmann shift with a 95% interval, a Mann-Whitney p value and Cliff's delta; label `lower` only when the interval excludes 0 and |δ| ≥ 0.147.
+
+Install it like the train skill: `cp -r <jstack>/skills/optimize ~/.claude/skills/`, fill the placeholders in the installed copy, then `grep -rn "{{" ~/.claude/skills/optimize` must print nothing.
