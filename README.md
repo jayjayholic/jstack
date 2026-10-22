@@ -22,7 +22,7 @@ Curious how the rest of the work happens before a branch ever boards a train? Th
 
 Eight agents finish their branches at the same time. If each one opens its own PR, that's eight builds and eight CI runs. My laptop gives up around build three.
 
-So the agents don't build anything. Ever. They run their own tests, screenshot their UI on a component gallery and say they're ready. Then one orchestrator agent merges all the ready branches together, typechecks once, opens one PR and merges it if nothing is red. If your staging deploy runs a real build, that deploy is the build check, and the laptop only builds when the deploy fails.
+So the agents don't build anything. Ever. They run their own tests, one typecheck in a small lane of their own, screenshot their UI on a component gallery and say they're ready. Then one orchestrator agent merges all the ready branches together, typechecks once, opens one PR and merges it if nothing is red. If your staging deploy runs a real build, that deploy is the build check, and the laptop only builds when the deploy fails.
 
 Builds and full typechecks share one slot for the whole machine. Only one of them runs at a time, and it runs under a hard RAM ceiling, so the worst case is a dead build instead of a dead laptop.
 
@@ -67,9 +67,9 @@ Then I fixed all that, ran one single build alone, and free RAM still hit 2%. Tu
 ```
 
 1. Agents work in parallel, each in its own worktree. They check their work with typecheck and their own tests. They never run a build just to verify.
-2. When an agent is done it sends `READY FOR BUILD: <worktree> - <title>` to the orchestrator.
-3. The orchestrator merges every ready branch onto a fresh `stage` in one train worktree, runs one typecheck (plus one build if nothing else builds it), opens one PR, merges it only if zero checks failed, and tells me when the stage deploy is live.
-4. While one train sits in CI, the next one boards. Two trains max: one moving, one boarding. More than that and you're just running a parking lot.
+2. When an agent is done it sends `READY FOR BUILD: <worktree> - <title> - typecheck green at <sha>` to the orchestrator. No sha, no boarding.
+3. The orchestrator merges every ready branch onto a fresh `stage` in one train worktree, runs one quick incremental typecheck (plus one build if nothing else builds it), opens one PR, merges it only if zero checks failed, and tells me when the stage deploy is live. A branch that breaks the typecheck gets dropped and sent back with its errors. The train doesn't wait for it, the fix catches the next one.
+4. While one train sits in CI, the next one boards, and it's already merged and typechecked by the time the first one lands. Two trains max: one moving, one boarding. More than that and you're just running a parking lot.
 
 One build can check ten branches. That's why this works on a laptop.
 
@@ -162,13 +162,18 @@ The full list with dates is in the Lessons section of `skills/train/SKILL.md`. T
 
 - One heavy slot for the whole machine. Builds and full typechecks wait for the same lock. Before this, the train had its own lock and the agents had two more, so three Turbopack builds ran at once and the PC crashed. Twice.
 - Only builds and typechecks hold the slot. Agents grabbed it for screenshot runs and "proofs" and trains sat in line for half an hour behind a screenshot. Servers and proofs use `server_wait`.
-- Agents never build. They did about 15 production builds in one night just to take screenshots. Screenshots now happen on a component gallery that starts in seconds, and live tests happen on staging after the merge.
+- Agents never build. They did about 15 production builds in one night just to take screenshots. Screenshots now happen on a component gallery: 39 seconds and under 1 GB, against 1.5 to 8 minutes and 6.5 to 9 GB for the build it replaced. Live tests happen on staging after the merge.
+- Typecheck before READY, in a lane. When agents skipped it, 27% of branches broke the train. Now each one runs one typecheck in `tc_run`, two at a time max, because a `tsc` peaks around 5 GB and four in parallel took my laptop to 0.3 GB free. It survived. Barely. With feelings.
+- Drop, don't fix. A branch that breaks the train gets bounced with its error lines and rides the next one. Fixing it inside the train held every other branch hostage, about 3 times the waiting.
 - Cap the build's workers and put a ceiling on the whole tree. One build with 19 workers took the laptop to 2% free RAM all by itself. `CIRCLE_NODE_TOTAL=5` for Next.js, `heavy_capped` for everything.
 - Build only when the deploy fails. Staging builds every merge anyway. The laptop reproduces it once, capped, only when that deploy goes red.
 - Two trains max. I once had four trains queued behind each other. That's not a train system, that's a traffic jam with extra steps.
-- Delete the pre-push hook if CI already runs the same thing. Mine ran a 4 GB typecheck on every push, which made `git push` a heavy job. Now a push is just a push.
-- Codegen once per schema. New worktrees copy the generated client from a sibling with the same schema hash instead of regenerating it for the 30th time that day.
-- The watch: every 15 minutes the main session checks RAM (below 5% free it kills the heaviest build, never the agent CLI), agents silent for over an hour, and servers left behind by agents that already finished.
+- Delete the pre-push hook if CI already runs the same thing. Mine ran a 4 GB typecheck on every push, 10 to 15 minutes each, which made `git push` a heavy job. Now a push is just a push.
+- One agent per dependency chain, not per ticket. It builds the chain's tickets in order on one stacked branch and says READY after each. Merged throughput went from about 3 tickets an hour to about 27 the same night. To be fair, part of that was a pile of parallel work landing at once, so the steady number is lower. Still the best thing I did all night.
+- Deploy-only failures exist. An unanchored `docs/` in `.vercelignore` stripped every `docs` folder in the tree, `src/**/docs` included, and the deploy failed while every local check was green. Anchor ignore paths to the root (`/docs/`). The deploy is the check for this kind of thing, no local build would have caught it.
+- Gates before work. A UI audit added halfway through the night sent every READY branch back for rework. Write down what "done" means before the first agent starts.
+- Codegen once per schema. New worktrees copy the generated client from a sibling with the same schema hash instead of regenerating it for the 30th time that day: 519 seconds down to about zero. Only from a sibling where every generated client exists and isn't empty, though. A copy grabbed mid-codegen had the right hash, half the files, and 80 type errors.
+- The watch: every 15 minutes the main session checks RAM (below 5% free it kills the heaviest build, never the agent CLI), agents silent for over an hour, and servers or scripts left behind by agents that already finished. Only `running` agents count against the cap; waiting ones are parked. Agents commit as they go. And the rules stay frozen while you measure, because I changed them five times in one night and then had no idea which change helped.
 - No servers next to a build. `server_wait 8` waits until no build holds the slot and 8 GB is free before any `next start`. A "screenshot build" hit 7.7 GB while another agent had a server up, and free RAM dropped to 1.8 GB.
 - The stale slot race. The lock treated a slot as abandoned after 15 minutes, but a train build can take longer, so a second build started next to it. Now it's 45 minutes, and if the owner file vanishes the slot is not treated as stale.
 - Merge only with zero failed checks. My merge script didn't stop on red once and merged a PR with a failing job. It was a network flake that time. I got lucky.
@@ -177,6 +182,15 @@ The full list with dates is in the Lessons section of `skills/train/SKILL.md`. T
 - Never `git stash`. All worktrees share one stash stack, and one agent popped another agent's changes. Use WIP commits.
 - A hard crash can wipe `.git/config`. Keep `[core]`, add the remote back from `FETCH_HEAD`, restore branch tracking, run `git fsck`.
 - Rate limits hit every agent at the same moment. Resume each one after, and the orchestrator rebuilds whatever got cut off.
+
+## Measure it
+
+Two formulas I should have used on day one.
+
+- **Little's law, L = λ·W.** Work in flight equals merge rate times lead time. One night I merged 2 tickets an hour with a lead time under 2 hours, so about 4 tickets should have been in flight. There were about 20. That means new work was waiting around 10 hours. More agents didn't make it faster, they made the line longer. Starting less made it faster.
+- **Clean batch, (1 - p)^n.** With p the chance one branch breaks the train and n branches per train. At p = 0.27, a train of 8 is clean 8% of the time. At p = 0.05 it's 66%. That one table is why agents typecheck before READY, and why a broken branch gets dropped instead of fixed in place.
+
+And CI was busy only a third of the night, so CI was never the bottleneck. My laptop and my enthusiasm for starting things were. Section 7 of the train skill has the details.
 
 ## FAQ
 

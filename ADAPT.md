@@ -52,6 +52,8 @@ Run these from the target project's root (call it `<repo>`) and write down the a
 | (none) | `JSTACK_BUILD_ENV` | Env vars for capped builds and typechecks, space separated. Use it to cap the build tool's workers | Find how your build tool picks its worker count (in its source, not a blog). Next.js: CPU count minus 1, or `CIRCLE_NODE_TOTAL` minus 1 | `CIRCLE_NODE_TOTAL=5` |
 | (none) | `JSTACK_TRAIN_BUILD` | `local`: the train builds before the PR. `deploy`: the integration deploy is the build check, and a local build only reproduces a failed deploy | `deploy` only if merging to the integration branch runs a real build somewhere (step 1.7) | `deploy` |
 | (none) | `JSTACK_CODEGEN_INPUTS` | Paths in the repo the generated code depends on (git tree hashes are compared) | The codegen tool's input: schema folder, plus the lockfile (the generator version matters) | `prisma bun.lock` |
+| (none) | `JSTACK_CODEGEN_REQUIRED` | Generated files or folders that must exist and be non-empty in a sibling (and in the copy) before reuse counts. Catches a sibling caught mid-codegen | Every separate client your codegen writes (ORM client, typed SQL, API types) | `.generated/client .generated/sql` |
+| (none) | `JSTACK_TC_SLOTS` / `JSTACK_TC_CAP_GB` | Typecheck lane for worker agents (`tc_run`): how many run at once, and the RAM ceiling for each | One typecheck's peak (watch it once), times the slots, must fit next to the heavy slot. Default 2 and 8 | `2` / `8` |
 | (none) | `JSTACK_CODEGEN_REUSE_PATHS` | Generated folders a new worktree may copy from a sibling with identical inputs instead of running codegen | Where `{{CODEGEN_CMD}}` writes. Leave empty to always run codegen | `node_modules/.prisma` |
 
 Optional env vars with good defaults: `JSTACK_TRAIN_DIR` (train worktree, default `<worktrees>/train`), `JSTACK_FORMAT_CMD` (formatter run before a train PR), `JSTACK_HEAP_MB` (Node heap cap inside the slot, default 4096), `JSTACK_STALE_MINUTES` (default 45, keep it above your longest build), `JSTACK_CAP_GB` (default 12), `JSTACK_TRAIN_BUILD` (default `local`), `JSTACK_FREE_GB_CMD`, `JSTACK_CONFIG` (path of the config file).
@@ -84,6 +86,7 @@ About the RAM ceiling: on Windows `heavy_capped` uses a Job Object (`run-capped.
 - Put the filled `worker-clause.md` at the end of every coding agent's prompt. If the project has a CLAUDE.md or AGENTS.md, add one line there: "When a train runs, follow ~/.claude/skills/train/worker-clause.md".
 - The filled `orchestrator-brief.md` is the prompt for the one orchestrator agent. `/train` launches it.
 - Pre-push hooks: if one only repeats what CI runs (typecheck, lint, tests), suggest deleting it to the human. While one exists, a push is heavy, and `train.sh` pushes inside the slot.
+- Worker agents typecheck through `tc_run "<typecheck>"` before READY, never outside the lane. If your typecheck tool has an incremental mode, use it in `JSTACK_TYPECHECK_CMD`: the train only needs cross-branch errors.
 - Wire the heavy commands through `heavy_capped` wherever humans or other scripts build: `heavy_acquire <name>; heavy_capped "<build>"; heavy_release`.
 - The main session runs the watch from section 6 of the train skill (RAM, build workers, silent agents, orphans, the slot).
 - Windows only, optional: start the memory watcher in a background PowerShell: `powershell -NoProfile -File "$HOME/jstack-tools/node-memory-watch.ps1" -LimitGB 5 -PressurePercent 95`. Pick `LimitGB` a bit above your biggest normal build. `-Protect` (default `claude`) is a pattern for command lines that are never killed; set it to match your agent CLI.
@@ -101,6 +104,7 @@ Run each check and fix what fails.
   heavy_acquire test && ls "$JSTACK_LOCK_DIR" && heavy_release && [ ! -d "$JSTACK_LOCK_DIR" ] && echo slot-ok
   ```
 - [ ] `server_wait` returns at once when nothing holds the slot: `bash -c 'source ~/jstack-tools/heavy-lock.sh; server_wait 1 && echo server-wait-ok'`.
+- [ ] The typecheck lane runs: `bash -c 'source ~/jstack-tools/heavy-lock.sh; tc_run "echo lane-ok"'` prints `lane-ok` and leaves no `<lock dir>-tc-*` folder behind.
 - [ ] The RAM ceiling bites: `bash -c 'source ~/jstack-tools/heavy-lock.sh; JSTACK_CAP_GB=1 heavy_capped "node -e \"const a=[];for(;;)a.push(Buffer.alloc(1e8,1))\""'` fails with an allocation error (and prints `run-capped: ... peak` on Windows) instead of eating your RAM. On macOS it says "running uncapped": stop it with Ctrl+C.
 - [ ] A worktree comes out ready: `bash ~/jstack-tools/new-worktree.sh jstack-smoke-test`, check the local env files were copied, then `git -C <repo> worktree remove <path>` and `git -C <repo> branch -D jstack-smoke-test`.
 - [ ] The build runs inside the slot: `bash ~/jstack-tools/coordinator-build.sh <a worktree>` prints `PASS`.

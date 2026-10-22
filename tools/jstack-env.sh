@@ -30,6 +30,9 @@ JSTACK_BUILD_ENV="${JSTACK_BUILD_ENV:-}"
 JSTACK_TRAIN_BUILD="${JSTACK_TRAIN_BUILD:-local}"
 JSTACK_CODEGEN_INPUTS="${JSTACK_CODEGEN_INPUTS:-}"
 JSTACK_CODEGEN_REUSE_PATHS="${JSTACK_CODEGEN_REUSE_PATHS:-}"
+JSTACK_CODEGEN_REQUIRED="${JSTACK_CODEGEN_REQUIRED:-}"
+JSTACK_TC_SLOTS="${JSTACK_TC_SLOTS:-2}"
+JSTACK_TC_CAP_GB="${JSTACK_TC_CAP_GB:-8}"
 
 # Free physical RAM in whole GB. Linux reads /proc/meminfo (MemAvailable, or MemFree where that's missing, like
 # Git Bash on Windows), macOS vm_stat, Windows PowerShell. Set JSTACK_FREE_GB_CMD to any command that prints a

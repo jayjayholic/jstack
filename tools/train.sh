@@ -5,6 +5,9 @@
 #                                         then one typecheck, plus one local build when JSTACK_TRAIN_BUILD=local
 #                                         (with JSTACK_TRAIN_BUILD=deploy the integration deploy is the build check)
 #   train.sh assemble <wt1> <wt2> ...     merge only, no build
+#   train.sh board <wt1> ...              add branches to the train tree already assembled (continuous boarding), then
+#                                         typecheck the result. A worktree may be given as <wt>@<sha>: the sha from the
+#                                         READY line ("typecheck green at <sha>"). A head that moved past it is refused.
 #   train.sh typebuild                    typecheck + build of the tree already assembled
 #                                         (JSTACK_TRAIN_BUILD=local train.sh typebuild = the one capped repro build)
 #   train.sh shiptrain <branch> "<PR title>" <body-file>
@@ -53,9 +56,13 @@ fresh_train_tree() {
 }
 
 board() {
-  local wt b c
-  for wt in "$@"; do
+  local item wt sha b c
+  for item in "$@"; do
+    wt="${item%@*}"; sha=""; [ "$wt" != "$item" ] && sha="${item##*@}"
     b=$(git -C "$wt" branch --show-current)
+    if [ -n "$sha" ] && [ "$(git -C "$wt" rev-parse HEAD)" != "$(git -C "$wt" rev-parse "$sha" 2>/dev/null)" ]; then
+      echo "TYPECHECK-FIRST $b: head moved past $sha"; continue
+    fi
     if c=$(union_merge "$b"); then echo "TRAIN+ $b"; else echo "TRAIN-CONFLICT $b: $(echo $c)"; fi
   done
 }
@@ -131,6 +138,8 @@ case "$mode" in
     fresh_train_tree; board "$@"; build_tree ;;
   assemble)
     fresh_train_tree; board "$@" ;;
+  board)
+    cd "$T" || exit 1; board "$@"; typecheck_tree ;;
   typebuild)
     cd "$T" && build_tree ;;
   shiptrain)
@@ -162,5 +171,5 @@ case "$mode" in
       open_and_merge "$b" "$title" artifacts/pr-body.md
     done ;;
   *)
-    sed -n '2,12p' "$0"; exit 2 ;;
+    sed -n '2,15p' "$0"; exit 2 ;;
 esac

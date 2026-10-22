@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # One machine-wide slot for HEAVY jobs: builds and full typechecks (and `git push` only while a pre-push hook typechecks).
 # Usage: source "$JSTACK_TOOLS/heavy-lock.sh"; heavy_acquire <name>; heavy_capped "<heavy command>"; heavy_release
+# Worker agents typecheck in their own lane instead: tc_run "<typecheck command>" (JSTACK_TC_SLOTS parallel slots).
 # Before starting a server: server_wait [min_free_gb] (waits for a free slot and enough RAM).
 # Servers, screenshot runs, live proofs, tests and installs run WITHOUT the slot. heavy_acquire also caps the Node heap
 # (JSTACK_HEAP_MB); some bundlers (Turbopack) ignore that cap, which is why heavy_capped puts a hard RAM ceiling on
@@ -84,5 +85,24 @@ heavy_capped() {
       code=$? ;;
   esac
   rm -f "$script"
+  return $code
+}
+
+# Typecheck lane for worker agents: JSTACK_TC_SLOTS slots of their own (default 2), separate from the heavy slot, so a
+# pre-READY typecheck never queues behind the train and never piles up. Each run is capped at JSTACK_TC_CAP_GB.
+# A native tsc peaks around 5 GB; 4 parallel lanes took a 32 GB laptop to 0.3 GB free, 2 is the tested number.
+# Usage: source "$JSTACK_TOOLS/heavy-lock.sh"; tc_run "$JSTACK_TYPECHECK_CMD"
+tc_run() {
+  local cmd="${1:-$JSTACK_TYPECHECK_CMD}" slot="" s i code
+  while [ -z "$slot" ]; do
+    for i in $(seq 1 "$JSTACK_TC_SLOTS"); do
+      s="${JSTACK_LOCK_DIR}-tc-$i"
+      _stale "$s" && rm -rf "$s"
+      if mkdir "$s" 2>/dev/null; then echo "tc $(date)" > "$s/owner"; slot="$s"; break; fi
+    done
+    [ -z "$slot" ] && sleep 10
+  done
+  JSTACK_CAP_GB="$JSTACK_TC_CAP_GB" heavy_capped "$cmd"; code=$?
+  rm -rf "$slot"
   return $code
 }

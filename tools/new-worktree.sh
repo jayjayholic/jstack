@@ -49,7 +49,9 @@ done
 
 # Generated code depends only on its inputs. Each worktree set up here stamps the inputs its generated code was made
 # from. A sibling is reused only when its stamp, its current inputs (git tree hash, no uncommitted edits) and ours all
-# match, so a sibling whose inputs moved after its codegen is never copied.
+# match, so a sibling whose inputs moved after its codegen is never copied. A matching hash is not enough: a sibling
+# caught mid-codegen has the right stamp and half the output. So every path in JSTACK_CODEGEN_REQUIRED must exist and
+# be non-empty in the sibling, and again in our copy, or we fall back to codegen.
 inputs_key() {
 	local wt="$1" p key=""
 	for p in $JSTACK_CODEGEN_INPUTS; do
@@ -57,6 +59,13 @@ inputs_key() {
 		git -C "$wt" diff --quiet HEAD -- "$p" 2>/dev/null || return 1
 	done
 	echo "$key"
+}
+complete() { # $1 worktree: every required generated path exists and is non-empty
+	local p
+	for p in $JSTACK_CODEGEN_REQUIRED; do
+		if [ -d "$1/$p" ]; then [ -n "$(ls -A "$1/$p" 2>/dev/null)" ] || return 1
+		else [ -s "$1/$p" ] || return 1; fi
+	done
 }
 stamp_file() { echo "$(git -C "$1" rev-parse --absolute-git-dir)/jstack-codegen-key"; }
 write_stamp() { [ -n "$JSTACK_CODEGEN_INPUTS" ] && inputs_key "$dir" > "$(stamp_file "$dir")" || true; }
@@ -67,10 +76,15 @@ reuse_generated() {
 	while IFS= read -r cand; do
 		[ "$cand" -ef "$dir" ] && continue
 		ok=1; for p in $JSTACK_CODEGEN_REUSE_PATHS; do [ -e "$cand/$p" ] || ok=0; done
-		[ "$ok" = 1 ] || continue
+		[ "$ok" = 1 ] && complete "$cand" || continue
 		[ "$(cat "$(stamp_file "$cand")" 2>/dev/null)" = "$want" ] || continue
 		[ "$(inputs_key "$cand")" = "$want" ] || continue
 		for p in $JSTACK_CODEGEN_REUSE_PATHS; do mkdir -p "$(dirname "$dir/$p")" && cp -r "$cand/$p" "$dir/$p"; done
+		if ! complete "$dir"; then
+			echo "copy from $cand came out incomplete, running codegen instead" >&2
+			for p in $JSTACK_CODEGEN_REUSE_PATHS; do rm -rf "${dir:?}/$p"; done
+			return 1
+		fi
 		echo "reused generated code from $cand"
 		return 0
 	done < <(git -C "$REPO" worktree list --porcelain | sed -n 's/^worktree //p')

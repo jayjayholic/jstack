@@ -21,7 +21,7 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 
 ## Scripts
 
-- [heavy-lock.sh](https://github.com/jayjayholic/jstack/blob/main/tools/heavy-lock.sh): one machine-wide slot for builds and typechecks, server_wait, and heavy_capped (hard RAM ceiling for a build's whole process tree)
+- [heavy-lock.sh](https://github.com/jayjayholic/jstack/blob/main/tools/heavy-lock.sh): one machine-wide slot for builds and typechecks, server_wait, heavy_capped (hard RAM ceiling for a build's whole process tree) and tc_run (a capped typecheck lane for worker agents)
 - [run-capped.ps1](https://github.com/jayjayholic/jstack/blob/main/tools/run-capped.ps1): Windows Job Object memory cap behind heavy_capped
 - [train.sh](https://github.com/jayjayholic/jstack/blob/main/tools/train.sh): assemble, build and ship a train
 - [new-worktree.sh](https://github.com/jayjayholic/jstack/blob/main/tools/new-worktree.sh): one ready-to-run git worktree per agent

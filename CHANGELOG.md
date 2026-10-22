@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: typecheck lane, drop don't fix, chains, and "measure it"
+
+**What:**
+- `tc_run "<cmd>"` in `heavy-lock.sh`: a typecheck lane for worker agents, `JSTACK_TC_SLOTS` parallel slots (default 2), each run capped at `JSTACK_TC_CAP_GB` (default 8), separate from the train's heavy slot.
+- READY now ends with `typecheck green at <sha>`. New `train.sh board <wt>@<sha>` adds branches to the boarding train (continuous boarding) and refuses a head that moved past that sha.
+- The train is a quick merge: one incremental integration typecheck, and a failing branch is dropped and bounced with its errors, never fixed in place or waited on. The boarding train is assembled and typechecked while the other is in CI. Big trains run CI's suites locally before the push. The formatter runs in write mode, resolutions chain their check with `&&`, nobody commits in a worker's live worktree, and bounced branches get a `train/<date>-<n>-wip` base.
+- `new-worktree.sh` only reuses generated code from a sibling where every path in the new `JSTACK_CODEGEN_REQUIRED` exists and is non-empty, and checks the copy again, falling back to codegen if it's incomplete.
+- The train skill: one agent per dependency chain, gates written before work starts, a bigger watch (orphaned scripts, only `running` agents count, frozen rules, commit as you go), a new section 7 "Measure it" (Little's law and the clean-batch probability), and lessons for deploy-only failures (anchor `.vercelignore` paths), the pre-push hook and rule churn.
+- README, ADAPT.md, AGENTS.md, llms.txt and the plugin manifest (0.5.0) follow.
+
+**Why:** after the first batch of rules, 27% of branches still broke the train's typecheck, because agents skipped it and the orchestrator fixed their errors one by one. At that rate a train of 8 is clean 8% of the time. Four parallel typechecks took the laptop to 0.3 GB free, so the lane is capped at two. A reused generated folder copied mid-codegen failed a train with 80 errors. An unanchored `docs/` in `.vercelignore` broke a deploy that every local check called green. And one agent per ticket kept agents waiting on each other: one agent per chain took merged throughput from about 3 to about 27 tickets an hour in one night (part of that was a backlog landing together). Little's law then showed about 20 tickets in flight where 4 would do, so the fix was starting less, not adding agents.
+
 ## 2026-10-22: hard RAM ceiling, agents never build, /train-queue
 
 **What:**

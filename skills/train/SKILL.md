@@ -25,7 +25,7 @@ Launch ONE background agent with the brief in [orchestrator-brief.md](orchestrat
 
 The orchestrator ends when its queue empties. When a new branch is ready and the orchestrator has ended, launch a fresh one; never let worker agents push "just this once" instead.
 
-At most **two trains** exist at once: one in CI or merging, and ONE boarding. Every READY boards that one train until it leaves. The orchestrator keeps its queue in `{{QUEUE_FILE}}` (format in the `/train-queue` skill), so anyone can ask `/train-queue` where things are without poking the orchestrator.
+At most **two trains** exist at once: one in CI or merging, and ONE boarding. Every READY boards that one train until it leaves. The two are pipelined: the boarding train is merged and typechecked while the other is in CI, and it leaves the moment that one merges. Boarding is continuous: each READY merges in and gets an incremental typecheck right away (`train.sh board <wt>@<sha>`). The orchestrator keeps its queue in `{{QUEUE_FILE}}` (format in the `/train-queue` skill), so anyone can ask `/train-queue` where things are without poking the orchestrator.
 
 Done when: the orchestrator is running and you hold its id.
 
@@ -35,7 +35,11 @@ Each worker gets its own worktree (`bash {{JSTACK_TOOLS}}/new-worktree.sh <branc
 
 For an agent already running when the train starts, send it the same clause with SendMessage.
 
-Done when: no worker prompt says "run the full build", "push" or "merge".
+**One agent per dependency chain, not per ticket.** When tickets depend on each other (B needs A's code), give the whole chain to one agent: it builds them in order on one stacked branch and sends READY after each ticket. Independent chains run in parallel. One agent per ticket means agents waiting for each other's merges, or guessing at code that doesn't exist yet.
+
+**Gates first.** Write down what "done" means for a ticket (tests, screenshots, audits, numbers) before any agent starts. A gate added halfway forces rework on everything already READY.
+
+Done when: no worker prompt says "run the full build", "push" or "merge", and every ticket has its gates written down.
 
 ## 4. Gate by the owner's approval
 
@@ -68,10 +72,24 @@ While agents run, the main session keeps a periodic watch (for example `/loop 15
 - **Free RAM.** Below 5% free, kill the heaviest process tree yourself (usually a build and its workers) and tell its agent. Never kill the agent CLI itself: it is often a node process too, and killing it kills every agent at once. On Windows `node-memory-watch.ps1` does the same thing as a seatbelt, with the CLI protected.
 - **Build workers.** Count the build's worker processes. A build with a pile of workers is the RAM problem, not the number of agents.
 - **Silent agents.** An agent running over 60 minutes without a report is a suspect: check what it is doing (its last notification, the slot owner, its worktree), then nudge it or stop it.
-- **Orphans.** A server or browser whose agent has ended is an orphan; kill it. Otherwise its port stays busy and its RAM stays gone.
+- **Orphans.** A server, browser or script whose agent has ended is an orphan; kill it. Otherwise its port stays busy and its RAM stays gone. Agents that end don't clean up after themselves as often as you'd hope.
+- **Count only `running` agents.** Waiting or idle agents are parked and hold almost nothing; counting them against the cap starves the queue for no reason.
 - **The slot.** `{{LOCK_DIR}}/owner` says who holds it and since when. Anything holding it that is not a build or a typecheck gets told to let go.
 
+- **Freeze the rules while you measure.** Change one rule, then hold still long enough to see whether it helped (section 7). Five rule changes in one night means nobody can say which one worked.
+- **Commit as you go.** Crashes and rate limits hit everyone at once; whatever wasn't committed is gone.
+
 Done when: each round ends with RAM above 5% free, no orphans, and every silent agent checked.
+
+## 7. Measure it
+
+Two formulas tell you where the time goes. Track the inputs hourly (from `gh pr list`, the queue file and the agent list), not from memory.
+
+- **Little's law: L = λ·W.** L = tickets in flight (agents working plus READY not merged), λ = tickets MERGED per hour (not READY per hour), W = time from start to merged. It holds for long-run averages of a steady system. If L is far above λ·W, you are starting work faster than you finish it: queues grow and every new start makes the others wait. Example from the author's night: λ = 2/h and W = 1.75 h predict L = 3.5, but L was about 20, so new work was really waiting about 10 h. Starting less was the fastest way to finish more.
+- **Clean batch: P(clean) = (1 - p)^n.** p = chance one branch breaks the train's typecheck, n = branches per train. At p = 0.27 (measured, 3 of 11), a train of 8 is clean 8% of the time and a train of 11 3%; at p = 0.05 a train of 8 is clean 66% of the time. So push p down at the source (the typecheck lane before READY), and when a train fails, drop the branch the errors name instead of fixing it in place: with free attribution (a typecheck names the file), dropping cost about 130 waiting branch-minutes per failed train against about 430 for fixing in place. Bisection only pays when a failure can't be attributed (flaky or unnamed tests).
+- **Utilization.** If CI is busy a third of the night, CI is not your bottleneck. Look upstream: work in progress, p, the machine, and rule churn.
+
+Done when: you can say λ, W, L and p for the last few hours, and which rule change moved which of them.
 
 Tools behind the orchestrator: `{{JSTACK_TOOLS}}/train.sh` (`build <wt...>`, `shiptrain`), `{{JSTACK_TOOLS}}/coordinator-build.sh` (waits for {{MIN_FREE_GB}} GB free, one build at a time).
 
@@ -103,10 +121,21 @@ These come from the author's setup (Bun, Next.js with Turbopack, Windows, 32 GB,
 - **Build workers, not agents, ate the RAM (2026-10-22):** one `next build` spawned about 19 worker processes at 0.75 GB each (about 14 GB) and free RAM hit 2% with only that build in the slot. Next.js defaults its build workers to CPU count minus 1, and reads the count from `CIRCLE_NODE_TOTAL` when set, so `CIRCLE_NODE_TOTAL=5` gives 4 workers (check `cpus:` in `node_modules/next/dist/server/config-shared.js` for your version). Whatever your build tool is, cap its workers (`JSTACK_BUILD_ENV`) and check in its source that the cap really limits the count.
 - **A hard RAM ceiling for builds (2026-10-22):** `NODE_OPTIONS` caps one heap, not a tree of workers, and Turbopack ignores it anyway. `heavy_capped "<cmd>"` runs the command with a ceiling on the WHOLE process tree (`JSTACK_CAP_GB`, default 12): a Windows Job Object through `run-capped.ps1`, or `systemd-run --user --scope -p MemoryMax` on Linux (untested). Past the ceiling the build dies with an out-of-memory error instead of freezing the machine. The ceiling counts committed memory, so it reads higher than Task Manager: the author's build OOMed at 6 and 8 GB and lives happily at 12.
 - **Only builds and typechecks take the slot:** agents held it for screenshot runs and live proofs, which queued trains behind them for half an hour. Servers, screenshots and proofs use `server_wait` and never hold the slot.
-- **Agents never build (2026-10-22):** workers ran about 15 production builds in one night just to screenshot their screens, starving the one slot while the train needed about one per batch. UI screenshots and visual checks run on a fast component gallery (`{{GALLERY_CMD}}`, no production build); live tests run on the integration deploy after the merge. The single exception is a pre-merge proof that must run the branch's own built code: one build, capped, inside the slot.
-- **The full typecheck lives in the train:** workers prove their work with their tests and a check of what they touched; the one full typecheck runs once per train, inside the slot.
+- **Agents never build (2026-10-22):** workers ran about 15 production builds in one night just to screenshot their screens, starving the one slot while the train needed about one per batch. A fast component gallery (a Vite page rendering the components) starts in 39 s under 1 GB; the production build it replaced took 1.5 to 8 min and 6.5 to 9 GB. UI screenshots and visual checks run on a fast component gallery (`{{GALLERY_CMD}}`, no production build); live tests run on the integration deploy after the merge. The single exception is a pre-merge proof that must run the branch's own built code: one build, capped, inside the slot.
+- **Shift the typecheck left (replaces "the full typecheck lives in the train"):** skipping the worker typecheck pushed failures downstream into one serial orchestrator, and 27% of branches broke the train's typecheck. Now every worker runs ONE typecheck in the typecheck lane before READY (`tc_run`, at most 2 parallel: a native `tsc` peaks around 5 GB, and 4 parallel lanes took the 32 GB laptop to 0.3 GB free). READY must say `typecheck green at <sha>`, and a head that moved past that sha doesn't board.
+- **The train is a quick merge:** merge the ready branches, one incremental integration typecheck (about a minute) for cross-branch errors only, push, PR. A failing branch is dropped and bounced with its error lines, never fixed in the train and never waited on; its fix boards the next train. For big trains, run CI's own suites locally before pushing.
 - **Build only when the deploy fails (2026-10-22):** no local production build by default, trains included (`JSTACK_TRAIN_BUILD=deploy`). After each merge, the integration deploy is the build check. If it fails, reproduce it with ONE capped local build (`JSTACK_TRAIN_BUILD=local train.sh typebuild`), fix it, and ship the fix as the next train with that build green; other trains wait until the integration branch builds again. Only for repos whose integration branch really deploys with a build; without one, keep `local`.
 - **Max 2 trains:** stacking four trains behind each other tripled the CI runs and the wait. One in CI or merging, ONE boarding, and every READY boards that one.
 - **The agent cap is about heavy jobs, not agents:** after a 2% RAM scare the author cut agents from 13 to 6. Wrong lever: the build was the problem. Cap the build, keep the agents.
 - **Codegen once per schema, not once per worktree:** every new worktree regenerated the same ORM client from the same schema. `new-worktree.sh --install` now copies the generated folders (`JSTACK_CODEGEN_REUSE_PATHS`) from a sibling whose codegen inputs (`JSTACK_CODEGEN_INPUTS`, git tree hashes) match exactly, and runs codegen only when none does.
 - **UI branches board with proof:** a user-facing branch joins a train only with its screenshots, a layout and contrast (WCAG AA) check at zero findings, and the current UI unchanged with its feature flag off. "It's behind a flag" is not a reason to ship code nobody looked at.
+- **Deploy-only failures:** a local build can't see what the upload leaves out. Ignore files for the deploy upload (`.vercelignore` and friends) use gitignore rules, so an unanchored `docs/` stripped every `docs` folder in the tree, including `src/**/docs`, and the integration deploy failed while every local check was green. Anchor ignore paths to the root (`/docs/`). The deploy is the check for this whole class.
+- **Reused generated code must be complete:** a copy taken from a sibling mid-codegen had the right schema hash and half the output, and a train typecheck failed with 80 errors from a missing typed-SQL client. Reuse needs the inputs hash to match AND every generated client to exist and be non-empty (`JSTACK_CODEGEN_REQUIRED`), checked again after the copy. With that, codegen per worktree went from 519 s to about zero.
+- **The pre-push hook that repeated CI:** it ran a full typecheck on every push, 10 to 15 min each, inside the slot. CI runs the same check. Deleted.
+- **One agent per chain (2026-10-22):** with one agent per ticket, merged throughput was about 3 tickets/h. Giving each dependency chain to one agent (stacked branch, READY per ticket) took it to about 27 tickets/h the same night. Honest footnote: part of that jump is parallel work that had piled up landing together, so the steady number is lower. Still the biggest single change of the night.
+- **Late gates:** a UI gate (layout and contrast audit) added after branches were READY sent them all back for rework. Gates go in the plan, before the first agent starts.
+- **Format, don't just check:** the ship step runs the formatter in write mode on the changed files and commits the result. A check that only warned let a train PR fail lint on one file.
+- **Never commit in a worker's live worktree:** an agent stacking its next ticket keeps uncommitted edits there, and `git add <dir>` sweeps them into your fix. Commit train fixes in the train worktree and tell the agent.
+- **Never let a conflict resolution past a failed check:** chain `<format check> <files> && git commit`, never `;`. A union of two conflict blocks cut an interface in half (its closing brace was shared context), and only the parser noticed.
+- **Publish the boarding train as `train/<date>-<n>-wip`** when you bounce branches for conflicts, so their agents merge the exact base instead of guessing.
+- **Rule churn:** rules changed five times in one night, each after the last incident, so no change could be measured. Hold a rule still long enough to compare (section 7).

@@ -24,3 +24,6 @@ export JSTACK_BUILD_ENV="CIRCLE_NODE_TOTAL=5"             # env for capped build
 export JSTACK_TRAIN_BUILD="deploy"                       # local = the train builds; deploy = the integration deploy is the build check
 export JSTACK_CODEGEN_INPUTS="schema bun.lock"           # what generated code depends on (paths in the repo)
 export JSTACK_CODEGEN_REUSE_PATHS=".generated"           # generated folders a new worktree may copy from a sibling with the same inputs
+export JSTACK_CODEGEN_REQUIRED=".generated/client .generated/sql" # every one must exist and be non-empty in a sibling before it's copied
+export JSTACK_TC_SLOTS=2                                 # parallel typecheck lanes for worker agents (tc_run); a tsc peaks ~5 GB
+export JSTACK_TC_CAP_GB=8                                # RAM ceiling for each lane's typecheck
