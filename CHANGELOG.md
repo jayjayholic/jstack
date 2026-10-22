@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-22: copy fix in new-worktree.sh
+
+**What:** reused generated folders and copied local folders are now replaced, not copied into themselves.
+
+**Why:** when the target folder already existed, `cp -r` dropped the copy inside it (`.generated/.generated`), and the agent's typecheck failed on missing generated code.
+
 ## 2026-10-22: the numbers, and worktree cleanup
 
 **What:** a short numbers section in the README with a monthly chart GitHub draws itself, and `tools/clean-worktrees.sh`, which removes finished worktrees only when the branch is merged, nothing is uncommitted, nothing runs inside and nothing changed in the last hour.

@@ -44,7 +44,7 @@ for file in $JSTACK_LOCAL_ENV_FILES; do
 	[ -f "$REPO/$file" ] && cp "$REPO/$file" "$dir/$file" && echo "copied $file"
 done
 for folder in $JSTACK_LOCAL_DIRS; do
-	[ -d "$REPO/$folder" ] && cp -r "$REPO/$folder" "$dir/$folder" && echo "copied $folder/"
+	[ -d "$REPO/$folder" ] && rm -rf "${dir:?}/$folder" && cp -r "$REPO/$folder" "$dir/$folder" && echo "copied $folder/"
 done
 
 # Generated code depends only on its inputs. Each worktree set up here stamps the inputs its generated code was made
@@ -79,7 +79,7 @@ reuse_generated() {
 		[ "$ok" = 1 ] && complete "$cand" || continue
 		[ "$(cat "$(stamp_file "$cand")" 2>/dev/null)" = "$want" ] || continue
 		[ "$(inputs_key "$cand")" = "$want" ] || continue
-		for p in $JSTACK_CODEGEN_REUSE_PATHS; do mkdir -p "$(dirname "$dir/$p")" && cp -r "$cand/$p" "$dir/$p"; done
+		for p in $JSTACK_CODEGEN_REUSE_PATHS; do mkdir -p "$(dirname "$dir/$p")" && rm -rf "${dir:?}/$p" && cp -r "$cand/$p" "$dir/$p"; done
 		if ! complete "$dir"; then
 			echo "copy from $cand came out incomplete, running codegen instead" >&2
 			for p in $JSTACK_CODEGEN_REUSE_PATHS; do rm -rf "${dir:?}/$p"; done
