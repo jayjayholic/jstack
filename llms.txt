@@ -24,7 +24,7 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 
 ## Plugins
 
-- [jay-claude-switcher](https://github.com/jayjayholic/jstack/blob/main/plugins/jay-claude-switcher/README.md): Claude Code side panel with every stored Claude account's 5-hour and weekly usage and an auto-switch to the least-used account at 99.9%; switch.py command line and an add-account skill. Install: `/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`
+- [jay-claude-switcher](https://github.com/jayjayholic/jstack/blob/main/plugins/jay-claude-switcher/README.md): Claude Code side panel with every stored Claude account's 5-hour and weekly usage and an auto-switch to the least-used account at 99%; switch.py command line and an add-account skill. Install: `/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`
 
 ## Scripts
 

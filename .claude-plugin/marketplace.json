@@ -22,7 +22,7 @@
     {
       "name": "jay-claude-switcher",
       "source": "./plugins/jay-claude-switcher",
-      "description": "Side panel with every stored Claude account's 5-hour and weekly usage, sorted by nearest reset, and an auto-switch to the least-used account at 99.9% that a running session picks up on its next request. Plus switch.py and an add-account skill.",
+      "description": "Side panel with every stored Claude account's 5-hour and weekly usage, sorted by nearest reset, and an auto-switch to the least-used account at 99% (or on the limit error itself) that a running session picks up on its next request. Plus switch.py and an add-account skill.",
       "category": "productivity",
       "tags": [
         "rate-limits",

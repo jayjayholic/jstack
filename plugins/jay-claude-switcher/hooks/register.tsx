@@ -5,7 +5,7 @@ import { addUsage, formatDuration, formatTokens, isActive, isFinished, mergeList
 import { cellsOf, contextView } from './context'
 import { addSample, forecast, rowOf, type Sample } from './forecast'
 import { renderSessions } from './sessions-pane'
-import { autoSwitchTick, backgroundRefresh, loadAutoSwitch, noteSessionLimits, refreshSessions, sessionsReport } from './sessions'
+import { autoSwitchTick, backgroundRefresh, loadAutoSwitch, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport } from './sessions'
 import { created, detailOf, fromListText, fromTodos, updated } from './tasks'
 
 const PANE = 'switcher-work'
@@ -99,6 +99,23 @@ export const register: Register = on => {
       await noteSessionLimits($, e.rateLimits).catch(() => undefined)
     }
     if (e.changed.includes('context')) await refreshContext($).catch(() => undefined)
+    return next(e)
+  })
+
+  // The session's own request refused for the account's limit: switch on the error itself.
+  on('classic.StopFailure', async ($, e, next) => {
+    if (e.error === 'rate_limit') void noteLimitHit($, e.error_details ?? '').catch(() => undefined)
+    return next(e)
+  })
+
+  // A turn (the main loop's or an agent's) ended on an API error: near the limit, that is the limit.
+  on('turn.complete', async ($, e, next) => {
+    if (e.reason === 'error') {
+      void $.session
+        .usage()
+        .then(u => noteTurnError($, u.rateLimits))
+        .catch(() => undefined)
+    }
     return next(e)
   })
 

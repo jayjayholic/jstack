@@ -1,0 +1,120 @@
+import type { On } from 'claude-code'
+import { expect, mock, test } from 'claude-code/testing'
+
+const HOME = 'C:/home'
+const NOW = Date.parse('2026-10-23T12:00:00Z')
+const LATER = '2026-10-23T15:00:00Z'
+const STORE = `${HOME}/.claude/logins/accounts.json`
+const CRED = `${HOME}/.claude/.credentials.json`
+const CLAUDE_JSON = `${HOME}/.claude.json`
+const USAGE = 'https://api.anthropic.com/api/oauth/usage'
+
+type Reply = { status: number; body?: unknown; retryAfter?: string }
+
+const usage = (fiveHour: number, week: number) => ({
+  limits: [
+    { kind: 'session', percent: fiveHour, resets_at: LATER, scope: null },
+    { kind: 'weekly_all', percent: week, resets_at: LATER, scope: null },
+  ],
+})
+
+const stored = (email: string, org: string, token: string) => ({
+  key: `${email}#${org}`,
+  email,
+  savedAt: 's',
+  oauthAccount: { emailAddress: email, organizationUuid: org },
+  claudeAiOauth: { accessToken: token, refreshToken: `${token}-r`, expiresAt: NOW + 3_600_000 },
+})
+
+// The files, the network and the session's own numbers beneath the plugin, all in memory.
+function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number) {
+  const files = new Map<string, string>()
+  files.set(STORE, JSON.stringify({ accounts: [stored('a@example.com', 'o1', 'a-live'), stored('b@example.com', 'o2', 'b-tok'), stored('c@example.com', 'o3', 'c-tok')] }))
+  files.set(CRED, JSON.stringify({ mcpOAuth: { keep: true }, claudeAiOauth: stored('a@example.com', 'o1', 'a-live').claudeAiOauth }))
+  files.set(CLAUDE_JSON, JSON.stringify({ oauthAccount: { emailAddress: 'a@example.com', organizationUuid: 'o1' } }))
+  const clock = mock.clock(on, { now: NOW })
+  mock.store(on)
+  mock.env(on, { USERPROFILE: HOME })
+  // The engine hands paths over in the platform's own spelling.
+  const at = (path: string) => path.replace(/\\/g, '/')
+  on('fs.exists', (_$, e) => ({ value: files.has(at(e.path)) }))
+  on('fs.read', (_$, e) => {
+    const text = files.get(at(e.path))
+    if (text === undefined) throw new Error('ENOENT')
+    return { value: text }
+  })
+  on('fs.write', (_$, e) => {
+    files.set(at(e.path), e.text)
+    return { value: undefined }
+  })
+  on('process.run', (_$, e) => {
+    const [, , , from, to] = e.argv.map(at)
+    if (from && to && files.has(from)) {
+      files.set(to, files.get(from)!)
+      files.delete(from)
+    }
+    return { value: { exitCode: 0, stdout: '', stderr: '' } as never }
+  })
+  on('http.fetch', (_$, e) => {
+    const auth = (e.init?.headers as Record<string, string> | undefined)?.['Authorization'] ?? ''
+    const reply = e.url === USAGE ? (replies[auth.replace('Bearer ', '')] ?? { status: 500 }) : { status: 400, body: {} }
+    const headers: Record<string, string> = reply.retryAfter ? { 'retry-after': reply.retryAfter } : {}
+    return { value: { status: reply.status, ok: reply.status === 200, headers, text: JSON.stringify(reply.body ?? {}) } }
+  })
+  on('session.usage', () => ({ value: { rateLimits: [{ kind: 'five_hour', percentUsed: sessionFiveHour, resetsAt: LATER }] } as never }))
+  on('session.measure', () => ({ changed: ['rateLimits'] }) as never)
+  on('classic.StopFailure', () => ({}))
+  const activeToken = () => (JSON.parse(files.get(CRED)!) as { claudeAiOauth: { accessToken: string } }).claudeAiOauth.accessToken
+  return { files, clock, activeToken }
+}
+
+const PANE = {
+  plugin: 'jay-claude-switcher',
+  component: 'Pane',
+  requestId: 'switcher-sessions',
+  surface: 'terminal',
+  props: { title: 'Sessions', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+} as const
+
+const measure = (percent: number) =>
+  ({ changed: ['rateLimits'], rateLimits: [{ kind: 'five_hour', percentUsed: percent, resetsAt: LATER }], context: {} }) as never
+
+test('crossing 99% on the session switches at once, even when another account answers the usage endpoint with a 429', async ($, on) => {
+  const { clock, activeToken } = world(on, { 'b-tok': { status: 200, body: usage(2, 14) }, 'c-tok': { status: 429, retryAfter: '600' }, 'a-live': { status: 429 } }, 60)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  await $.session.measure(measure(98.9))
+  await clock.settle()
+  expect(activeToken()).toBe('a-live')
+  await $.session.measure(measure(99))
+  await clock.settle()
+  expect(activeToken()).toBe('b-tok')
+  await ui.unmount()
+})
+
+test('a limit error on the session itself switches, without any reading at 99%', async ($, on) => {
+  const { clock, files, activeToken } = world(on, { 'b-tok': { status: 429 }, 'c-tok': { status: 200, body: usage(0, 96) }, 'a-live': { status: 429 } }, 40)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  await $.classic.StopFailure({ error: 'overloaded' } as never)
+  await clock.settle()
+  expect(activeToken()).toBe('a-live')
+  await $.classic.StopFailure({ error: 'rate_limit', error_details: "You've hit your session limit" } as never)
+  await clock.settle()
+  expect(activeToken()).toBe('c-tok')
+  expect(JSON.parse(files.get(CRED)!).mcpOAuth).toEqual({ keep: true })
+  await ui.unmount()
+})
+
+test('with no account below 99% a due switch writes nothing and says why in the tab', async ($, on) => {
+  const { clock, files, activeToken } = world(on, { 'b-tok': { status: 200, body: usage(100, 20) }, 'c-tok': { status: 401 }, 'a-live': { status: 200, body: usage(99.5, 30) } }, 99.5)
+  const before = files.get(CRED)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  await $.session.measure(measure(99.5))
+  await clock.settle()
+  expect(activeToken()).toBe('a-live')
+  expect(files.get(CRED)).toBe(before)
+  expect(await ui.find({ type: 'Text', text: /no account below 99%.*1 at 99% or more.*1 with an expired login/ })).toBeDefined()
+  await ui.unmount()
+})

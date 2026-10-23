@@ -103,6 +103,11 @@ async function renderSessions($: EngineInterface, e: RenderInput<'Pane'>) {
           {view.error}
         </Text>
       )}
+      {view.notice && (
+        <Text key="notice" color={view.notice.startsWith('Auto-switch: no') ? 'warning' : undefined} wrap="wrap">
+          {view.notice}
+        </Text>
+      )}
       {view.accounts.length === 0 && !view.error && <Text dimColor>{view.refreshing || view.loadedAt == null ? 'Reading accounts…' : 'No stored accounts.'}</Text>}
       {byNearestReset(view.accounts, now).map(row)}
     </Box>

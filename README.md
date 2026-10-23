@@ -12,9 +12,9 @@ Claude Code skills and scripts for people running a bunch of parallel AI coding 
 /plugin install jstack@jstack
 ```
 
-Or tell your agent "follow ADAPT.md in jayjayholic/jstack for my project".
+Or tell your agent "follow ADAPT.md in jayjayholic/jstack for my project". Every rule in here exists because something broke, usually my laptop.
 
-Running out of rate limit before your agents run out of work? [jay-claude-switcher](plugins/jay-claude-switcher) is a side panel with every Claude account you own, their 5-hour and weekly bars, and an auto-switch at 99.9% that the running session picks up on its next request: `/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`. Every rule in here exists because something broke, usually my laptop.
+Running out of rate limit before your agents run out of work? [jay-claude-switcher](plugins/jay-claude-switcher) is a side panel with every Claude account you own, their 5-hour and weekly bars, and an auto-switch at 99% that the running session picks up on its next request: `/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`.
 
 > Made by João Lima ([@jayjayholic](https://github.com/jayjayholic)) while building [Hakutaku](https://hakutaku.ai). Most of the rules were written by the agents themselves, right after they broke something.
 
@@ -135,7 +135,7 @@ skills/setup-matt-pocock-skills/ /  tells wayfinder where your issue tracker liv
 skills/simplify/
   README.md              /simplify is built into Claude Code, so this is only a pointer (its licence doesn't allow a copy)
 plugins/jay-claude-switcher/
-                         a separate plugin: a side panel with every Claude account's 5h and weekly usage, auto-switch at 99.9%,
+                         a separate plugin: a side panel with every Claude account's 5h and weekly usage, auto-switch at 99%,
                          switch.py (save | list | use | next | import) and an add-account skill
 tools/
   config.example.sh      every setting in one file; copy it to ~/.jstack/config.sh

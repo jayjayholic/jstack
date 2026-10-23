@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { AccountView, OAuthTokens } from '../types'
-import { applyRefresh, byNearestReset, keyOf, leastUsed, backoffAfter, isWatched, needsRefresh, peakOf, retryAfterMs, withSessionLimits, parseUsage, savedCurrent, switchTarget, withTokens } from './accounts'
+import { applyRefresh, byNearestReset, keyOf, leastUsed, backoffAfter, isWatched, markLimitHit, noTargetReason, needsRefresh, peakOf, retryAfterMs, withSessionLimits, parseUsage, savedCurrent, switchTarget, withTokens } from './accounts'
 
 const NOW = Date.parse('2026-10-23T12:00:00Z')
 const LATER = '2026-10-23T15:00:00Z'
@@ -180,4 +180,33 @@ test('rows sort by nearest availability: weekly-full accounts wait for the weekl
   const noReset = make('idle@example.com', 0, null, 5, 150)
   const sorted = byNearestReset([weekFullLate, fiveIn3, weekFullSoon, fiveIn2, noReset, fiveIn2b], NOW).map(a => a.email)
   expect(sorted).toEqual(['idle@example.com', 'five-2h-b@example.com', 'five-2h@example.com', 'five-3h@example.com', 'week-soon@example.com', 'week-late@example.com'])
+})
+
+test('switching starts at 99%: a busy (429) candidate keeps its last reading, a refused one is skipped', () => {
+  const busy = account('b@example.com', 2, 14, { error: 'usage API busy (429), waiting before the next read' })
+  const refused = account('c@example.com', 0, 0, { error: 'refused (HTTP 401)' })
+  expect(switchTarget([account('a@example.com', 99, 10), busy, refused], 'a@example.com#org', NOW)?.to).toBe('b@example.com#org')
+  expect(switchTarget([account('a@example.com', 98.9, 10), busy], 'a@example.com#org', NOW)).toBeNull()
+  expect(switchTarget([account('a@example.com', 99, 10), refused], 'a@example.com#org', NOW)).toBeNull()
+})
+
+test('with no reading below 99%, an account never read is tried; a refused or full one is not', () => {
+  const unread = { ...account('u@example.com', 0, 0), windows: [], fetchedAt: null }
+  expect(switchTarget([account('a@example.com', 100, 10), account('b@example.com', 100, 0), unread], 'a@example.com#org', NOW)?.to).toBe('u@example.com#org')
+  expect(switchTarget([account('a@example.com', 100, 10), { ...unread, error: 'login expired: sign in again and import it' }], 'a@example.com#org', NOW)).toBeNull()
+  expect(switchTarget([account('a@example.com', 100, 10), account('b@example.com', 99.2, 0)], 'a@example.com#org', NOW)).toBeNull()
+})
+
+test('a limit error marks the 5h window full, or the weekly one when it says so; other windows stay', () => {
+  const marked = markLimitHit(account('a@example.com', 40, 10).windows, "You've hit your session limit", NOW)
+  expect(marked.map(w => w.percent)).toEqual([100, 10, 100])
+  expect(markLimitHit(account('a@example.com', 40, 10).windows, 'weekly limit reached', NOW).map(w => w.percent)).toEqual([40, 100, 100])
+  expect(markLimitHit([], '', NOW)).toEqual([{ key: 'session', label: '5h', percent: 100, resetsAt: null, binding: true }])
+})
+
+test('the no-target status names why: nothing else stored, all full, or logins expired', () => {
+  expect(noTargetReason([account('a@example.com', 100, 0)], 'a@example.com#org', NOW)).toContain('no other account stored')
+  const why = noTargetReason([account('a@example.com', 100, 0), account('b@example.com', 99.5, 0), account('c@example.com', 0, 0, { error: 'refused (HTTP 403)' })], 'a@example.com#org', NOW)
+  expect(why).toContain('1 at 99% or more')
+  expect(why).toContain('1 with an expired login')
 })

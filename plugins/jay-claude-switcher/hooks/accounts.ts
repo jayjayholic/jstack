@@ -1,6 +1,6 @@
 import type { AccountStore, AccountView, Backoff, CurrentLogin, OAuthTokens, StoredAccount, UsageWindow } from '../types'
 
-const SWITCH_AT = 99.9
+const SWITCH_AT = 99
 const REFRESH_MARGIN_MS = 5 * 60_000
 const WATCH_AT = 98
 const ACTIVE_READ_MS = 60_000
@@ -82,13 +82,29 @@ function fiveHourOf(a: AccountView, now: number): number {
   return w ? effectivePercent(w, now) : 0
 }
 
+// A failed read (a 429 from the usage endpoint) keeps the last reading usable; a refused login does not.
+function isAuthError(error: string | null): boolean {
+  return error !== null && /^(refused|login expired)/.test(error)
+}
+
 function leastUsed(accounts: readonly AccountView[], excludeKey: string | null, now: number, threshold = SWITCH_AT): AccountView | null {
   const candidates = accounts
-    .filter(a => a.key !== excludeKey && a.fetchedAt !== null && !a.error)
+    .filter(a => a.key !== excludeKey && a.fetchedAt !== null && !isAuthError(a.error))
     .map(a => ({ a, peak: peakOf(a, now) }))
     .filter((c): c is { a: AccountView; peak: number } => c.peak !== null && c.peak < threshold)
     .sort((x, y) => x.peak - y.peak || fiveHourOf(x.a, now) - fiveHourOf(y.a, now))
   return candidates[0]?.a ?? null
+}
+
+// With no reading below the threshold, an account never read (and not refused) is still worth a try: a blind switch
+// beats a session stuck on a full account. Its own limit error moves on from it if it is full too.
+function unreadCandidate(accounts: readonly AccountView[], excludeKey: string | null): AccountView | null {
+  return accounts.find(a => a.key !== excludeKey && a.fetchedAt === null && !a.windows.length && !isAuthError(a.error)) ?? null
+}
+
+function isSwitchDue(current: AccountView | undefined, now: number, threshold = SWITCH_AT): boolean {
+  const peak = current ? peakOf(current, now) : null
+  return peak !== null && peak >= threshold
 }
 
 function switchTarget(
@@ -98,13 +114,31 @@ function switchTarget(
   threshold = SWITCH_AT,
 ): { to: string; label: string; reason: string } | null {
   const current = accounts.find(a => a.key === activeKey)
-  if (!current) return null
-  const peak = peakOf(current, now)
-  if (peak === null || peak < threshold) return null
-  const target = leastUsed(accounts, activeKey, now, threshold)
+  if (!current || !isSwitchDue(current, now, threshold)) return null
+  const target = leastUsed(accounts, activeKey, now, threshold) ?? unreadCandidate(accounts, activeKey)
   if (!target) return null
   const hot = current.windows.filter(w => w.binding && effectivePercent(w, now) >= threshold).map(w => w.label)
-  return { to: target.key, label: labelOf(target), reason: `${labelOf(current)} at ${peak}% (${hot.join(', ')})` }
+  return { to: target.key, label: labelOf(target), reason: `${labelOf(current)} at ${peakOf(current, now)}% (${hot.join(', ')})` }
+}
+
+// Why a due switch found nowhere to go, in one line for the panel.
+function noTargetReason(accounts: readonly AccountView[], activeKey: string | null, now: number, threshold = SWITCH_AT): string {
+  const others = accounts.filter(a => a.key !== activeKey)
+  if (!others.length) return 'Auto-switch: no other account stored. Add one to switch.'
+  const full = others.filter(a => (peakOf(a, now) ?? 0) >= threshold).length
+  const refused = others.filter(a => isAuthError(a.error)).length
+  const unread = others.length - full - refused
+  const parts = [full && `${full} at ${threshold}% or more`, refused && `${refused} with an expired login`, unread > 0 && `${unread} not readable now`].filter(Boolean)
+  return `Auto-switch: no account below ${threshold}% (${parts.join(', ')}). Staying on the current one.`
+}
+
+// The session's own limit error (a 429 that ended a request) marks the current account full at once: the weekly
+// window when the error says so, else the 5-hour one.
+function markLimitHit(windows: readonly UsageWindow[], details: string, now: number): UsageWindow[] {
+  const label = /week/i.test(details) ? 'week' : '5h'
+  const found = windows.some(w => w.binding && w.label === label)
+  const marked = windows.map(w => (w.binding && w.label === label ? { ...w, percent: 100, resetsAt: w.resetsAt && Date.parse(w.resetsAt) > now ? w.resetsAt : null } : w))
+  return found ? marked : [...marked, { key: label === 'week' ? 'weekly_all' : 'session', label, percent: 100, resetsAt: null, binding: true }]
 }
 
 // The usage endpoint is only asked once the current account nears its limit (98%, from the session's own headers).
@@ -234,7 +268,11 @@ export {
   ACTIVE_READ_MS,
   backoffAfter,
   CANDIDATE_READ_MS,
+  isAuthError,
+  isSwitchDue,
   isWatched,
+  markLimitHit,
+  noTargetReason,
   retryAfterMs,
   orgOf,
   parseUsage,

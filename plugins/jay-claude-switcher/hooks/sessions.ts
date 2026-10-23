@@ -1,11 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 import type { ReadSchedule, ReadWhich, SessionsView } from '../types'
-import { ACTIVE_READ_MS, CANDIDATE_READ_MS, SWITCH_AT, isWatched, peakOf, switchTarget, withSessionLimits } from './accounts'
+import { ACTIVE_READ_MS, CANDIDATE_READ_MS, isSwitchDue, isWatched, markLimitHit, noTargetReason, switchTarget, withSessionLimits } from './accounts'
 import { importAccount, ioOf, readAccounts, switchAccount } from './account-io'
 
 const AUTO_KEY = 'auto-switch'
 const SWITCH_COOLDOWN_MS = 90_000
+// A limit error this soon after a switch came from a request still in flight on the old login.
+const LIMIT_HIT_GRACE_MS = 15_000
 const RESTART_NOTE =
   'Running sessions use it from their next request, no restart (they re-read .credentials.json when it changes); /status may show the old email until restart. If one shows an auth error, restart it.'
 
@@ -70,14 +72,15 @@ async function importFrom($: EngineInterface, folder?: string): Promise<void> {
   await update($, sessions, v => ({ ...v, notice: `Imported ${label}.` }))
 }
 
-async function autoSwitchTick($: EngineInterface): Promise<void> {
+// `limitHit`: the session itself was refused for its limit, so the usual 90 s pause after a switch shrinks to 15 s.
+async function autoSwitchTick($: EngineInterface, limitHit = false): Promise<void> {
   const view = await read($, sessions)
-  if (!view.autoSwitch || busy || inFlight) return
+  if (!view.autoSwitch || busy) return
+  if (inFlight) await inFlight.catch(() => undefined)
   const now = await $.clock.now()
-  if (view.lastSwitch && now - view.lastSwitch.at < SWITCH_COOLDOWN_MS) return
-  const current = view.accounts.find(a => a.key === view.active)
-  const peak = current ? peakOf(current, now) : null
-  if (peak === null || peak < SWITCH_AT) return
+  const pause = limitHit ? LIMIT_HIT_GRACE_MS : SWITCH_COOLDOWN_MS
+  if (view.lastSwitch && now - view.lastSwitch.at < pause) return
+  if (!isSwitchDue(view.accounts.find(a => a.key === view.active), now)) return
   busy = true
   try {
     // A switch is due: the other accounts are asked once (not again within 5 minutes) to pick the target.
@@ -86,8 +89,13 @@ async function autoSwitchTick($: EngineInterface): Promise<void> {
       .map(a => a.key)
     if (stale.length) await refreshSessions($, stale).catch(() => undefined)
     const fresh = await read($, sessions)
-    const target = switchTarget(fresh.accounts, fresh.active, await $.clock.now())
-    if (!target) return
+    const at = await $.clock.now()
+    const target = switchTarget(fresh.accounts, fresh.active, at)
+    if (!target) {
+      const notice = noTargetReason(fresh.accounts, fresh.active, at)
+      if (fresh.notice !== notice) await update($, sessions, v => ({ ...v, notice }))
+      return
+    }
     await switchTo($, target.to, target.label, `auto: ${target.reason}`, fresh.active)
   } finally {
     busy = false
@@ -136,6 +144,27 @@ async function noteSessionLimits($: EngineInterface, limits: readonly { kind: st
   if (!active) return
   const windows = withSessionLimits(active.windows, limits)
   await update($, sessions, v => ({ ...v, accounts: v.accounts.map(a => (a.key === active.key ? { ...a, windows } : a)) }))
+  if (isSwitchDue({ ...active, windows }, await $.clock.now())) void autoSwitchTick($).catch(() => undefined)
+}
+
+// A turn ended on an API error (StopFailure does not say which, for an agent's turn): when the current account was
+// already at 98% or more, that error is taken as its limit.
+async function noteTurnError($: EngineInterface, limits: readonly { kind: string; percentUsed: number; resetsAt?: string }[]): Promise<void> {
+  await noteSessionLimits($, limits)
+  const view = await read($, sessions)
+  if (isWatched(view.accounts.find(a => a.key === view.active), await $.clock.now())) await noteLimitHit($, '')
+}
+
+// A request of this session (or one of its agents) was refused for the account's limit: switch on the error itself,
+// without waiting for any reading to say so.
+async function noteLimitHit($: EngineInterface, details: string): Promise<void> {
+  const view = await read($, sessions)
+  const active = view.accounts.find(a => a.key === view.active)
+  if (!active) return
+  const now = await $.clock.now()
+  const windows = markLimitHit(active.windows, details, now)
+  await update($, sessions, v => ({ ...v, accounts: v.accounts.map(a => (a.key === active.key ? { ...a, windows } : a)) }))
+  await autoSwitchTick($, true)
 }
 
 async function setAutoSwitch($: EngineInterface, on: boolean): Promise<void> {
@@ -151,4 +180,4 @@ async function loadAutoSwitch($: EngineInterface): Promise<void> {
   await update($, sessions, v => ({ ...v, autoSwitch: on }))
 }
 
-export { autoSwitchTick, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, noteSessionLimits, refreshSessions, sessionsReport, setAutoSwitch, switchTo }
+export { autoSwitchTick, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }

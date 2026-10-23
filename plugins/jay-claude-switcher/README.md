@@ -1,6 +1,6 @@
-# jay-claude-switcher: every Claude account in one side panel, auto-switch at 99.9%
+# jay-claude-switcher: every Claude account in one side panel, auto-switch at 99%
 
-A Claude Code plugin that puts a panel next to the chat with every Claude account you own, how much of its 5-hour and weekly limit is gone, and a switch that moves your running session to the least-used account the moment the current one hits 99.9%. No restart, no `/login`, no lost turn.
+A Claude Code plugin that puts a panel next to the chat with every Claude account you own, how much of its 5-hour and weekly limit is gone, and a switch that moves your running session to the least-used account the moment the current one hits 99%, or the moment Claude Code gets refused for the limit, whichever comes first. No restart, no `/login`, no lost turn.
 
 ```text
 /plugin install jay-claude-switcher --marketplace jayjayholic/jstack
@@ -25,7 +25,7 @@ The panel has two tabs. `/switcher` opens it.
 - **Sorted by nearest reset.** An account full for the week waits for its weekly reset; any other sorts by its 5-hour reset (nothing pending goes first). So the top row is always the next one you can actually use.
 - **Use** on a row switches to it.
 - **Refresh** reads the usage of every account now.
-- **Auto-switch 99.9%** toggles the automatic switch (on by default, remembered across sessions).
+- **Auto-switch 99%** toggles the automatic switch (on by default, remembered across sessions).
 - `/switcher-accounts` reads every account and prints the list as text.
 
 ### How the switch works
@@ -46,7 +46,7 @@ The usage endpoint answers 429 if you poke it too often, so the plugin barely po
 
 - **Below 98%: zero calls.** The current account's bars come from the rate-limit numbers Claude Code already gets on every request. Free.
 - **From 98%:** the current account's usage is read at most once a minute.
-- **At 99.9%, switch due:** the other accounts are read once (not again within 5 minutes) to pick the target.
+- **At 99%, switch due:** the other accounts are read once (not again within 5 minutes) to pick the target.
 - **Refresh** and `/switcher-accounts` read everything, because you asked.
 - **A failed read is never retried in a loop.** A 429 waits for its `Retry-After`; without one it waits 5 minutes, then 10, 20, capped at 30. Not even **Refresh** skips the wait.
 
@@ -57,7 +57,10 @@ A check runs every second on the cached numbers and switches with no click. Afte
 - Only the **binding** windows count: the 5-hour window and the all-models weekly window (`session` and `weekly_all` in the API). Those are the ones that stop you.
 - **Scoped weekly windows** (one model only, like weekly Opus) are ignored. They limit one model, not the account.
 - **Accounts with no weekly limit** (some team organizations) are judged on the 5-hour window alone.
-- The switch fires when the current account is at 99.9% or more on a binding window, and goes to the account with the lowest peak below 99.9% (tie: lowest 5-hour). If every account is full, it stays put and doesn't thrash.
+- The switch fires when the current account is at 99% or more on a binding window, and goes to the account with the lowest peak below 99% (tie: lowest 5-hour). It checks at once on every new reading, not only on the 1-second tick.
+- **It also fires on the limit error itself.** When a request comes back refused for the limit (Claude Code's `StopFailure` with `rate_limit`), the current account is marked full on the spot (the weekly window if the error says weekly, else the 5-hour one) and the switch runs, no reading needed. A turn, main or agent, that ends on an API error while the account is already at 98% or more counts too. After a limit error the pause between switches drops from 90 s to 15 s.
+- **A candidate the usage endpoint answered with 429 still counts**, on its last reading. Only an expired login rules an account out. With no reading below 99% anywhere, an account never read gets a blind try: a guess beats a session stuck on a full account.
+- **Nowhere to go?** It stays put, doesn't thrash, and the tab says why in one line: how many accounts are full and how many have an expired login.
 - A window whose reset time has passed counts as empty, even from an old reading.
 
 ## Install and first account, step by step
@@ -117,7 +120,7 @@ Paths follow Claude Code: `CLAUDE_CONFIG_DIR` when set, else `~/.claude/.credent
 
 **An account says "login expired: sign in again and import it".** Its refresh token died (usually because the same account was used in another folder and refreshed there). Do step 3 again for it.
 
-**Why 99.9% and not 100%?** At 100% the request that hits the wall already failed. 99.9% switches one request early.
+**Why 99% and not 100%?** At 100% the request that hits the wall already failed, and the numbers Claude Code gets back are rounded, so 99.9% may never show up before the wall does. 99% switches a few requests early. (Learned the hard way: the first version waited for 99.9%, the account sat at 99%, and 13 agents ate 429s.)
 
 **Does it work with one account?** It shows your bars and forecast and never switches. Which is also what my laptop does with one agent: nothing exciting.
 
@@ -125,4 +128,4 @@ Paths follow Claude Code: `CLAUDE_CONFIG_DIR` when set, else `~/.claude/.credent
 
 ## Tests
 
-`claude plugin test .` covers picking the least-used account, the 99.9% trigger, not switching when every account is full, accounts with no weekly window, the gentle read schedule (no reads below 98%, Retry-After, the 5 to 30 minute backoff), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, and the tab drawn on every surface.
+`claude plugin test .` covers picking the least-used account, the 99% trigger, the switch on the session's own limit error, not switching (and saying why) when every account is full, a 429'd candidate keeping its last reading, accounts with no weekly window, the gentle read schedule (no reads below 98%, Retry-After, the 5 to 30 minute backoff), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, and the tab drawn on every surface.

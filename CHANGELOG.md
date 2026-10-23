@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-23: jay-claude-switcher switches at 99%, and on the limit error itself
+
+**What:** the auto-switch threshold drops from 99.9% to 99%, and it checks at once on every new reading. The session's own limit error (`StopFailure` with `rate_limit`, or any turn ending on an API error at 98% or more) now marks the account full and switches right away, with a 15 s pause instead of 90 s. A candidate whose last usage read got a 429 keeps its last reading instead of being ruled out; only an expired login rules an account out; with nothing readable below 99%, an account never read gets a try. When there is nowhere to go, the Sessions tab says why. New end-to-end tests drive the plugin through the test engine: crossing 99% switches, a limit error switches, no candidate writes nothing and shows the reason.
+
+**Why:** the first live miss. The session's numbers sat at 99% (they are rounded) while the threshold waited for 99.9%, and the other accounts had just had their usage reads refused with 429, which silently ruled every one of them out. So the account hit the wall, the agents ate 429s, and the switch never moved. The 32 GB laptop was fine. The 13 agents were not.
+
 ## 2026-10-23: jay-claude-switcher, a second plugin for juggling Claude accounts
 
 **What:** new plugin in `plugins/jay-claude-switcher/`, listed in the marketplace next to jstack (`/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`). A side panel with a Sessions tab (every stored account, its 5-hour and weekly bars, sorted by nearest reset, Use and Refresh buttons) and an auto-switch that swaps `.credentials.json` to the least-used account when the current one reaches 99.9%. Plus a Work tab (limits with a forecast, running agents, tool calls in flight, task list, context window), `scripts/switch.py` (`save | list | use | next | import`, honours `CLAUDE_CONFIG_DIR`, writes the store owner-only) and an `add-account` skill that logs a new account in through a second Claude Code with its own config folder, so the working session never logs out. The usage endpoint is read only from 98%, at most once a minute, and backs off on 429 (Retry-After, else 5 minutes doubling to 30).
