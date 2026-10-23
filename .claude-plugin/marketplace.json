@@ -11,7 +11,25 @@
       "source": "./",
       "description": "/train ships many agent branches as one build and one PR; /optimize measures and proves speed fixes. /grill-me and /wayfinder plan the work first. Plus the heavy-job lock and worktree scripts.",
       "category": "development-workflow",
-      "tags": ["parallel-agents", "git-worktree", "merge-train", "ci", "performance"]
+      "tags": [
+        "parallel-agents",
+        "git-worktree",
+        "merge-train",
+        "ci",
+        "performance"
+      ]
+    },
+    {
+      "name": "jay-claude-switcher",
+      "source": "./plugins/jay-claude-switcher",
+      "description": "Side panel with every stored Claude account's 5-hour and weekly usage, sorted by nearest reset, and an auto-switch to the least-used account at 99.9% that a running session picks up on its next request. Plus switch.py and an add-account skill.",
+      "category": "productivity",
+      "tags": [
+        "rate-limits",
+        "accounts",
+        "usage",
+        "auto-switch"
+      ]
     }
   ]
 }

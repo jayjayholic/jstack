@@ -22,6 +22,10 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 - [/optimize](https://github.com/jayjayholic/jstack/blob/main/skills/optimize/SKILL.md): measure LCP, INP, TTFB, long tasks, API waterfall and bundle size, fix the top cost, prove it with interleaved A/B runs
 - [PERFORMANCE.md](https://github.com/jayjayholic/jstack/blob/main/skills/optimize/PERFORMANCE.md): sourced performance know-how for /optimize: method, number-vetting checklist, metric targets, trace recipes per layer, instant-UI techniques, cases
 
+## Plugins
+
+- [jay-claude-switcher](https://github.com/jayjayholic/jstack/blob/main/plugins/jay-claude-switcher/README.md): Claude Code side panel with every stored Claude account's 5-hour and weekly usage and an auto-switch to the least-used account at 99.9%; switch.py command line and an add-account skill. Install: `/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`
+
 ## Scripts
 
 - [heavy-lock.sh](https://github.com/jayjayholic/jstack/blob/main/tools/heavy-lock.sh): one machine-wide slot for builds and typechecks, server_wait, heavy_capped (hard RAM ceiling for a build's whole process tree) and tc_run (a capped typecheck lane for worker agents)

@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-23: jay-claude-switcher, a second plugin for juggling Claude accounts
+
+**What:** new plugin in `plugins/jay-claude-switcher/`, listed in the marketplace next to jstack (`/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`). A side panel with a Sessions tab (every stored account, its 5-hour and weekly bars, sorted by nearest reset, Use and Refresh buttons) and an auto-switch that swaps `.credentials.json` to the least-used account when the current one reaches 99.9%. Plus a Work tab (limits with a forecast, running agents, tool calls in flight, task list, context window), `scripts/switch.py` (`save | list | use | next | import`, honours `CLAUDE_CONFIG_DIR`, writes the store owner-only) and an `add-account` skill that logs a new account in through a second Claude Code with its own config folder, so the working session never logs out. The usage endpoint is read only from 98%, at most once a minute, and backs off on 429 (Retry-After, else 5 minutes doubling to 30).
+
+**Why:** 13 agents on one account hit the 5-hour wall at 3 a.m. and die mid-task, and switching accounts by hand means logging out the session they all run in. A running Claude Code re-reads `.credentials.json` when the file changes, so a file swap moves every agent to the next account on its next request. The 32 GB laptop was finally fine; now the rate limiter is too.
+
 ## 2026-10-23: /optimize gets a performance know-how file
 
 **What:** new `skills/optimize/PERFORMANCE.md`, and `skills/optimize/SKILL.md` now reads it before measuring and gains a fifth rule, "explain the number". The file has the method (write the claim first, name the limiter, the performance mantras cheapest first, one change and one measurement with a decision log, ABAB with rank statistics, keep behaviour), a 7-question check every number must pass before it's reported, the metric targets (including SPA soft navigations, on by default since Chrome 151), trace recipes per layer that turn every capture into SQL rows (Perfetto, LoAF, web-vitals attribution, React Performance Tracks, `--cpu-prof`, Server-Timing, OpenTelemetry, ORM spans, pg_stat_statements), techniques for instant screens and chat, cases with numbers, how the old rules (Souders, RAIL, PRPL) aged, and every source with its date. The method is adapted from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT) and Brendan Gregg's Benchmarking Checklist and USE method, with credit in the file.
