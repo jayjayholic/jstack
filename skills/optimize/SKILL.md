@@ -12,7 +12,7 @@ Run this as one agent from start to finish. If this file still has unfilled plac
 `{{PLAYBOOK_FILE}}`; read it before measuring (create it from the sections in step 5 if it doesn't exist yet).
 `$ARGUMENTS` says what feels slow; with none, measure the whole suite of `{{MAIN_ROUTE}}`.
 
-Four rules, each from a mistake an earlier run made:
+Five rules, each from a mistake an earlier run made (or one Lauren Tan and Brendan Gregg already wrote down):
 
 - **Built app or staging only.** Dev server timings are meaningless (no minification, hot reload, different
   chunking). If a train runs (see the `/train` skill), agents never run the production build themselves: commit, stop
@@ -25,6 +25,15 @@ Four rules, each from a mistake an earlier run made:
   heavy background job ran is thrown away and re-run.
 - **Keep behaviour.** Lazy-load, cut waterfalls, trim bundles, stop re-renders; never drop a feature, a permission
   check or a metered/billed call to win time.
+- **Explain the number.** Before you trust a result, name what limits it ("why not double?") from a trace or counters
+  taken during a run, and run the 7-question check in `PERFORMANCE.md`: tuned, within limits, no errors,
+  reproduces, matters end to end, and the work really happened. Can't name the limiter? The verdict is "inconclusive".
+
+`PERFORMANCE.md` (next to this file) holds the method (adapted from Lauren Tan's pstack and Brendan Gregg), the metric
+targets, trace recipes per layer (browser, React, server, API, ORM, database), the techniques that make screens and
+chat feel instant, cases with numbers, and every source with its date. Read it before step 2. Try fixes in the
+mantras' order, cheapest first: don't do it, don't do it again, do less, do it later, do it when they're not looking,
+do it concurrently, do it cheaper. Log every attempt (kept or reverted) as one row in `decision.tsv`.
 
 ## 1. Set up (once per worktree)
 

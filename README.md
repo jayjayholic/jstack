@@ -123,6 +123,7 @@ skills/train-queue/
   SKILL.md               the /train-queue skill: one status board (live, in flight, queue, what each agent is doing)
 skills/optimize/
   SKILL.md               the /optimize skill: the speed agent. Measures the built app and staging, fixes the top cost, proves it with A/B stats
+  PERFORMANCE.md         what /optimize knows: method (credit: Lauren Tan's pstack, Brendan Gregg), metric targets, trace recipes per layer, instant-UI techniques, cases with numbers, sources
 skills/grill-me/         /grill-me, from mattpocock/skills (MIT, LICENSE inside): just calls /grilling
 skills/grilling/         /grilling, from mattpocock/skills (MIT): asks hard questions in rounds until the plan has no holes
 skills/wayfinder/        /wayfinder, from mattpocock/skills (MIT): turns a big plan into a map of decision tickets
