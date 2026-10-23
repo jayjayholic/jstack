@@ -1,11 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
 import type { AgentRow, ContextView, Doing, Row, Task } from '../types'
-import { addUsage, formatDuration, formatTokens, isActive, isFinished, mergeList, withoutStale } from './agents'
+import { resumeLine, addUsage, formatDuration, formatTokens, isActive, isFinished, mergeList, withoutStale } from './agents'
 import { cellsOf, contextView } from './context'
 import { addSample, forecast, rowOf, type Sample } from './forecast'
 import { renderSessions } from './sessions-pane'
-import { autoSwitchTick, backgroundRefresh, loadAutoSwitch, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport } from './sessions'
+import { activeLabel, autoSwitchTick, backgroundRefresh, loadAutoSwitch, noteLimitHit, setNotice, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport } from './sessions'
 import { created, detailOf, fromListText, fromTodos, updated } from './tasks'
 
 const PANE = 'switcher-work'
@@ -21,6 +21,14 @@ const usage = atom({ plugin: 'jay-claude-switcher', key: 'usage' } as const, [] 
 const context = atom({ plugin: 'jay-claude-switcher', key: 'context' } as const, null as ContextView | null)
 
 const SAMPLES = 'usage-samples'
+// Who to resume after a limit error: agents whose turn ended on an error within two minutes of it.
+const LIMIT_WINDOW_MS = 2 * 60_000
+const RESUME_SHOWN_MS = 15 * 60_000
+type Errored = { id: string; name: string; at: number }
+let errored: Errored[] = []
+let limitHitAt: number | null = null
+let mainHit = false
+let resumeShownAt: number | null = null
 const MINUTE = 60_000
 const BAR = 10
 const LABEL_WIDTH = 6
@@ -40,6 +48,29 @@ async function refreshUsage($: EngineInterface, limits: readonly SessionRateLimi
 async function refreshContext($: EngineInterface): Promise<void> {
   const { context: c } = await $.session.usage({ breakdown: 'summary' })
   if (c.breakdown) await update($, context, () => contextView(c.breakdown!))
+}
+
+async function agentName($: EngineInterface, id: string): Promise<string> {
+  const rows = await read($, agents)
+  return rows.find(a => a.id === id)?.name ?? id.slice(0, 8)
+}
+
+// The status line and the Sessions tab name where the session went and which agents (and the main conversation)
+// died on the limit and need resuming.
+async function showResume($: EngineInterface): Promise<void> {
+  const t = await $.clock.now()
+  const names = errored.filter(x => limitHitAt !== null && Math.abs(x.at - limitHitAt) <= LIMIT_WINDOW_MS).map(x => x.name)
+  const line = resumeLine(await activeLabel($), mainHit, names)
+  $.ui.status(line)
+  resumeShownAt = t
+  await setNotice($, line)
+}
+
+async function noteLimit($: EngineInterface, isMain: boolean): Promise<void> {
+  const t = await $.clock.now()
+  if (limitHitAt === null || t - limitHitAt > LIMIT_WINDOW_MS) mainHit = false
+  limitHitAt = t
+  if (isMain) mainHit = true
 }
 
 const TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'])
@@ -85,7 +116,18 @@ export const register: Register = on => {
       .then(u => noteSessionLimits($, u.rateLimits))
       .catch(() => undefined)
     $.clock.every(5_000, () => void backgroundRefresh($).catch(() => undefined))
-    $.clock.every(1000, () => void autoSwitchTick($).catch(() => undefined))
+    $.clock.every(1000, () => {
+      void autoSwitchTick($).catch(() => undefined)
+      void $.clock
+        .now()
+        .then(t => {
+          if (resumeShownAt !== null && t - resumeShownAt > RESUME_SHOWN_MS) {
+            resumeShownAt = null
+            $.ui.status(undefined)
+          }
+        })
+        .catch(() => undefined)
+    })
     // A reading every 10 s, idle or not: the forecast reads the last minute, and flat readings make a 0%/h rate.
     $.clock.every(10_000, () => {
       void $.session.usage().then(u => refreshUsage($, u.rateLimits)).catch(() => undefined)
@@ -104,17 +146,28 @@ export const register: Register = on => {
 
   // The session's own request refused for the account's limit: switch on the error itself.
   on('classic.StopFailure', async ($, e, next) => {
-    if (e.error === 'rate_limit') void noteLimitHit($, e.error_details ?? '').catch(() => undefined)
+    if (e.error === 'rate_limit') {
+      void (async () => {
+        await noteLimit($, true)
+        await noteLimitHit($, e.error_details ?? '')
+        await showResume($)
+      })().catch(() => undefined)
+    }
     return next(e)
   })
 
   // A turn (the main loop's or an agent's) ended on an API error: near the limit, that is the limit.
   on('turn.complete', async ($, e, next) => {
     if (e.reason === 'error') {
-      void $.session
-        .usage()
-        .then(u => noteTurnError($, u.rateLimits))
-        .catch(() => undefined)
+      const agentId = e.agentId
+      void (async () => {
+        const t = await $.clock.now()
+        if (agentId) errored = [...errored.filter(x => t - x.at <= LIMIT_WINDOW_MS && x.id !== agentId), { id: agentId, name: await agentName($, agentId), at: t }]
+        const recentLimit = limitHitAt !== null && t - limitHitAt <= LIMIT_WINDOW_MS
+        const tookAsLimit = await noteTurnError($, (await $.session.usage()).rateLimits)
+        if (tookAsLimit) await noteLimit($, !agentId)
+        if (tookAsLimit || recentLimit) await showResume($)
+      })().catch(() => undefined)
     }
     return next(e)
   })
@@ -161,6 +214,11 @@ export const register: Register = on => {
   // Each subagent step: its tokens into its row.
   on('turn.step', async function* ($, e, next) {
     const r = yield* next(e)
+    // Every response, main loop or agent, brings fresh rate-limit numbers: the bar (and the 1 s switch check) uses them.
+    void $.session
+      .usage()
+      .then(u => noteSessionLimits($, u.rateLimits))
+      .catch(() => undefined)
     const agentId = e.agentId
     if (agentId && r?.usage) {
       await (async () => {

@@ -56,6 +56,13 @@ function withoutStale(agents: AgentRow[], now: number): AgentRow[] {
   )
 }
 
+// The status line after a limit error: where the session went, and who to resume (the main conversation first).
+function resumeLine(nowOn: string | null, mainHit: boolean, agentNames: readonly string[]): string {
+  const who = [...(mainHit ? ['the main conversation'] : []), ...[...new Set(agentNames)].map(n => `@${n}`)]
+  const where = nowOn ? `now on ${nowOn}` : 'no account to switch to'
+  return who.length ? `Limit hit, ${where}. Resume: ${who.join(', ')}` : `Limit hit, ${where}.`
+}
+
 function formatDuration(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000))
   const h = Math.floor(s / 3600)
@@ -72,4 +79,4 @@ function formatTokens(n: number): string {
   return String(n)
 }
 
-export { addUsage, formatDuration, formatTokens, isActive, isFinished, mergeList, withoutStale }
+export { resumeLine, addUsage, formatDuration, formatTokens, isActive, isFinished, mergeList, withoutStale }

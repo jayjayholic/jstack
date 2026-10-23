@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 import type { ReadSchedule, ReadWhich, SessionsView } from '../types'
-import { ACTIVE_READ_MS, CANDIDATE_READ_MS, isSwitchDue, isWatched, markLimitHit, noTargetReason, switchTarget, withSessionLimits } from './accounts'
+import { ACTIVE_READ_MS, CANDIDATE_READ_MS, isNearLimit, isSwitchDue, isWatched, markLimitHit, noTargetReason, switchTarget, withSessionLimits } from './accounts'
 import { importAccount, ioOf, readAccounts, switchAccount } from './account-io'
 
 const AUTO_KEY = 'auto-switch'
@@ -148,11 +148,24 @@ async function noteSessionLimits($: EngineInterface, limits: readonly { kind: st
 }
 
 // A turn ended on an API error (StopFailure does not say which, for an agent's turn): when the current account was
-// already at 98% or more, that error is taken as its limit.
-async function noteTurnError($: EngineInterface, limits: readonly { kind: string; percentUsed: number; resetsAt?: string }[]): Promise<void> {
+// already at 98% or more, that error is taken as its limit. Says whether it was.
+async function noteTurnError($: EngineInterface, limits: readonly { kind: string; percentUsed: number; resetsAt?: string }[]): Promise<boolean> {
   await noteSessionLimits($, limits)
   const view = await read($, sessions)
-  if (isWatched(view.accounts.find(a => a.key === view.active), await $.clock.now())) await noteLimitHit($, '')
+  if (!isNearLimit(view.accounts.find(a => a.key === view.active), await $.clock.now())) return false
+  await noteLimitHit($, '')
+  return true
+}
+
+// The account the session is on now, as the tab labels it.
+async function activeLabel($: EngineInterface): Promise<string | null> {
+  const view = await read($, sessions)
+  const a = view.accounts.find(x => x.key === view.active)
+  return a ? `${a.email}${a.org ? ` [${a.org}]` : ''}` : null
+}
+
+async function setNotice($: EngineInterface, notice: string): Promise<void> {
+  await update($, sessions, v => ({ ...v, notice }))
 }
 
 // A request of this session (or one of its agents) was refused for the account's limit: switch on the error itself,
@@ -180,4 +193,4 @@ async function loadAutoSwitch($: EngineInterface): Promise<void> {
   await update($, sessions, v => ({ ...v, autoSwitch: on }))
 }
 
-export { autoSwitchTick, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }
+export { autoSwitchTick, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, activeLabel, setNotice, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }

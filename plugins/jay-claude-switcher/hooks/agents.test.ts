@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { addUsage, formatDuration, formatTokens, isActive, mergeList, withoutStale } from './agents'
+import { resumeLine, addUsage, formatDuration, formatTokens, isActive, mergeList, withoutStale } from './agents'
 
 const usage = { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 800, cache_creation_input_tokens: 50 }
 
@@ -58,4 +58,10 @@ test('a resumed agent is live again', () => {
   const [row] = mergeList(ended, [{ id: 'x', type: 't', description: '', status: 'running' }], 20)
   expect(row!.endedAt).toBeUndefined()
   expect(row!.status).toBe('running')
+})
+
+test('after a limit error the status names where the session went and who to resume, main conversation first', () => {
+  expect(resumeLine('b@example.com [Org]', true, ['writer', 'tester', 'writer'])).toBe('Limit hit, now on b@example.com [Org]. Resume: the main conversation, @writer, @tester')
+  expect(resumeLine('b@example.com', false, [])).toBe('Limit hit, now on b@example.com.')
+  expect(resumeLine(null, false, ['writer'])).toBe('Limit hit, no account to switch to. Resume: @writer')
 })

@@ -6,6 +6,8 @@ const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const OAUTH_BETA = 'oauth-2025-04-20'
+// The token endpoint's firewall refuses some runtimes' default agent (Cloudflare 1010): name ourselves.
+const USER_AGENT = 'jay-claude-switcher/0.6'
 const RENAME = 'require("fs").renameSync(process.argv[1], process.argv[2])'
 
 type Paths = { home: string; credentials: string; claudeJson: string; store: string; backups: string }
@@ -109,8 +111,9 @@ function stampOf(now: number): string {
 
 async function refreshTokens(io: AccountIo, oauth: OAuthTokens, now: number): Promise<OAuthTokens> {
   const body = { grant_type: 'refresh_token', refresh_token: oauth.refreshToken, client_id: CLIENT_ID, scope: (oauth.scopes ?? []).join(' ') }
-  const r = await io.fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  if (!r.ok) throw new ReadError(r.status === 400 || r.status === 401 ? 'login expired: sign in again and import it' : `token refresh HTTP ${r.status}`, r.retryAfter)
+  const r = await io.fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT }, body: JSON.stringify(body) })
+  // Only a refused refresh means the login is gone; anything else (a firewall, a 5xx, a 429) is tried again later.
+  if (!r.ok) throw new ReadError(r.status === 400 || r.status === 401 ? 'logged out: its refresh token was refused; sign in again and import it' : `token refresh HTTP ${r.status}, trying again later`, r.retryAfter)
   return applyRefresh(oauth, JSON.parse(r.text), now)
 }
 
@@ -122,7 +125,7 @@ async function storeTokens(io: AccountIo, p: Paths, key: string, oauth: OAuthTok
 
 async function fetchUsage(io: AccountIo, token: string) {
   const r = await io.fetch(USAGE_URL, {
-    headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': OAUTH_BETA, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': OAUTH_BETA, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
   })
   return { status: r.status, retryAfter: r.retryAfter, windows: r.ok ? parseUsage(JSON.parse(r.text)) : [] }
 }
@@ -163,7 +166,7 @@ async function readActive(io: AccountIo, login: CurrentLogin, now: number) {
 
 function describeStatus(status: number): string {
   if (status === 429) return 'usage API busy (429), waiting before the next read'
-  if (status === 401 || status === 403) return `refused (HTTP ${status})`
+  if (status === 401 || status === 403) return `usage refused (HTTP ${status}) after a token refresh, trying again later`
   return `usage HTTP ${status}`
 }
 

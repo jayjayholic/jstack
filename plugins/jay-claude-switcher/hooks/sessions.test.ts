@@ -9,7 +9,7 @@ const STORE = `${HOME}/.claude/logins/accounts.json`
 const CRED = `${HOME}/.claude/.credentials.json`
 const CLAUDE_JSON = `${HOME}/.claude.json`
 
-type Call = { url: string; auth?: string; body?: string }
+type Call = { url: string; auth?: string; body?: string; agent?: string }
 type Answer = (url: string, init?: IoRequest) => { status: number; text: string; retryAfter?: string }
 
 const fresh = (): ReadSchedule => ({ readAt: new Map(), backoff: new Map() })
@@ -63,7 +63,7 @@ function fakeIo(files: Map<string, string>, calls: Call[], answer: Answer = anth
       files.delete(from)
     },
     fetch: async (url, init) => {
-      calls.push({ url, auth: init?.headers?.['Authorization'], body: init?.body })
+      calls.push({ url, auth: init?.headers?.['Authorization'], body: init?.body, agent: init?.headers?.['User-Agent'] })
       const { status, text, retryAfter } = answer(url, init)
       return { status, ok: status >= 200 && status < 300, text, retryAfter }
     },
@@ -136,7 +136,7 @@ test('a refused refresh shows an error on that row, keeps the store as it was, a
   const { accounts } = await readAccounts(io, [], fresh(), 'all')
 
   expect(files.get(STORE)).toBe(before)
-  expect(accounts[1]!.error).toContain('login expired')
+  expect(accounts[1]!.error).toContain('logged out')
   expect(JSON.stringify(accounts).includes('b-r1') || JSON.stringify(accounts).includes('a-live')).toBe(false)
 })
 
@@ -198,4 +198,39 @@ test('an empty CLAUDE_CONFIG_DIR falls back to the home layout, and a folder wit
 
   await expect(importAccount(io, '~/.half')).rejects.toThrow('no login found')
   expect((await readAccounts(io, [], fresh(), 'none')).active).toBe('a@example.com#o1')
+})
+
+test('a stored token refused with 401 before its expiry is refreshed with its refresh token, rotated and saved', async () => {
+  const files = seed()
+  const calls: Call[] = []
+  const store = JSON.parse(files.get(STORE)!)
+  store.accounts[1].claudeAiOauth = { accessToken: 'b-revoked', refreshToken: 'b-r1', expiresAt: NOW + 3_600_000 }
+  files.set(STORE, JSON.stringify(store))
+  const answer: Answer = (url, init) => {
+    if (url.endsWith('/v1/oauth/token')) return { status: 200, text: JSON.stringify({ access_token: 'b-new', refresh_token: 'b-r2', expires_in: 3600 }) }
+    return init?.headers?.['Authorization'] === 'Bearer b-new' ? { status: 200, text: usageBody(7) } : { status: 401, text: '' }
+  }
+  const { accounts } = await readAccounts(fakeIo(files, calls, answer), [], fresh(), ['a@example.com#o2'])
+  expect(accounts[1]).toMatchObject({ error: null, windows: [{ percent: 7 }, { percent: 10 }] })
+  expect(JSON.parse(files.get(STORE)!).accounts[1].claudeAiOauth).toMatchObject({ accessToken: 'b-new', refreshToken: 'b-r2' })
+  expect(calls.every(c => typeof c.agent === 'string' && c.agent.length > 0)).toBe(true)
+})
+
+test('a refresh blocked by a firewall or a 5xx is not a logout: the account stays a candidate and is tried later', async () => {
+  const files = seed()
+  const before = files.get(STORE)
+  const schedule = fresh()
+  const blocked: Answer = url => (url.endsWith('/v1/oauth/token') ? { status: 403, text: 'error code: 1010' } : { status: 401, text: '' })
+  const { accounts } = await readAccounts(fakeIo(files, [], blocked), [], schedule, ['a@example.com#o2'])
+  expect(accounts[1]!.error).toContain('trying again later')
+  expect(accounts[1]!.error!.startsWith('logged out')).toBe(false)
+  expect(files.get(STORE)).toBe(before)
+  expect(schedule.backoff.has('a@example.com#o2')).toBe(true)
+})
+
+test('only a refused refresh (invalid_grant) marks the account logged out', async () => {
+  const files = seed()
+  const refused: Answer = url => (url.endsWith('/v1/oauth/token') ? { status: 400, text: '{"error":"invalid_grant"}' } : { status: 401, text: '' })
+  const { accounts } = await readAccounts(fakeIo(files, [], refused), [], fresh(), ['a@example.com#o2'])
+  expect(accounts[1]!.error!.startsWith('logged out')).toBe(true)
 })

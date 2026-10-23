@@ -2,8 +2,9 @@ import type { AccountStore, AccountView, Backoff, CurrentLogin, OAuthTokens, Sto
 
 const SWITCH_AT = 99
 const REFRESH_MARGIN_MS = 5 * 60_000
-const WATCH_AT = 98
-const ACTIVE_READ_MS = 60_000
+const WATCH_AT = 95
+const NEAR_LIMIT_AT = 98
+const ACTIVE_READ_MS = 5_000
 const CANDIDATE_READ_MS = 5 * 60_000
 const BACKOFF_FIRST_MS = 5 * 60_000
 const BACKOFF_MAX_MS = 30 * 60_000
@@ -82,16 +83,22 @@ function fiveHourOf(a: AccountView, now: number): number {
   return w ? effectivePercent(w, now) : 0
 }
 
-// A failed read (a 429 from the usage endpoint) keeps the last reading usable; a refused login does not.
+// A failed read (a 429, a refused usage call) keeps the last reading usable; only a refused token refresh logs out.
 function isAuthError(error: string | null): boolean {
-  return error !== null && /^(refused|login expired)/.test(error)
+  return error !== null && error.startsWith('logged out')
+}
+
+// What the panel shows, a whole percent: the switch acts on that number, so it fires the moment the bar reads 99.
+function shownPeak(a: AccountView, now: number): number | null {
+  const peak = peakOf(a, now)
+  return peak === null ? null : Math.round(peak)
 }
 
 function leastUsed(accounts: readonly AccountView[], excludeKey: string | null, now: number, threshold = SWITCH_AT): AccountView | null {
   const candidates = accounts
     .filter(a => a.key !== excludeKey && a.fetchedAt !== null && !isAuthError(a.error))
     .map(a => ({ a, peak: peakOf(a, now) }))
-    .filter((c): c is { a: AccountView; peak: number } => c.peak !== null && c.peak < threshold)
+    .filter((c): c is { a: AccountView; peak: number } => c.peak !== null && Math.round(c.peak) < threshold)
     .sort((x, y) => x.peak - y.peak || fiveHourOf(x.a, now) - fiveHourOf(y.a, now))
   return candidates[0]?.a ?? null
 }
@@ -103,7 +110,7 @@ function unreadCandidate(accounts: readonly AccountView[], excludeKey: string | 
 }
 
 function isSwitchDue(current: AccountView | undefined, now: number, threshold = SWITCH_AT): boolean {
-  const peak = current ? peakOf(current, now) : null
+  const peak = current ? shownPeak(current, now) : null
   return peak !== null && peak >= threshold
 }
 
@@ -125,10 +132,10 @@ function switchTarget(
 function noTargetReason(accounts: readonly AccountView[], activeKey: string | null, now: number, threshold = SWITCH_AT): string {
   const others = accounts.filter(a => a.key !== activeKey)
   if (!others.length) return 'Auto-switch: no other account stored. Add one to switch.'
-  const full = others.filter(a => (peakOf(a, now) ?? 0) >= threshold).length
+  const full = others.filter(a => (shownPeak(a, now) ?? 0) >= threshold).length
   const refused = others.filter(a => isAuthError(a.error)).length
   const unread = others.length - full - refused
-  const parts = [full && `${full} at ${threshold}% or more`, refused && `${refused} with an expired login`, unread > 0 && `${unread} not readable now`].filter(Boolean)
+  const parts = [full && `${full} at ${threshold}% or more`, refused && `${refused} logged out`, unread > 0 && `${unread} not readable now`].filter(Boolean)
   return `Auto-switch: no account below ${threshold}% (${parts.join(', ')}). Staying on the current one.`
 }
 
@@ -145,6 +152,12 @@ function markLimitHit(windows: readonly UsageWindow[], details: string, now: num
 function isWatched(a: AccountView | undefined, now: number): boolean {
   const peak = a ? peakOf(a, now) : null
   return peak !== null && peak >= WATCH_AT
+}
+
+// An API error this close to the limit is taken as the limit itself.
+function isNearLimit(a: AccountView | undefined, now: number): boolean {
+  const peak = a ? shownPeak(a, now) : null
+  return peak !== null && peak >= NEAR_LIMIT_AT
 }
 
 // Retry-After is seconds or an HTTP date; anything else is no hint.
@@ -269,6 +282,7 @@ export {
   backoffAfter,
   CANDIDATE_READ_MS,
   isAuthError,
+  isNearLimit,
   isSwitchDue,
   isWatched,
   markLimitHit,

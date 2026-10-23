@@ -53,17 +53,17 @@ test('picks the least-used account by its highest binding window, ignoring scope
 test('never picks an account with an error, no reading, or no headroom', () => {
   const accounts = [
     account('a@example.com', 99.9, 10),
-    account('b@example.com', 0, 0, { error: 'refused (HTTP 401)' }),
+    account('b@example.com', 0, 0, { error: 'logged out: its refresh token was refused; sign in again and import it' }),
     account('c@example.com', 0, 0, { fetchedAt: null }),
     account('d@example.com', 99.95, 0),
   ]
   expect(leastUsed(accounts, 'a@example.com#org', NOW)).toBeNull()
 })
 
-test('the 99.9% trigger fires on the 5h or the weekly window of the active account', () => {
+test('the 99% trigger fires on the 5h or the weekly window of the active account', () => {
   expect(switchTarget([account('a@example.com', 99.9, 10), account('b@example.com', 50, 50)], 'a@example.com#org', NOW)?.to).toBe('b@example.com#org')
   expect(switchTarget([account('a@example.com', 10, 99.92), account('b@example.com', 50, 50)], 'a@example.com#org', NOW)?.to).toBe('b@example.com#org')
-  expect(switchTarget([account('a@example.com', 98.9, 98), account('b@example.com', 0, 0)], 'a@example.com#org', NOW)).toBeNull()
+  expect(switchTarget([account('a@example.com', 98.4, 98), account('b@example.com', 0, 0)], 'a@example.com#org', NOW)).toBeNull()
 })
 
 test('does not switch when no other account has headroom', () => {
@@ -126,10 +126,10 @@ test('an account with no weekly window is limited by its 5h window alone', () =>
   expect(switchTarget([team, capped], 'team@example.com#t', NOW)).toBeNull()
 })
 
-test('the usage endpoint is only watched from 98% on a binding window', () => {
-  expect(isWatched(account('a@example.com', 98, 10), NOW)).toBe(true)
+test('the current account is watched closely from 95% on a binding window', () => {
+  expect(isWatched(account('a@example.com', 95, 10), NOW)).toBe(true)
   expect(isWatched(account('a@example.com', 10, 98.4), NOW)).toBe(true)
-  expect(isWatched(account('a@example.com', 97.9, 50), NOW)).toBe(false)
+  expect(isWatched(account('a@example.com', 94.9, 50), NOW)).toBe(false)
   expect(isWatched({ ...account('a@example.com', 0, 0), windows: [] }, NOW)).toBe(false)
   expect(isWatched(undefined, NOW)).toBe(false)
 })
@@ -184,16 +184,17 @@ test('rows sort by nearest availability: weekly-full accounts wait for the weekl
 
 test('switching starts at 99%: a busy (429) candidate keeps its last reading, a refused one is skipped', () => {
   const busy = account('b@example.com', 2, 14, { error: 'usage API busy (429), waiting before the next read' })
-  const refused = account('c@example.com', 0, 0, { error: 'refused (HTTP 401)' })
+  const refused = account('c@example.com', 0, 0, { error: 'logged out: its refresh token was refused; sign in again and import it' })
   expect(switchTarget([account('a@example.com', 99, 10), busy, refused], 'a@example.com#org', NOW)?.to).toBe('b@example.com#org')
-  expect(switchTarget([account('a@example.com', 98.9, 10), busy], 'a@example.com#org', NOW)).toBeNull()
+  expect(switchTarget([account('a@example.com', 98.4, 10), busy], 'a@example.com#org', NOW)).toBeNull()
+  expect(switchTarget([account('a@example.com', 98.5, 10), busy], 'a@example.com#org', NOW)?.to).toBe('b@example.com#org')
   expect(switchTarget([account('a@example.com', 99, 10), refused], 'a@example.com#org', NOW)).toBeNull()
 })
 
 test('with no reading below 99%, an account never read is tried; a refused or full one is not', () => {
   const unread = { ...account('u@example.com', 0, 0), windows: [], fetchedAt: null }
   expect(switchTarget([account('a@example.com', 100, 10), account('b@example.com', 100, 0), unread], 'a@example.com#org', NOW)?.to).toBe('u@example.com#org')
-  expect(switchTarget([account('a@example.com', 100, 10), { ...unread, error: 'login expired: sign in again and import it' }], 'a@example.com#org', NOW)).toBeNull()
+  expect(switchTarget([account('a@example.com', 100, 10), { ...unread, error: 'logged out: its refresh token was refused; sign in again and import it' }], 'a@example.com#org', NOW)).toBeNull()
   expect(switchTarget([account('a@example.com', 100, 10), account('b@example.com', 99.2, 0)], 'a@example.com#org', NOW)).toBeNull()
 })
 
@@ -206,7 +207,7 @@ test('a limit error marks the 5h window full, or the weekly one when it says so;
 
 test('the no-target status names why: nothing else stored, all full, or logins expired', () => {
   expect(noTargetReason([account('a@example.com', 100, 0)], 'a@example.com#org', NOW)).toContain('no other account stored')
-  const why = noTargetReason([account('a@example.com', 100, 0), account('b@example.com', 99.5, 0), account('c@example.com', 0, 0, { error: 'refused (HTTP 403)' })], 'a@example.com#org', NOW)
+  const why = noTargetReason([account('a@example.com', 100, 0), account('b@example.com', 99.5, 0), account('c@example.com', 0, 0, { error: 'logged out: its refresh token was refused' })], 'a@example.com#org', NOW)
   expect(why).toContain('1 at 99% or more')
-  expect(why).toContain('1 with an expired login')
+  expect(why).toContain('1 logged out')
 })

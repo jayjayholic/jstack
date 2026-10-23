@@ -64,8 +64,15 @@ function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number) 
   on('session.usage', () => ({ value: { rateLimits: [{ kind: 'five_hour', percentUsed: sessionFiveHour, resetsAt: LATER }] } as never }))
   on('session.measure', () => ({ changed: ['rateLimits'] }) as never)
   on('classic.StopFailure', () => ({}))
+  on('ui.toast', () => ({ value: undefined }))
+  const statuses: (string | undefined)[] = []
+  on('ui.status', (_$, e) => {
+    statuses.push(e.text)
+    return { value: undefined }
+  })
+  on('turn.complete', () => ({ text: '' }))
   const activeToken = () => (JSON.parse(files.get(CRED)!) as { claudeAiOauth: { accessToken: string } }).claudeAiOauth.accessToken
-  return { files, clock, activeToken }
+  return { files, clock, activeToken, statuses }
 }
 
 const PANE = {
@@ -79,14 +86,14 @@ const PANE = {
 const measure = (percent: number) =>
   ({ changed: ['rateLimits'], rateLimits: [{ kind: 'five_hour', percentUsed: percent, resetsAt: LATER }], context: {} }) as never
 
-test('crossing 99% on the session switches at once, even when another account answers the usage endpoint with a 429', async ($, on) => {
+test('the moment the shown percent reaches 99 the session switches, even when another account answers the usage endpoint with a 429', async ($, on) => {
   const { clock, activeToken } = world(on, { 'b-tok': { status: 200, body: usage(2, 14) }, 'c-tok': { status: 429, retryAfter: '600' }, 'a-live': { status: 429 } }, 60)
   const ui = await $.ui.mount(PANE)
   await clock.settle()
-  await $.session.measure(measure(98.9))
+  await $.session.measure(measure(98.4))
   await clock.settle()
   expect(activeToken()).toBe('a-live')
-  await $.session.measure(measure(99))
+  await $.session.measure(measure(98.5))
   await clock.settle()
   expect(activeToken()).toBe('b-tok')
   await ui.unmount()
@@ -115,6 +122,28 @@ test('with no account below 99% a due switch writes nothing and says why in the 
   await clock.settle()
   expect(activeToken()).toBe('a-live')
   expect(files.get(CRED)).toBe(before)
-  expect(await ui.find({ type: 'Text', text: /no account below 99%.*1 at 99% or more.*1 with an expired login/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /no account below 99%.*1 at 99% or more.*1 logged out/ })).toBeDefined()
+  await ui.unmount()
+})
+
+const failed = (agentId?: string) => ({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', ...(agentId ? { agentId } : {}) }) as never
+
+test('a limit error names the agents that died on it, and the main conversation, in the status line', async ($, on) => {
+  const { clock, statuses } = world(on, { 'b-tok': { status: 429 }, 'c-tok': { status: 200, body: usage(0, 96) }, 'a-live': { status: 429 } }, 40)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  await $.turn.complete(failed('early0001agent'))
+  await clock.advance(5 * 60_000)
+  await $.turn.complete(failed('writer01agent'))
+  await clock.settle()
+  expect(statuses).toEqual([])
+  await $.classic.StopFailure({ error: 'rate_limit', error_details: "You've hit your session limit" } as never)
+  await clock.settle()
+  const line = statuses.at(-1) ?? ''
+  expect(line).toContain('now on c@example.com')
+  expect(line).toContain('the main conversation')
+  expect(line).toContain('@writer01')
+  expect(line).not.toContain('@early000')
+  expect(await ui.find({ type: 'Text', text: /Resume: the main conversation, @writer01/ })).toBeDefined()
   await ui.unmount()
 })

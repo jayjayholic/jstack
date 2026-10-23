@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-23: jay-claude-switcher switches before the wall, not after it
+
+**What:** the switch now acts on the number on screen: the moment a bar shows 99% (98.5% and up), the next 1-second check switches. To keep that number fresh, the rate-limit numbers are re-read after every response (main loop and every agent), and from 95% the current account's usage is read every 5 s instead of once a minute. After a limit error the status line names where the session went and who to resume (the main conversation and every agent whose turn ended on an error within two minutes). A stored account whose usage read comes back 401 is refreshed with its refresh token and the rotated pair saved; only a refused refresh (`invalid_grant`) marks it logged out, and token calls now send their own User-Agent because the endpoint's firewall refuses some clients' default one.
+
+**Why:** version 0.5.0 did switch, but only after the limit hit, so the running agents died with 429 first and nobody told the owner which ones to wake up. The bar read 98 while the account was already at 99, because the numbers were only refreshed on the main loop and the account was read once a minute. Meanwhile one account showed as dead when it only needed its tokens refreshed (and one really was dead: its refresh token had been rotated by another session). 13 agents, one wall, zero survivors. Not anymore.
+
 ## 2026-10-23: jay-claude-switcher switches at 99%, and on the limit error itself
 
 **What:** the auto-switch threshold drops from 99.9% to 99%, and it checks at once on every new reading. The session's own limit error (`StopFailure` with `rate_limit`, or any turn ending on an API error at 98% or more) now marks the account full and switches right away, with a 15 s pause instead of 90 s. A candidate whose last usage read got a 429 keeps its last reading instead of being ruled out; only an expired login rules an account out; with nothing readable below 99%, an account never read gets a try. When there is nowhere to go, the Sessions tab says why. New end-to-end tests drive the plugin through the test engine: crossing 99% switches, a limit error switches, no candidate writes nothing and shows the reason.

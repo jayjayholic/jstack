@@ -44,8 +44,8 @@ Every write is a temp file plus a rename, so nothing ever reads half a file.
 
 The usage endpoint answers 429 if you poke it too often, so the plugin barely pokes it:
 
-- **Below 98%: zero calls.** The current account's bars come from the rate-limit numbers Claude Code already gets on every request. Free.
-- **From 98%:** the current account's usage is read at most once a minute.
+- **Below 95%: zero calls.** The current account's bars come from the rate-limit numbers Claude Code already gets, refreshed after every response of the main loop and of every agent. Free.
+- **From 95%:** the current account's usage is also read every 5 seconds, so the bar is never stale near the top.
 - **At 99%, switch due:** the other accounts are read once (not again within 5 minutes) to pick the target.
 - **Refresh** and `/switcher-accounts` read everything, because you asked.
 - **A failed read is never retried in a loop.** A 429 waits for its `Retry-After`; without one it waits 5 minutes, then 10, 20, capped at 30. Not even **Refresh** skips the wait.
@@ -57,10 +57,11 @@ A check runs every second on the cached numbers and switches with no click. Afte
 - Only the **binding** windows count: the 5-hour window and the all-models weekly window (`session` and `weekly_all` in the API). Those are the ones that stop you.
 - **Scoped weekly windows** (one model only, like weekly Opus) are ignored. They limit one model, not the account.
 - **Accounts with no weekly limit** (some team organizations) are judged on the 5-hour window alone.
-- The switch fires when the current account is at 99% or more on a binding window, and goes to the account with the lowest peak below 99% (tie: lowest 5-hour). It checks at once on every new reading, not only on the 1-second tick.
-- **It also fires on the limit error itself.** When a request comes back refused for the limit (Claude Code's `StopFailure` with `rate_limit`), the current account is marked full on the spot (the weekly window if the error says weekly, else the 5-hour one) and the switch runs, no reading needed. A turn, main or agent, that ends on an API error while the account is already at 98% or more counts too. After a limit error the pause between switches drops from 90 s to 15 s.
-- **A candidate the usage endpoint answered with 429 still counts**, on its last reading. Only an expired login rules an account out. With no reading below 99% anywhere, an account never read gets a blind try: a guess beats a session stuck on a full account.
-- **Nowhere to go?** It stays put, doesn't thrash, and the tab says why in one line: how many accounts are full and how many have an expired login.
+- **The rule is the number on screen.** The moment a binding bar of the current account shows 99% (98.5% and up, rounded), the next 1-second check switches. No waiting for another read. It goes to the account with the lowest peak below 99% (tie: lowest 5-hour). It checks at once on every new reading, not only on the 1-second tick.
+- **It also fires on the limit error itself.** When a request comes back refused for the limit (Claude Code's `StopFailure` with `rate_limit`), the current account is marked full on the spot (the weekly window if the error says weekly, else the 5-hour one) and the switch runs, no reading needed. A turn, main or agent, that ends on an API error while the account already shows 98% or more counts too. After a limit error the pause between switches drops from 90 s to 15 s.
+- **A candidate the usage endpoint answered with 429 still counts**, on its last reading. Only a logged-out account (its refresh token refused) is ruled out. With no reading below 99% anywhere, an account never read gets a blind try: a guess beats a session stuck on a full account.
+- **Nowhere to go?** It stays put, doesn't thrash, and the tab says why in one line: how many accounts are full and how many are logged out.
+- **Who to resume.** After a limit error the status line (and the tab) says where the session went and who died on the wall: `Limit hit, now on <account>. Resume: the main conversation, @writer, @tester`. It names every agent whose turn ended on an error within two minutes of the hit, and clears itself after 15 minutes. Paste a "continue" into each one and off they go.
 - A window whose reset time has passed counts as empty, even from an old reading.
 
 ## Install and first account, step by step
@@ -118,7 +119,9 @@ Paths follow Claude Code: `CLAUDE_CONFIG_DIR` when set, else `~/.claude/.credent
 
 **One account says "usage API busy (429)".** The endpoint is rate-limited. The plugin waits as the server asked and tries again later on its own. Don't mash Refresh, it won't help (it also won't hurt, it respects the wait).
 
-**An account says "login expired: sign in again and import it".** Its refresh token died (usually because the same account was used in another folder and refreshed there). Do step 3 again for it.
+**An account says "logged out: its refresh token was refused".** An expired access token alone never does this: the plugin refreshes it with the stored refresh token (also when a read comes back 401) and saves the rotated pair. Only when the token endpoint refuses the refresh token itself (`invalid_grant`) is the account logged out, usually because the same account was used in another Claude Code (another folder, another session that refreshed it) and the rotation left the stored copy behind. Do step 3 again for it.
+
+**"token refresh HTTP 403, trying again later"?** The token endpoint sits behind a firewall that refuses some HTTP clients' default User-Agent (Cloudflare error 1010). The plugin sends its own, but if you call the endpoint from a script, set one too.
 
 **Why 99% and not 100%?** At 100% the request that hits the wall already failed, and the numbers Claude Code gets back are rounded, so 99.9% may never show up before the wall does. 99% switches a few requests early. (Learned the hard way: the first version waited for 99.9%, the account sat at 99%, and 13 agents ate 429s.)
 
@@ -128,4 +131,4 @@ Paths follow Claude Code: `CLAUDE_CONFIG_DIR` when set, else `~/.claude/.credent
 
 ## Tests
 
-`claude plugin test .` covers picking the least-used account, the 99% trigger, the switch on the session's own limit error, not switching (and saying why) when every account is full, a 429'd candidate keeping its last reading, accounts with no weekly window, the gentle read schedule (no reads below 98%, Retry-After, the 5 to 30 minute backoff), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, and the tab drawn on every surface.
+`claude plugin test .` covers picking the least-used account, the 99%-on-screen trigger, the switch on the session's own limit error, the who-to-resume status line, the refresh on 401 (and that only a refused refresh logs out), not switching (and saying why) when every account is full, a 429'd candidate keeping its last reading, accounts with no weekly window, the gentle read schedule (no reads below 98%, Retry-After, the 5 to 30 minute backoff), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, and the tab drawn on every surface.
