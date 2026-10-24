@@ -2,6 +2,19 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-23: /optimize starts from a checklist of what already went wrong
+
+**What:** new `skills/optimize/DEBUG-CHECKS.md`, three tables (method traps, machine traps, known causes), every row
+as symptom → how to measure → cause → proven fix → verify. It replaces the dated "What the runs learned" list in the
+skill, adds a 1-run smoke of the suite before the baseline, and makes it a standing rule that every run turns each
+finding into a row there and an entry in the playbook while it runs.
+
+**Why:** an optimize run spent its first hour learning things earlier runs had already paid for: the suite's selectors
+died with a UI redesign, a "click → done" metric finished before the click because the old screen already matched,
+a popup ate every click, TBT went "up" because the page painted earlier, two builds at once took the laptop to 2% free
+RAM, and six tries at decoding the server HTML with inline regexes. A dated list of anecdotes didn't stop any of it; a
+checklist you run before measuring does. The 32 GB laptop thanks you in advance.
+
 ## 2026-10-23: jay-claude-switcher switches before the wall, not after it
 
 **What:** the switch now acts on the number on screen: the moment a bar shows 99% (98.5% and up), the next 1-second check switches. To keep that number fresh, the rate-limit numbers are re-read after every response (main loop and every agent), and from 95% the current account's usage is read every 5 s instead of once a minute. After a limit error the status line names where the session went and who to resume (the main conversation and every agent whose turn ended on an error within two minutes). A stored account whose usage read comes back 401 is refreshed with its refresh token and the rotated pair saved; only a refused refresh (`invalid_grant`) marks it logged out, and token calls now send their own User-Agent because the endpoint's firewall refuses some clients' default one.

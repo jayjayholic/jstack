@@ -18,9 +18,11 @@ Five rules, each from a mistake an earlier run made (or one Lauren Tan and Brend
   chunking). If a train runs (see the `/train` skill), agents never run the production build themselves: commit, stop
   your servers and end the turn with `READY FOR BUILD: <absolute worktree path>`; the coordinator builds
   (`{{JSTACK_TOOLS}}/coordinator-build.sh`) and leaves the build output in the worktree. Without a train, build
-  inside the heavy slot (`source {{JSTACK_TOOLS}}/heavy-lock.sh; heavy_acquire optimize; {{BUILD_CMD}}; heavy_release`).
+  inside the heavy slot, one build at a time, every arm chained in one background script
+  (`source {{JSTACK_TOOLS}}/heavy-lock.sh; server_wait 8; heavy_acquire optimize; {{BUILD_CMD}}; heavy_release`).
 - **Numbers or nothing.** No fix before a baseline, no claim without at least 10 kept runs per arm, no "faster" unless
-  the compare table says so. A fix that speeds up the load and slows down the next click is not a win.
+  the compare table says so. A fix that speeds up the load and slows down the next click is not a win. Before trusting
+  any number, go through `DEBUG-CHECKS.md`.
 - **Quiet machine.** Every run logs the machine's CPU use and free memory. A block measured while another build or a
   heavy background job ran is thrown away and re-run.
 - **Keep behaviour.** Lazy-load, cut waterfalls, trim bundles, stop re-renders; never drop a feature, a permission
@@ -62,6 +64,7 @@ never type credentials). Locally, mint a session for a test user the way the rep
    {{SERVER_CMD}} &                                        # a quick look before measuring; stop it after
    ```
 
+   Smoke the suite first (1 run per scenario): a timeout means stale selectors or an overlay (`DEBUG-CHECKS.md` §1).
    Check the page really works before measuring: call one API route with the session cookie and read the server log.
    One failing request empties a whole panel and every number after it lies.
 
@@ -122,24 +125,13 @@ body (`artifacts/pr-body.md`, from `{{PR_TEMPLATE}}`) carries:
 plus the bytes table, the machine state, and what stays slow and why. End with `READY TO PUSH: <worktree> <branch>`;
 never push yourself.
 
-## What the runs learned
+## Every run feeds the checklist
 
-Each /optimize run adds the trap or win it found here, one line with its date. These came from a Next.js 16 app on
-Windows; the lessons travel.
+`DEBUG-CHECKS.md` (next to this file) is the checklist of method traps, machine traps and known causes, each as
+symptom → how to measure → cause → proven fix → verify. Go through it before the baseline, when ranking, and whenever a
+number looks wrong.
 
-- 2026-10-19: a tab that mounts a WebGL graph froze the click for 0.5 s (INP 528 ms). React flushes passive effects
-  before paint after a discrete event; `useDeferredValue` on that tab cut INP to 48 ms. Deferring every tab slowed the
-  light tabs by 56 ms, so defer only the heavy one.
-- 2026-10-19: moving work behind the paint doesn't remove it. Total blocking and click-to-drawn barely moved, and the
-  requests the deferred tree makes (images) started later. Report all three numbers, not INP alone.
-- 2026-10-19: a shared test database bites. Mid-A/B, another branch's new enum value broke one API route in both
-  arms. Merge the commit that adds the value and re-run both arms in one data state.
-- 2026-10-19: identical server code still showed the phone TTFB "lower" (331 to 192 ms) between ABAB blocks. Load
-  metrics drifted about ±150 ms per block on a laptop. Click metrics are timed in the page and much steadier; repeat
-  the ABAB before claiming a load win.
-- 2026-10-19: `cp -r .next` breaks the symlinks inside `.next/node_modules`, `mv` keeps them. A build made in another
-  worktree links absolutely into that worktree's `node_modules`, so keep that worktree until the A/B ends.
-- 2026-10-19: staging loaded the Vercel toolbar (~300 ms frames) and a session recorder. Production has neither, so
-  don't try to fix them.
-- 2026-10-19: a "What's new" popup opened on every cold load and covered the tabs. Close it in the profile script, or
-  every click times out.
+This is part of the run, not optional: each finding (a cause, a trap, a measurement bug, an hour lost) becomes, the
+moment it is confirmed, a row in `DEBUG-CHECKS.md` (generic, app names only as examples) and an entry in
+`{{PLAYBOOK_FILE}}` with its numbers and a "test next time" line. Delete rows whose cause can no longer happen. The
+report names the rows added.

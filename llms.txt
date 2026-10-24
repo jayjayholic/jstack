@@ -20,6 +20,7 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 - [orchestrator brief](https://github.com/jayjayholic/jstack/blob/main/skills/train/orchestrator-brief.md): prompt for the orchestrator agent
 - [worker clause](https://github.com/jayjayholic/jstack/blob/main/skills/train/worker-clause.md): block pasted into every coding agent's prompt
 - [/optimize](https://github.com/jayjayholic/jstack/blob/main/skills/optimize/SKILL.md): measure LCP, INP, TTFB, long tasks, API waterfall and bundle size, fix the top cost, prove it with interleaved A/B runs
+- [DEBUG-CHECKS.md](https://github.com/jayjayholic/jstack/blob/main/skills/optimize/DEBUG-CHECKS.md): /optimize's checklist of measurement traps, machine traps and known causes of slow pages, each with how to measure, the proven fix and how to verify
 - [PERFORMANCE.md](https://github.com/jayjayholic/jstack/blob/main/skills/optimize/PERFORMANCE.md): sourced performance know-how for /optimize: method, number-vetting checklist, metric targets, trace recipes per layer, instant-UI techniques, cases
 
 ## Plugins
