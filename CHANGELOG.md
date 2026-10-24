@@ -8,6 +8,18 @@ Each entry says what changed and which problem it fixes.
 
 **Why:** the stored usage samples showed the bar at 99% 16 s (and, another time, 44 s) before the first 429, and still no switch until after it. Nobody missed the 99%: the check saw it, then sat waiting behind network reads. From 95% the current account was read every 5 s, and the switch first awaited any read in flight, then read every other account one after another (token refresh included) before writing anything. Meanwhile a lagging usage answer could overwrite the 99% with 97% and call the switch off. A workflow of 13 agents climbs a point every 20 s or so near the top; the switch spent its whole margin on HTTP. The 32 GB laptop was idle the entire time, which for once was the problem.
 
+## 2026-10-24: /optimize learns what a blank screen looks like
+
+**What:** three new rows in `skills/optimize/DEBUG-CHECKS.md`: a screen change that blanks the whole UI (a pending check
+drawn in place of the shell, plus a click that renders everything at once), a list that shows up seconds late on some
+loads (half its data outside the server preload, a preload budget that drops misses, per-row queries), and local A/B
+runs that all time out because the machine is swapping.
+
+**Why:** two real cases from the same day. Opening a thread blanked the header, background and input for half a second
+because an app check said "wait" by erasing the whole screen. The side list took up to 4.7 s because half of what it
+reads was never preloaded. And the A/B to prove it couldn't run: 2 GB free out of 32. The laptop was, once again, the
+bottleneck.
+
 ## 2026-10-24: /optimize puts "perceived instant" first
 
 **What:** `skills/optimize/SKILL.md` gains a top-level section, "Perceived instant first", with five rules and the
