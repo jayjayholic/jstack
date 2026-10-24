@@ -37,6 +37,25 @@ chat feel instant, cases with numbers, and every source with its date. Read it b
 mantras' order, cheapest first: don't do it, don't do it again, do less, do it later, do it when they're not looking,
 do it concurrently, do it cheaper. Log every attempt (kept or reverted) as one row in `decision.tsv`.
 
+## Perceived instant first (the core, before any other number)
+
+What the user sees while waiting matters more than total load time. The complaints that wrote this section were
+basic ones: a list that takes seconds to show up, a screen change that blanks the whole UI, and no skeleton even where
+something can't be instant. Until now this skill accepted "this can't be faster" and stopped there without adding a
+skeleton; **that is now a failure**. Every pass checks the five rules below, and a run that leaves one broken isn't
+done, even when every load number is green.
+
+| # | Rule | Check the agent runs |
+| --- | --- | --- |
+| 1 | The view opens instantly where the user's focus is. The shell (layout, header, background, input, navigation) never unmounts or blanks. | Every load and transition scenario keeps a shell selector and asserts it never disappears (shell remounts = 0); the shell milestone is ≤ 1 s cold on staging. A trace frame where the shell's node is gone is a defect. |
+| 2 | Anything that can't be instant gets a skeleton or placeholder in its place, never an empty area. | For each region drawn more than 100 ms after the shell, add a milestone for its skeleton; it must appear within 100 ms of the shell. Screenshot at shell + 100 ms: no empty region. |
+| 3 | Keep warm what the user will most likely do next: preload the probable next action (the last ~20 messages of each recent thread, the side list in the page's server preload, hover/viewport prefetch), then refresh in the background. | List the next actions from the screen (top items of each list, the open tab's neighbours). For each: is its data in the server preload or prefetched on render/idle/hover? Measure a prefetch hit and click → content ≤ 100 ms for the top items. |
+| 4 | Show the correct state from a cache first, then reconcile. | Warm load and a back-navigation: the region draws from cache (no skeleton, no request on the critical path) and a background refetch replaces it only when the data changed. The behaviour check confirms the refreshed content shows up. |
+| 5 | Measure time-to-shell, time-to-first-content and long tasks on every pass; a blank shell is a defect even when total load is fast. | Every report table carries the shell milestone, first content per region, TBT / LoAF blocking and shell remounts, before and after. |
+
+When the limiter can't be removed (a slow provider, a cold function), rules 2 to 4 still apply: skeleton in place,
+cache first, prefetch the next step. "Can't be faster" is a reason to fix perception, never a place to stop.
+
 ## 1. Set up (once per worktree)
 
 ```bash

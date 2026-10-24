@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-24: /optimize puts "perceived instant" first
+
+**What:** `skills/optimize/SKILL.md` gains a top-level section, "Perceived instant first", with five rules and the
+check an agent runs for each: the shell never unmounts or blanks; anything not instant gets a skeleton in place; the
+probable next action is kept warm (server preload, prefetch on render/idle/hover) and refreshed in the background;
+cached state is drawn first and reconciled after; time-to-shell, first content and long tasks are measured on every
+pass. Saying "this can't be faster" without adding a skeleton now counts as a failed run.
+
+**Why:** the agent kept chasing total load time while the user stared at a side list that took seconds and a screen
+that blanked on every thread open. Those were basic perception bugs, and the old skill would happily report "the query
+is already fast, nothing to do" and leave the blank screen there. Fast-but-blank is still blank.
+
 ## 2026-10-23: /optimize starts from a checklist of what already went wrong
 
 **What:** new `skills/optimize/DEBUG-CHECKS.md`, three tables (method traps, machine traps, known causes), every row
