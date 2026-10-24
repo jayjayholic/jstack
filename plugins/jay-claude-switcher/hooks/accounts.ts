@@ -8,6 +8,7 @@ const ACTIVE_READ_MS = 5_000
 const CANDIDATE_READ_MS = 5 * 60_000
 const BACKOFF_FIRST_MS = 5 * 60_000
 const BACKOFF_MAX_MS = 30 * 60_000
+const SAME_WINDOW_MS = 10 * 60_000
 
 type RawLimit = {
   kind?: unknown
@@ -177,11 +178,24 @@ function backoffAfter(previous: Backoff | undefined, retryAfter: string | undefi
   return { until: now + (retryAfterMs(retryAfter, now) ?? step), step }
 }
 
-// The session's own rate-limit headers, fresh on every request, laid over the current account's last reading.
+// Two readings of one window: usage within a window only rises, so the higher one is the fresher; a reading of a
+// later window (its reset more than 10 minutes on) replaces the earlier one whatever its percent.
+function fresher(reading: UsageWindow, live: UsageWindow): UsageWindow {
+  const a = reading.resetsAt ? Date.parse(reading.resetsAt) : Number.NaN
+  const b = live.resetsAt ? Date.parse(live.resetsAt) : Number.NaN
+  if (!Number.isNaN(a) && !Number.isNaN(b) && Math.abs(a - b) > SAME_WINDOW_MS) return b > a ? live : reading
+  return live.percent >= reading.percent ? live : { ...reading, resetsAt: reading.resetsAt ?? live.resetsAt }
+}
+
+// The session's own rate-limit headers, fresh on every request, laid over the current account's last reading; a
+// lagging usage answer never lowers them.
 function withSessionLimits(windows: readonly UsageWindow[], limits: readonly { kind: string; percentUsed: number; resetsAt?: string }[]): UsageWindow[] {
   const live = windowsFromRateLimits(limits)
   if (!live.length) return [...windows]
-  const merged = windows.map(w => live.find(l => l.label === w.label) ?? w)
+  const merged = windows.map(w => {
+    const l = live.find(x => x.label === w.label)
+    return l ? fresher(w, l) : w
+  })
   return [...merged, ...live.filter(l => !windows.some(w => w.label === l.label))]
 }
 

@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-24: jay-claude-switcher 0.7.0 switches within a second of 99%, not after the wall
+
+**What:** the switch decides on the readings in hand and never waits for a usage read. Every second it reads the session's own rate-limit numbers (free; every response brings them, main loop, subagents and workflow agents alike) and switches within that second of a bar reaching 99%. From 95% the other accounts are read ahead, once per 5 minutes, so the target is known before it's needed; only when no account has a reading below 99% does a due switch read them, for 4 s at most. A usage answer can no longer lower the session's own (fresher) number for the same window. The new credentials are written first, before the bookkeeping. After a switch, readings that still carry only the old account's windows are not laid over the new one for 10 minutes. And there's a trace now: `switch-trace.log` next to the store, one timestamped line per reading, decision and switch, never a token.
+
+**Why:** the stored usage samples showed the bar at 99% 16 s (and, another time, 44 s) before the first 429, and still no switch until after it. Nobody missed the 99%: the check saw it, then sat waiting behind network reads. From 95% the current account was read every 5 s, and the switch first awaited any read in flight, then read every other account one after another (token refresh included) before writing anything. Meanwhile a lagging usage answer could overwrite the 99% with 97% and call the switch off. A workflow of 13 agents climbs a point every 20 s or so near the top; the switch spent its whole margin on HTTP. The 32 GB laptop was idle the entire time, which for once was the problem.
+
 ## 2026-10-24: /optimize puts "perceived instant" first
 
 **What:** `skills/optimize/SKILL.md` gains a top-level section, "Perceived instant first", with five rules and the

@@ -44,20 +44,33 @@ Every write is a temp file plus a rename, so nothing ever reads half a file.
 
 The usage endpoint answers 429 if you poke it too often, so the plugin barely pokes it:
 
-- **Below 95%: zero calls.** The current account's bars come from the rate-limit numbers Claude Code already gets, refreshed after every response of the main loop and of every agent. Free.
-- **From 95%:** the current account's usage is also read every 5 seconds, so the bar is never stale near the top.
-- **At 99%, switch due:** the other accounts are read once (not again within 5 minutes) to pick the target.
+- **Below 95%: zero calls.** The current account's bars come from the rate-limit numbers Claude Code already gets with every response (main loop, subagents, workflow agents), read again every second. Free.
+- **From 95%:** the current account's usage is also read every 5 seconds, and the other accounts once per 5 minutes, so the switch target is already known when 99% arrives.
+- **A usage answer never lowers the session's own number** for the same window. Usage within a window only goes up, and the endpoint's answer can lag the live headers; the higher one wins.
+- **At 99%, switch due:** the switch goes out on the readings in hand. It does not wait for any read. Only when no account has a reading below 99% are the others read, for 4 seconds at most.
 - **Refresh** and `/switcher-accounts` read everything, because you asked.
 - **A failed read is never retried in a loop.** A 429 waits for its `Retry-After`; without one it waits 5 minutes, then 10, 20, capped at 30. Not even **Refresh** skips the wait.
 
-A check runs every second on the cached numbers and switches with no click. After a switch it waits 90 s before another.
+A check runs every second on the session's own numbers and switches with no click, within a second of a bar reaching 99%. After a switch it waits 90 s before another, and for 10 minutes a reading that still carries only the old account's windows (requests sent before the switch) is not laid over the new account.
+
+### The trace
+
+Every reading, decision and switch is one timestamped line in `switch-trace.log`, next to the store (`~/.claude/logins/`), last 400 lines kept:
+
+```
+2026-10-24T20:00:08.120Z reading five_hour=99
+2026-10-24T20:00:08.121Z decide account=a@example.com peak=99 threshold=99 due=true
+2026-10-24T20:00:08.390Z switch from=a@example.com to=b@example.com reason="a@example.com (max 20x) at 99% (5h)" switched=true took=269ms
+```
+
+Emails, percents and reasons only, never a token. When a session still hits the wall, the trace says whether 99% was ever read, when, and what the switch did about it.
 
 ### How it picks the target
 
 - Only the **binding** windows count: the 5-hour window and the all-models weekly window (`session` and `weekly_all` in the API). Those are the ones that stop you.
 - **Scoped weekly windows** (one model only, like weekly Opus) are ignored. They limit one model, not the account.
 - **Accounts with no weekly limit** (some team organizations) are judged on the 5-hour window alone.
-- **The rule is the number on screen.** The moment a binding bar of the current account shows 99% (98.5% and up, rounded), the next 1-second check switches. No waiting for another read. It goes to the account with the lowest peak below 99% (tie: lowest 5-hour). It checks at once on every new reading, not only on the 1-second tick.
+- **The rule is the number on screen.** The moment a binding bar of the current account shows 99% (98.5% and up, rounded), the next 1-second check switches. No waiting for another read, nor for one already running. It goes to the account with the lowest peak below 99% (tie: lowest 5-hour). It checks at once on every new reading, not only on the 1-second tick.
 - **It also fires on the limit error itself.** When a request comes back refused for the limit (Claude Code's `StopFailure` with `rate_limit`), the current account is marked full on the spot (the weekly window if the error says weekly, else the 5-hour one) and the switch runs, no reading needed. A turn, main or agent, that ends on an API error while the account already shows 98% or more counts too. After a limit error the pause between switches drops from 90 s to 15 s.
 - **A candidate the usage endpoint answered with 429 still counts**, on its last reading. Only a logged-out account (its refresh token refused) is ruled out. With no reading below 99% anywhere, an account never read gets a blind try: a guess beats a session stuck on a full account.
 - **Nowhere to go?** It stays put, doesn't thrash, and the tab says why in one line: how many accounts are full and how many are logged out.
@@ -131,4 +144,4 @@ Paths follow Claude Code: `CLAUDE_CONFIG_DIR` when set, else `~/.claude/.credent
 
 ## Tests
 
-`claude plugin test .` covers picking the least-used account, the 99%-on-screen trigger, the switch on the session's own limit error, the who-to-resume status line, the refresh on 401 (and that only a refused refresh logs out), not switching (and saying why) when every account is full, a 429'd candidate keeping its last reading, accounts with no weekly window, the gentle read schedule (no reads below 98%, Retry-After, the 5 to 30 minute backoff), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, and the tab drawn on every surface.
+`claude plugin test .` covers picking the least-used account, the 99%-on-screen trigger, the switch on the session's own limit error, the who-to-resume status line, the refresh on 401 (and that only a refused refresh logs out), not switching (and saying why) when every account is full, a 429'd candidate keeping its last reading, accounts with no weekly window, the gentle read schedule (no reads below 95%, Retry-After, the 5 to 30 minute backoff), a 99% switching within a second while every usage read hangs and with no hook firing, a lagging usage answer not hiding a 99%, the old account's reading not laid over the new one, the trace (and no token in it), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, and the tab drawn on every surface.

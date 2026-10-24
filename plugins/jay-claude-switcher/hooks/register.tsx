@@ -5,7 +5,7 @@ import { resumeLine, addUsage, formatDuration, formatTokens, isActive, isFinishe
 import { cellsOf, contextView } from './context'
 import { addSample, forecast, rowOf, type Sample } from './forecast'
 import { renderSessions } from './sessions-pane'
-import { activeLabel, autoSwitchTick, backgroundRefresh, loadAutoSwitch, noteLimitHit, setNotice, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport } from './sessions'
+import { activeLabel, backgroundRefresh, switchPoll, loadAutoSwitch, noteLimitHit, setNotice, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport } from './sessions'
 import { created, detailOf, fromListText, fromTodos, updated } from './tasks'
 
 const PANE = 'switcher-work'
@@ -108,8 +108,9 @@ export const register: Register = on => {
     $.clock.every(1000, () => syncAgents($).catch(() => undefined))
     void $.session.usage().then(u => refreshUsage($, u.rateLimits)).catch(() => undefined)
     void refreshContext($).catch(() => undefined)
-    // Accounts: listed from the store with no network; the usage endpoint is asked only from 98% on the current
-    // account (once a minute) and, when a switch is due, once for the others. The switch check runs every second.
+    // Accounts: listed from the store with no network; from 95% the usage endpoint is asked for the current account
+    // (every 5 s) and the others (once per 5 minutes). Every second the session's own figures are read and the switch
+    // checked on them.
     void loadAutoSwitch($)
       .then(() => refreshSessions($, 'none'))
       .then(() => $.session.usage())
@@ -117,7 +118,7 @@ export const register: Register = on => {
       .catch(() => undefined)
     $.clock.every(5_000, () => void backgroundRefresh($).catch(() => undefined))
     $.clock.every(1000, () => {
-      void autoSwitchTick($).catch(() => undefined)
+      void switchPoll($).catch(() => undefined)
       void $.clock
         .now()
         .then(t => {

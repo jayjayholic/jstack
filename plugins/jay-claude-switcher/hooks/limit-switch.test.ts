@@ -9,7 +9,7 @@ const CRED = `${HOME}/.claude/.credentials.json`
 const CLAUDE_JSON = `${HOME}/.claude.json`
 const USAGE = 'https://api.anthropic.com/api/oauth/usage'
 
-type Reply = { status: number; body?: unknown; retryAfter?: string }
+type Reply = { status: number; body?: unknown; retryAfter?: string; gate?: Promise<void> }
 
 const usage = (fiveHour: number, week: number) => ({
   limits: [
@@ -55,13 +55,17 @@ function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number) 
     }
     return { value: { exitCode: 0, stdout: '', stderr: '' } as never }
   })
-  on('http.fetch', (_$, e) => {
+  on('http.fetch', async (_$, e) => {
     const auth = (e.init?.headers as Record<string, string> | undefined)?.['Authorization'] ?? ''
-    const reply = e.url === USAGE ? (replies[auth.replace('Bearer ', '')] ?? { status: 500 }) : { status: 400, body: {} }
+    const reply: Reply = e.url === USAGE ? (replies[auth.replace('Bearer ', '')] ?? { status: 500 }) : { status: 400, body: {} }
+    if (reply.gate) await reply.gate
+    if (e.url === USAGE && held.gate) await held.gate
     const headers: Record<string, string> = reply.retryAfter ? { 'retry-after': reply.retryAfter } : {}
     return { value: { status: reply.status, ok: reply.status === 200, headers, text: JSON.stringify(reply.body ?? {}) } }
   })
-  on('session.usage', () => ({ value: { rateLimits: [{ kind: 'five_hour', percentUsed: sessionFiveHour, resetsAt: LATER }] } as never }))
+  let live = sessionFiveHour
+  const held: { gate: Promise<void> | null } = { gate: null }
+  on('session.usage', () => ({ value: { rateLimits: [{ kind: 'five_hour', percentUsed: live, resetsAt: LATER }] } as never }))
   on('session.measure', () => ({ changed: ['rateLimits'] }) as never)
   on('classic.StopFailure', () => ({}))
   on('ui.toast', () => ({ value: undefined }))
@@ -71,8 +75,19 @@ function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number) 
     return { value: undefined }
   })
   on('turn.complete', () => ({ text: '' }))
+  // What session.start asks of the engine, so its timers (the 1 s switch check, the 5 s reads) run.
+  on('session.start', (_$, e) => ({ cwd: (e as { cwd: string }).cwd }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  on('ui.open', () => ({ value: { isPlaced: false } }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
   const activeToken = () => (JSON.parse(files.get(CRED)!) as { claudeAiOauth: { accessToken: string } }).claudeAiOauth.accessToken
-  return { files, clock, activeToken, statuses }
+  const setLive = (percent: number) => {
+    live = percent
+  }
+  const holdReads = (gate: Promise<void> | null) => {
+    held.gate = gate
+  }
+  return { files, clock, activeToken, statuses, setLive, holdReads }
 }
 
 const PANE = {
@@ -145,5 +160,90 @@ test('a limit error names the agents that died on it, and the main conversation,
   expect(line).toContain('@writer01')
   expect(line).not.toContain('@early000')
   expect(await ui.find({ type: 'Text', text: /Resume: the main conversation, @writer01/ })).toBeDefined()
+  await ui.unmount()
+})
+
+function gate() {
+  let open = () => {}
+  const closed = new Promise<void>(resolve => {
+    open = resolve
+  })
+  return { closed, open }
+}
+
+const traceOf = (files: Map<string, string>) => files.get(`${HOME}/.claude/logins/switch-trace.log`) ?? ''
+
+test('a usage read in flight that answers a lagging 97% does not hide the 99% the session reported: the switch still happens', async ($, on) => {
+  const slow = gate()
+  const { clock, activeToken, setLive, holdReads, files } = world(on, { 'b-tok': { status: 200, body: usage(2, 14) }, 'c-tok': { status: 200, body: usage(50, 50) }, 'a-live': { status: 200, body: usage(97, 30) } }, 97)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  await $.session.measure(measure(97))
+  holdReads(slow.closed)
+  await clock.advance(5_000)
+  setLive(99)
+  await $.session.measure(measure(99))
+  await clock.advance(1_000)
+  slow.open()
+  holdReads(null)
+  await clock.advance(1_000)
+  expect(activeToken()).toBe('b-tok')
+  const trace = traceOf(files)
+  expect(trace).toMatch(/reading five_hour=99/)
+  expect(trace).toMatch(/decide .*peak=99 .*due=true/)
+  expect(trace).toMatch(/switch .*to=b@example.com .*switched=true/)
+  expect(trace).not.toMatch(/-tok|a-live|Bearer/)
+  await ui.unmount()
+})
+
+test('a 99% reading switches within a second with no hook firing (the 1 s check reads the session itself), every usage read hanging', async ($, on) => {
+  const hang = gate()
+  const { clock, activeToken, setLive, holdReads } = world(on, { 'b-tok': { status: 200, body: usage(2, 14) }, 'c-tok': { status: 200, body: usage(50, 50) }, 'a-live': { status: 200, body: usage(96, 30) } }, 96)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true } as never)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  await $.session.measure(measure(96))
+  holdReads(hang.closed)
+  await clock.advance(6_000)
+  setLive(99)
+  await clock.advance(1_000)
+  expect(activeToken()).toBe('b-tok')
+  hang.open()
+  await ui.unmount()
+})
+
+test('a 99% the session reports while a usage read hangs switches at once, not when the read ends', async ($, on) => {
+  const hang = gate()
+  const { clock, activeToken, setLive, holdReads } = world(on, { 'b-tok': { status: 200, body: usage(2, 14) }, 'c-tok': { status: 200, body: usage(50, 50) }, 'a-live': { status: 200, body: usage(96, 30) } }, 96)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true } as never)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  await $.session.measure(measure(96))
+  holdReads(hang.closed)
+  await clock.advance(6_000)
+  setLive(99)
+  await $.session.measure(measure(99))
+  await clock.advance(1_000)
+  expect(activeToken()).not.toBe('a-live')
+  hang.open()
+  await ui.unmount()
+})
+
+test("after a switch the old account's last 99% reading is not laid over the new account", async ($, on) => {
+  const { clock, activeToken, setLive } = world(on, { 'b-tok': { status: 200, body: usage(2, 14) }, 'c-tok': { status: 200, body: usage(50, 50) }, 'a-live': { status: 429 } }, 60)
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  setLive(99)
+  await $.session.measure(measure(99))
+  await clock.advance(1_000)
+  expect(activeToken()).toBe('b-tok')
+  await clock.advance(120_000)
+  expect(activeToken()).toBe('b-tok')
   await ui.unmount()
 })

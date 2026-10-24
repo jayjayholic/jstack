@@ -7,7 +7,7 @@ const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const OAUTH_BETA = 'oauth-2025-04-20'
 // The token endpoint's firewall refuses some runtimes' default agent (Cloudflare 1010): name ourselves.
-const USER_AGENT = 'jay-claude-switcher/0.6'
+const USER_AGENT = 'jay-claude-switcher/0.7'
 const RENAME = 'require("fs").renameSync(process.argv[1], process.argv[2])'
 
 type Paths = { home: string; credentials: string; claudeJson: string; store: string; backups: string }
@@ -232,8 +232,9 @@ async function switchAccount(io: AccountIo, key: string, expectFrom?: string | n
   if (!entry) throw new Error(`unknown account ${key.split('#')[0]}`)
   const credentialsText = (await io.exists(p.credentials)) ? await io.read(p.credentials) : '{}'
   await io.write(`${p.backups}/credentials.${new Date(now).toISOString().replace(/[:.]/g, '-')}.json`, credentialsText)
-  await writeAtomic(io, p.store, store)
+  // The credentials first: that write is what moves the session; the live login is already saved in `store` above.
   await writeAtomic(io, p.credentials, { ...(JSON.parse(credentialsText) as Record<string, unknown>), claudeAiOauth: entry.claudeAiOauth })
+  await writeAtomic(io, p.store, store)
   const cj = await readJson<Record<string, unknown>>(io, p.claudeJson, {})
   await writeAtomic(io, p.claudeJson, { ...cj, oauthAccount: entry.oauthAccount })
   return { from: login.key, switched: true }
@@ -249,4 +250,10 @@ async function importAccount(io: AccountIo, folder = '~/.claude-login'): Promise
   return `${login.email} (${tierOf(login.oauth)})`
 }
 
-export { importAccount, ioOf, readAccounts, switchAccount }
+// The switcher's trace, next to the store: timestamps, emails, percents and decisions, never a token.
+async function writeTrace(io: AccountIo, text: string): Promise<void> {
+  const p = await paths(io)
+  await io.write(p.store.replace(/accounts\.json$/, 'switch-trace.log'), text)
+}
+
+export { importAccount, ioOf, readAccounts, switchAccount, writeTrace }
