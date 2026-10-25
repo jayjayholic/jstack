@@ -112,6 +112,34 @@ function balanceTarget(accounts: readonly AccountView[], activeKey: string | nul
   return { to: best.key, label: labelOf(best), trigger: 'freed', reason: `${labelOf(best)} is free and ranks higher (${why}) than ${labelOf(current)} (${describeClass(current, order)})` }
 }
 
+function weeklyWord(a: AccountView): string {
+  const w = hasWeeklyLimit(a)
+  return w === false ? 'none' : w === true ? 'limited' : 'unknown'
+}
+
+// Every account in the order the balancer ranks them (free ones first), one line each, for the trace: plan, weekly
+// status, 5-hour and weekly %, whether free, and how old its reading is. Emails and numbers only.
+function rankingLines(accounts: readonly AccountView[], activeKey: string | null, now: number, order: readonly string[]): string[] {
+  const free = ranked(accounts, null, now, order)
+  const rest = accounts.filter(a => !free.includes(a))
+  return [...free, ...rest].map((a, i) => {
+    const week = windowOf(a, 'week')
+    const age = a.fetchedAt === null ? 'never' : `${Math.round((now - a.fetchedAt) / 1000)}s`
+    const org = `[${a.org || (a.key.split('#')[1] ?? '').slice(0, 8)}]`
+    return `#${i + 1}${a.key === activeKey ? '*' : ''} ${a.email}${org} plan=${a.multiple ? `${a.multiple}x` : '?'} weekly=${weeklyWord(a)} 5h=${Math.round(percentOf(a, '5h', now))}% week=${week ? `${Math.round(effectivePercent(week, now))}%` : '-'} free=${isAvailable(a, now)} read=${age}${a.error ? ` error="${a.error.slice(0, 40)}"` : ''}`
+  })
+}
+
+// Accounts whose weekly status is unknown, or whose reading is older than `staleMs`: what a pick of a weekly-limited
+// account must read first, so that an account with no weekly limit is never passed over for want of a reading.
+function unsureOf(accounts: readonly AccountView[], activeKey: string | null, now: number, staleMs: number): AccountView[] {
+  return accounts.filter(a => a.key !== activeKey && !isAuthError(a.error) && (hasWeeklyLimit(a) === null || a.fetchedAt === null || now - a.fetchedAt > staleMs))
+}
+
+function isWeeklyLimited(a: AccountView): boolean {
+  return tierOfAccount(a) === WEEKLY
+}
+
 // When the balancer next has something to look at: the soonest reset, after now, of an account that is not free.
 function nextWake(accounts: readonly AccountView[], activeKey: string | null, now: number): { at: number; key: string; window: string } | null {
   let next: { at: number; key: string; window: string } | null = null
@@ -131,5 +159,5 @@ function wokenUp(a: AccountView, now: number): boolean {
   return a.windows.some(w => w.binding && w.resetsAt && Date.parse(w.resetsAt) <= now && Date.parse(w.resetsAt) > a.fetchedAt!)
 }
 
-export { FREE_BELOW, balanceTarget, classOf, describeClass, hasWeeklyLimit, isAvailable, nextWake, planMultiple, ranked, wokenUp }
+export { FREE_BELOW, balanceTarget, classOf, describeClass, hasWeeklyLimit, isAvailable, isWeeklyLimited, nextWake, planMultiple, ranked, rankingLines, unsureOf, wokenUp }
 export type { Pick }

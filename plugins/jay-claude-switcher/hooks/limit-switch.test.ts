@@ -27,12 +27,21 @@ const stored = (email: string, org: string, token: string, rateLimitTier?: strin
 })
 
 // The files, the network and the session's own numbers beneath the plugin, all in memory.
-function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number, tiers: Record<string, string> = {}) {
+type Seat = [email: string, org: string, token: string, rateLimitTier?: string]
+
+// The first seat is the live login.
+function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number, tiers: Record<string, string> = {}, roster?: Seat[]) {
   const files = new Map<string, string>()
-  const a = stored('a@example.com', 'o1', 'a-live', tiers['a-live'])
-  files.set(STORE, JSON.stringify({ accounts: [a, stored('b@example.com', 'o2', 'b-tok', tiers['b-tok']), stored('c@example.com', 'o3', 'c-tok', tiers['c-tok'])] }))
+  const seats: Seat[] = roster ?? [
+    ['a@example.com', 'o1', 'a-live', tiers['a-live']],
+    ['b@example.com', 'o2', 'b-tok', tiers['b-tok']],
+    ['c@example.com', 'o3', 'c-tok', tiers['c-tok']],
+  ]
+  const accounts = seats.map(([email, org, token, tier]) => stored(email, org, token, tier))
+  const a = accounts[0]!
+  files.set(STORE, JSON.stringify({ accounts }))
   files.set(CRED, JSON.stringify({ mcpOAuth: { keep: true }, claudeAiOauth: a.claudeAiOauth }))
-  files.set(CLAUDE_JSON, JSON.stringify({ oauthAccount: { emailAddress: 'a@example.com', organizationUuid: 'o1' } }))
+  files.set(CLAUDE_JSON, JSON.stringify({ oauthAccount: { emailAddress: a.email, organizationUuid: seats[0]![1] } }))
   const clock = mock.clock(on, { now: NOW })
   mock.store(on)
   mock.env(on, { USERPROFILE: HOME })
@@ -297,4 +306,72 @@ test('running out on a 5x with no weekly limit goes to the 20x with no weekly li
   await clock.advance(1_000)
   expect(activeToken()).toBe('b-tok')
   await ui.unmount()
+})
+
+// The 2026-10-25 05:00 miss, replayed: a team 5x (no weekly limit) reaches 99% with two other team seats free and a
+// weekly-limited 20x at 0%. The pick must be a seat with no weekly limit, and the trace must show the ranking.
+const MAX20 = 'default_claude_max_20x'
+const MAX5 = 'default_claude_max_5x'
+const ROSTER: Seat[] = [
+  ['devs@example.com', 'team-devs', 'devs-live', MAX5],
+  ['personal@example.com', 'max-personal', 'p20-tok', MAX20],
+  ['personal@example.com', 'team-personal', 'p5-tok', MAX5],
+  ['colleague@example.com', 'team-colleague', 'col-tok', MAX5],
+  ['me@example.com', 'team-me', 'me-tok', MAX5],
+  ['me@example.com', 'max-me', 'me5-tok', MAX5],
+]
+const teamSeat = (fiveHour: number) => ({ limits: [{ kind: 'session', percent: fiveHour, resets_at: LATER, scope: null }, { kind: 'weekly_scoped', percent: 0, resets_at: LATER, scope: { model: { display_name: 'Opus' } } }] })
+
+function replay(): Record<string, Reply> {
+  return {
+    'devs-live': { status: 200, body: teamSeat(90) },
+    'p20-tok': { status: 200, body: usage(0, 0) },
+    'p5-tok': { status: 200, body: teamSeat(100) },
+    'col-tok': { status: 200, body: teamSeat(40) },
+    'me-tok': { status: 200, body: teamSeat(0) },
+    'me5-tok': { status: 200, body: usage(10, 60) },
+  }
+}
+
+test('replay of the 05:00 miss: at 99% on a team seat it goes to a free seat with no weekly limit, never the 20x, and logs the ranking', async ($, on) => {
+  const { clock, activeToken, setLive, files } = world(on, replay(), 90, {}, ROSTER)
+  await start($)
+  const ui = await $.ui.mount(PANE)
+  await clock.advance(2_000)
+  expect(activeToken()).toBe('devs-live')
+  setLive(99)
+  await clock.advance(1_000)
+  expect(activeToken()).toBe('me-tok')
+  const trace = traceOf(files)
+  expect(trace).toMatch(/ start version=0\.9\.0/)
+  expect(trace).toMatch(/ rank #1 me@example\.com\[.*\] plan=5x weekly=none 5h=0% week=- free=true/)
+  expect(trace).toMatch(/ rank #\d personal@example\.com\[.*\] plan=20x weekly=limited 5h=0% week=0% free=true/)
+  expect(trace).toMatch(/switch trigger=out from=devs@example\.com to=me@example\.com .*no weekly limit, 5x plan/)
+  expect(trace).not.toMatch(/-tok|-live|Bearer/)
+  await ui.unmount()
+})
+
+test('replay with the team seats unread when the limit comes (their reads refused at start): it reads them before settling for the 20x', async ($, on) => {
+  const replies = replay()
+  for (const t of ['p5-tok', 'col-tok', 'me-tok', 'me5-tok']) replies[t] = { status: 429, retryAfter: '1' }
+  const { clock, activeToken, setLive, files } = world(on, replies, 90, {}, ROSTER)
+  await start($)
+  const ui = await $.ui.mount(PANE)
+  await clock.advance(2_000)
+  Object.assign(replies, { 'p5-tok': { status: 200, body: teamSeat(100) }, 'col-tok': { status: 200, body: teamSeat(40) }, 'me-tok': { status: 200, body: teamSeat(0) }, 'me5-tok': { status: 200, body: usage(10, 60) } })
+  setLive(99)
+  await clock.advance(1_000)
+  expect(activeToken()).toBe('me-tok')
+  expect(traceOf(files)).toMatch(/confirm pick personal@example\.com is weekly-limited; reading /)
+  await ui.unmount()
+})
+
+test("the trace is appended to, not replaced: a second load keeps the first one's lines", async ($, on) => {
+  const { clock, files } = world(on, replay(), 90, {}, ROSTER)
+  files.set(`${HOME}/.claude/logins/switch-trace.log`, '2026-10-25T05:00:25.000Z abcd switch trigger=out from=x to=y\n')
+  await start($)
+  await clock.advance(2_000)
+  const trace = traceOf(files)
+  expect(trace.startsWith('2026-10-25T05:00:25.000Z abcd switch')).toBe(true)
+  expect(trace).toMatch(/ start version=0\.9\.0/)
 })

@@ -5,7 +5,7 @@ import { resumeLine, addUsage, formatDuration, formatTokens, isActive, isFinishe
 import { cellsOf, contextView } from './context'
 import { addSample, forecast, rowOf, type Sample } from './forecast'
 import { renderSessions } from './sessions-pane'
-import { activeLabel, backgroundRefresh, switchPoll, loadAutoSwitch, noteLimitHit, setNotice, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport } from './sessions'
+import { activeLabel, backgroundRefresh, switchPoll, traceStart, loadAutoSwitch, noteLimitHit, setNotice, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport } from './sessions'
 import { created, detailOf, fromListText, fromTodos, updated } from './tasks'
 
 const PANE = 'switcher-work'
@@ -116,6 +116,8 @@ export const register: Register = on => {
     void loadAutoSwitch($)
       .then(() => refreshSessions($, 'none'))
       .then(() => refreshSessions($, 'all'))
+      .catch(() => undefined)
+      .then(() => traceStart($))
       .then(() => $.session.usage())
       .then(u => noteSessionLimits($, u.rateLimits))
       .catch(() => undefined)

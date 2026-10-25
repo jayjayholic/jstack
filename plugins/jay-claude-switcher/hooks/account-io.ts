@@ -8,7 +8,7 @@ const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const OAUTH_BETA = 'oauth-2025-04-20'
 // The token endpoint's firewall refuses some runtimes' default agent (Cloudflare 1010): name ourselves.
-const USER_AGENT = 'jay-claude-switcher/0.8'
+const USER_AGENT = 'jay-claude-switcher/0.9'
 const RENAME = 'require("fs").renameSync(process.argv[1], process.argv[2])'
 
 type Paths = { home: string; credentials: string; claudeJson: string; store: string; backups: string }
@@ -255,9 +255,12 @@ async function importAccount(io: AccountIo, folder = '~/.claude-login'): Promise
 }
 
 // The switcher's trace, next to the store: timestamps, emails, percents and decisions, never a token.
-async function writeTrace(io: AccountIo, text: string): Promise<void> {
+// Appended to what is there (every session and every reload writes the same file), the last `keep` lines kept.
+async function writeTrace(io: AccountIo, lines: readonly string[], keep: number): Promise<void> {
   const p = await paths(io)
-  await io.write(p.store.replace(/accounts\.json$/, 'switch-trace.log'), text)
+  const file = p.store.replace(/accounts\.json$/, 'switch-trace.log')
+  const before = (await io.exists(file)) ? (await io.read(file)).split('\n').filter(Boolean) : []
+  await io.write(file, `${[...before, ...lines].slice(-keep).join('\n')}\n`)
 }
 
 // The owner's override of the balancer's order, `priority.json` next to the store: `{ "order": ["email" or

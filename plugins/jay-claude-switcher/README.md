@@ -96,6 +96,20 @@ There is no rebalancing. It never swaps because another account in the same clas
 
 Every decision goes to `switch-trace.log`: `switch trigger=freed|out from=... to=... reason="..."`, `freed-gone` when the confirming read says otherwise. Never a token.
 
+
+**Before settling for a weekly-limited account (0.9.0).** When the 99% switch is about to land on a weekly-limited account while any other account's weekly status is unknown (never read) or its reading is more than 10 minutes old, those accounts are read first, for 4 s at most, and the ranking is redone. An account with no weekly limit is never passed over for want of a reading; only one whose read fails (backing off after a 429) can be, and the trace then shows it as `read=never` or with its error. The "better account frees up" rule moves the session back as soon as it reads free.
+
+**The trace (0.9.0).** `switch-trace.log` is appended to, never replaced, so several sessions and reloads share it (last 2000 lines). Each line carries a 4-letter tag for the module instance that wrote it. Every load writes `start version=<version>` and the ranking; every swap decision writes the ranking it used, one `rank` line per account, best first (`*` marks the current one):
+
+```
+2026-10-25T05:00:25.120Z k3f9 rank out priority=default
+2026-10-25T05:00:25.120Z k3f9 rank #1 me@example.com[Team] plan=5x weekly=none 5h=0% week=- free=true read=40s
+2026-10-25T05:00:25.120Z k3f9 rank #4 personal@example.com[Max] plan=20x weekly=limited 5h=0% week=0% free=true read=40s
+2026-10-25T05:00:25.121Z k3f9 switch trigger=out from=devs@example.com to=me@example.com reason="..." switched=true took=210ms
+```
+
+No line without `start version=` above it came from 0.9.0 or later. Emails, plans and percents only, never a token.
+
 ### How it picks the target
 
 - Only the **binding** windows count: the 5-hour window and the all-models weekly window (`session` and `weekly_all` in the API). Those are the ones that stop you.

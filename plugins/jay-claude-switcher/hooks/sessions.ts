@@ -3,7 +3,7 @@ import type { EngineInterface } from 'claude-code'
 import type { AccountView, ReadSchedule, ReadWhich, SessionWindow, SessionsView } from '../types'
 import { ACTIVE_READ_MS, CANDIDATE_READ_MS, SWITCH_AT, isNearLimit, isSwitchDue, isWatched, leastUsed, markLimitHit, noTargetReason, peakOf, switchTarget, withSessionLimits } from './accounts'
 import { importAccount, ioOf, readAccounts, readPriority, switchAccount, writeTrace } from './account-io'
-import { balanceTarget, wokenUp, type Pick } from './balance'
+import { balanceTarget, isWeeklyLimited, rankingLines, unsureOf, wokenUp, type Pick } from './balance'
 
 const AUTO_KEY = 'auto-switch'
 const SWITCH_COOLDOWN_MS = 90_000
@@ -22,7 +22,13 @@ const BUSY_STUCK_MS = 30_000
 const CANDIDATE_WAIT_MS = 4_000
 // After a switch, readings that still carry the old account's windows (requests sent before it) are not the new one's.
 const OLD_READING_MS = 10 * 60_000
-const TRACE_LINES = 400
+const TRACE_LINES = 2000
+const VERSION = '0.9.0'
+// Tells this module's lines from another session's (or an earlier load's) in the shared trace.
+const INSTANCE = Math.random().toString(36).slice(2, 6)
+// A due switch about to land on a weekly-limited account first reads the accounts whose weekly status is unknown or
+// whose reading is older than this, for a few seconds at most.
+const SURE_MS = 10 * 60_000
 // A freed swap waits this long after any switch, so readings settle first.
 const FREED_GRACE_MS = 15_000
 // A freed account whose reading is older than this is read once before the swap.
@@ -45,14 +51,16 @@ let lastReading = ''
 // Emails, percents and reasons only: never a token.
 async function traced($: EngineInterface, event: string, detail: string): Promise<void> {
   const at = await $.clock.now().catch(() => 0)
-  trace = [...trace, `${new Date(at).toISOString()} ${event} ${detail}`].slice(-TRACE_LINES)
+  trace = [...trace, `${new Date(at).toISOString()} ${INSTANCE} ${event} ${detail}`].slice(-TRACE_LINES)
   traceDirty = true
 }
 
 async function flushTrace($: EngineInterface): Promise<void> {
   if (!traceDirty) return
   traceDirty = false
-  await writeTrace(ioOf($), `${trace.join('\n')}\n`).catch(() => undefined)
+  const lines = trace
+  trace = []
+  await writeTrace(ioOf($), lines, TRACE_LINES).catch(() => undefined)
 }
 
 function emailOf(key: string | null | undefined): string {
@@ -143,6 +151,19 @@ function staleCandidates(view: SessionsView, now: number, everyMs: number): stri
     .map(a => a.key)
 }
 
+async function traceRanking($: EngineInterface, view: SessionsView, now: number, why: string): Promise<void> {
+  await traced($, 'rank', `${why} priority=${priority.length ? priority.join(',') : 'default'}`)
+  for (const line of rankingLines(view.accounts, view.active, now, priority)) await traced($, 'rank', line)
+}
+
+// Written once per load (each session start and each reload), so the trace says which code made what follows.
+async function traceStart($: EngineInterface): Promise<void> {
+  await traced($, 'start', `version=${VERSION}`)
+  const view = await read($, sessions)
+  await traceRanking($, view, await $.clock.now(), 'loaded')
+  await flushTrace($)
+}
+
 async function decided($: EngineInterface, current: AccountView | undefined, now: number, due: boolean, note: string): Promise<void> {
   const peak = current ? peakOf(current, now) : null
   const line = `account=${emailOf(current?.key)} peak=${peak ?? 'none'} threshold=${SWITCH_AT} due=${due}${note ? ` ${note}` : ''}`
@@ -174,7 +195,20 @@ async function autoSwitchTick($: EngineInterface, limitHit = false): Promise<voi
   try {
     let target: Pick | { to: string; label: string; reason: string } | null = null
     if (due) {
+      await traceRanking($, view, now, 'out')
       target = balanceTarget(view.accounts, view.active, now, priority, true) ?? (leastUsed(view.accounts, view.active, now) ? switchTarget(view.accounts, view.active, now) : null)
+      // About to land on a weekly-limited account while some account's weekly status is unknown or stale: read those
+      // first (4 s at most), so an account with no weekly limit is never passed over for want of a reading.
+      const picked = target ? view.accounts.find(a => a.key === target!.to) : undefined
+      const unsure = picked && isWeeklyLimited(picked) ? unsureOf(view.accounts, view.active, now, SURE_MS).filter(a => now >= (schedule.backoff.get(a.key)?.until ?? 0)) : []
+      if (unsure.length) {
+        await traced($, 'confirm', `pick ${emailOf(picked!.key)} is weekly-limited; reading ${unsure.map(a => emailOf(a.key)).join(', ')} first`)
+        await withinMs($, refreshSessions($, unsure.map(a => a.key)).catch(() => undefined), CANDIDATE_WAIT_MS)
+        const fresh = await read($, sessions)
+        const at = await $.clock.now()
+        await traceRanking($, fresh, at, 'out-reread')
+        target = balanceTarget(fresh.accounts, fresh.active, at, priority, true) ?? target
+      }
       if (!target) {
         const stale = staleCandidates(view, now, CANDIDATE_READ_MS)
         await traced($, 'candidates', `no cached target, reading ${stale.length}`)
@@ -190,6 +224,7 @@ async function autoSwitchTick($: EngineInterface, limitHit = false): Promise<voi
         }
       }
     } else if (freed) {
+      await traceRanking($, view, now, 'freed')
       const known = view.accounts.find(a => a.key === freed.to)
       if (!known?.fetchedAt || now - known.fetchedAt > FREED_CONFIRM_MS) await withinMs($, refreshSessions($, [freed.to]).catch(() => undefined), CANDIDATE_WAIT_MS)
       const fresh = await read($, sessions)
@@ -330,4 +365,4 @@ function priorityOrder(): readonly string[] {
   return priority
 }
 
-export { autoSwitchTick, priorityOrder, switchPoll, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, activeLabel, setNotice, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }
+export { autoSwitchTick, priorityOrder, switchPoll, traceStart, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, activeLabel, setNotice, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }
