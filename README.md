@@ -84,6 +84,20 @@ So I stopped shipping branches one at a time and started shipping trains.
 
 Then I fixed all that, ran one single build alone, and free RAM still hit 2%. Turns out `next build` quietly spawns one worker per CPU core minus one. On a 20-thread laptop that's 19 workers at 0.75 GB each. Nineteen. My laptop has fewer friends than that build had workers.
 
+## Where did my RAM go
+
+Even with the lock, the laptop kept hitting 97 to 99%. So I made the agents write a memory map instead of guessing. `mem_map` (in `heavy-lock.sh`, Windows only) prints what's using the RAM, sorted by **private bytes**, not working set. That's how we found an 8 GB typecheck that had been paged out and was invisible in every normal process list. It also tags every process with the agent that started it: it follows the process's working directory to its worktree, then the branch, then a tiny `.agent` file each agent writes when it starts.
+
+What it caught in one day:
+
+- typechecks run directly instead of in the lane (5 to 8 GB each, two at once);
+- three test servers at 2.4 GB each;
+- a Docker WSL VM that kept 9.4 GB after its containers stopped;
+- 131 orphaned `grep`s;
+- the Windows file cache holding 15.8 GB resident during two `bun install`s, while every agent process together held under 2 GB.
+
+Now builds and typecheck lanes wait for free RAM (12 and 10 GB by default) before they start, and give up after 15 minutes so nothing hangs forever. The orchestrator also keeps a sampler running (`mem_map -Watch`), so after a spike `mem_map -Summary` tells you whose fault it was. The laptop still has fewer friends than the build has workers, but at least now it knows their names.
+
 ## How a train works
 
 ```
@@ -121,6 +135,8 @@ skills/train/
   SKILL.md               the /train skill: when to train, how to brief agents, the gates, and the Lessons log
   orchestrator-brief.md  the prompt for the one orchestrator agent
   worker-clause.md       the block pasted into every coding agent's prompt (build rules + READY format)
+skills/machine-memory/
+  SKILL.md               the machine-memory skill: map the RAM, name the leak, free it safely, the orchestrator's memory duty
 skills/train-queue/
   SKILL.md               the /train-queue skill: one status board (live, in flight, queue, what each agent is doing)
 skills/optimize/
@@ -147,6 +163,8 @@ tools/
   train.sh               assemble / build / ship a train, merges only when every check is green
   new-worktree.sh        one worktree per agent, like a fresh clone (copies local env files, reuses generated code from a sibling)
   clean-worktrees.sh     removes finished worktrees safely (merged, clean, idle, nothing running inside); --dry-run first
+  mem-map.ps1            the detective: where the RAM went, by PRIVATE bytes, per agent (worktree > branch > .agent),
+                         plus WSL/Docker, orphans, dev ports, lock slots; -Watch samples to a CSV, -Kill orphans cleans up
   node-memory-watch.ps1  the bouncer: when RAM runs out, kills the fattest node/bun process (never your agent CLI) before Windows does something worse
 ```
 

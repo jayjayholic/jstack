@@ -2,6 +2,35 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-24: mem-map, a machine-memory skill, and lock guards that wait for RAM
+
+**What:**
+- `tools/mem-map.ps1`, run as `mem_map` from `heavy-lock.sh` (Windows), shows:
+  - totals: available, commit, standby, modified, pools, and how much of the "in use" memory is the system file cache;
+  - process groups sorted by private bytes;
+  - each process tagged with its worktree, branch and agent (`<worktree>/.agent`, the lock owner, the queue file);
+  - the WSL VM and `docker stats`;
+  - listening dev ports, orphan candidates and lock slots.
+- `mem-map.ps1` options:
+  - `-Kill orphans` terminates orphan candidates through WMI, never the agent CLI, MCP servers or Docker;
+  - `-Watch` appends one CSV row per process per tick;
+  - `-Summary` prints each agent's peak and when it happened.
+- In `heavy-lock.sh`:
+  - `heavy_acquire` waits for `JSTACK_HEAVY_MIN_AVAIL_GB` (12) free once it holds the slot.
+  - `tc_run` waits while someone else's build holds the slot, starts at least 90 s after the other lane, then waits for `JSTACK_TC_MIN_AVAIL_GB` (10). A slot held from the same directory counts as yours, so the train can typecheck inside its own build slot.
+  - Every wait gives up after `JSTACK_MEM_WAIT_MAX_MIN` (15) and runs anyway, still capped.
+  - Owner lines end in `@ <cwd>`; the first word is still the name.
+  - New `mem_guard [gb]` helper.
+- New `skills/machine-memory/SKILL.md`; the train watch and worker clause point at it.
+
+**Why:** the 32 GB laptop kept hitting 97 to 99% and nobody could say whose fault it was:
+- Process lists sort by working set, so the 8 GB typecheck that was paged out looked tiny.
+- Agents reported loops as stopped that were still running.
+- `taskkill` sometimes refused, while WMI terminate worked.
+- The biggest single spike wasn't a process at all: two concurrent installs over hundreds of `node_modules` folders kept 15.8 GB of file cache resident.
+
+Claude Code has no per-subagent resource view, so the map tags each process by worktree. Also, `grep -iF` aborts (core dumped) in Git Bash here, so the lock compares strings in bash.
+
 ## 2026-10-24: jay-claude-switcher 0.7.0 switches within a second of 99%, not after the wall
 
 **What:** the switch decides on the readings in hand and never waits for a usage read. Every second it reads the session's own rate-limit numbers (free; every response brings them, main loop, subagents and workflow agents alike) and switches within that second of a bar reaching 99%. From 95% the other accounts are read ahead, once per 5 minutes, so the target is known before it's needed; only when no account has a reading below 99% does a due switch read them, for 4 s at most. A usage answer can no longer lower the session's own (fresher) number for the same window. The new credentials are written first, before the bookkeeping. After a switch, readings that still carry only the old account's windows are not laid over the new one for 10 minutes. And there's a trace now: `switch-trace.log` next to the store, one timestamped line per reading, decision and switch, never a token.
