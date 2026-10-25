@@ -78,6 +78,10 @@ jstack_free_gb() {
   elif command -v vm_stat >/dev/null 2>&1; then
     gb=$(vm_stat | awk '/page size of/ {ps=$8} /Pages (free|inactive)/ {gsub(/\./,"",$NF); p+=$NF} END {if (ps) print int(p*ps/1073741824)}')
   fi
+  # node before PowerShell: same number, 48 vs 735 ms and 17 vs 63 MB (tools/perf ledger, 5 interleaved runs).
+  if [ -z "$gb" ] && command -v node >/dev/null 2>&1; then
+    gb=$(node -e "console.log(Math.floor(require('os').freemem()/2**30))" 2>/dev/null | tr -d '\r')
+  fi
   if [ -z "$gb" ] && command -v powershell >/dev/null 2>&1; then
     gb=$(powershell -NoProfile -Command "[math]::Floor((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB)" 2>/dev/null | tr -d '\r')
   fi
