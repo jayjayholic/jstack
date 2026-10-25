@@ -18,7 +18,7 @@ mem_map -Summary          # per-agent peak and average from the sampler log (-Si
 
 - **Read private bytes, not working set.** Private bytes are what a process committed. A paged-out 8 GB typecheck shows about 50 MB of working set but its full size here, with `PagedOut` set.
 - **Look at "in use" outside processes.** The second line of the map splits memory in use into processes, the system file cache and kernel pools. On Windows the file cache can stay resident (not standby) through a mass install. We've seen 15.8 GB during two concurrent `bun install`s, while every agent process together held under 2 GB. When it won't trim, see step 3b.
-- **Per agent:** each process is traced to its worktree (current directory, then command line, then an ancestor's), then its branch, then its agent name. The name comes from `<worktree>/.agent`, the lock owner's `@ <path>`, the queue file, or `wt:<folder>` as a last resort.
+- **Per agent:** each process is traced to its worktree (current directory, then command line, then an ancestor's), then its branch, then its agent name. The name comes from `<worktree>/.agent/name` (or a legacy `.agent` file), the lock owner's `@ <path>`, the queue file, or `wt:<folder>` as a last resort.
 - **What can't be split:** every subagent's own reasoning runs inside the Claude Code process. Claude Code has no per-subagent resource view; hooks only carry `agent_id` (https://code.claude.com/docs/en/hooks).
 - **WSL VM vs containers:** `docker stats` subtracts page cache, so a `vmmemWSL` bigger than the sum of its containers is cache the VM kept.
 
@@ -106,7 +106,7 @@ Done when new worktrees show `node_modules: shared` in `worktree-deps.mjs status
 
 ## 4. Rules for every agent
 
-- First thing, write `echo "<name>: <task>" > .agent` in your worktree. Add `.agent` to `.gitignore` or `.git/info/exclude`.
+- First thing, write `mkdir -p .agent && echo "<name>: <task>" > .agent/name` in your worktree (`.agent` is a folder: it also holds `preflight.md` and `brief.md`). Add `.agent/` to `.gitignore` or `.git/info/exclude`.
 - Type-check only with `tc_run "{{TYPECHECK_CMD}}"`. It waits out a build and waits for free RAM.
 - Run one server at a time, after `server_wait {{MIN_FREE_GB}}`, and stop it after the test.
 - Kill everything you start (servers, `tail -f`, loops, browsers) before you report. Your agent row in `mem_map` should be empty.

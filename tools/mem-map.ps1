@@ -6,7 +6,7 @@
 #   mem-map.ps1 -Watch [-Every 30]    sampler: appends one CSV row per dev process per tick (+ a _machine row) to -Log
 #   mem-map.ps1 -Summary [-SinceMin 180]  per-agent peak/average/CPU from the log, and who held memory at the worst ticks
 # Attribution: each process -> worktree (its current directory, else its command line, else an ancestor's) -> branch
-# (the worktree's git HEAD) -> agent (first line of <worktree>/.agent, else a lock owner tag "@ <path>", else the
+# (the worktree's git HEAD) -> agent (first line of <worktree>/.agent/name or a legacy .agent file, else a lock owner tag "@ <path>", else the
 # train queue file mentioning the branch, else the branch). Subagents themselves run inside claude.exe and cannot be
 # split from it; everything they launch can.
 # Options: -OlderThanMin 60, -Top 12, -PortFrom 3000 -PortTo 3200, -LockDirs <dir,...>, -QueueFile <path>,
@@ -139,7 +139,8 @@ function Get-Agent([string]$wt, [string]$branch, $locks, $queue) {
 	if ($agentCache.ContainsKey($key)) { return $agentCache[$key] }
 	$a = ''
 	$marker = Join-Path $wt '.agent'
-	if (Test-Path -LiteralPath $marker) { $a = ((Get-Content -LiteralPath $marker -TotalCount 1) -replace '\s+', ' ').Trim() }
+	if (Test-Path -LiteralPath $marker -PathType Container) { $marker = Join-Path $marker 'name' }
+	if (Test-Path -LiteralPath $marker -PathType Leaf) { $a = ((Get-Content -LiteralPath $marker -TotalCount 1) -replace '\s+', ' ').Trim() }
 	if (-not $a) { $l = $locks | Where-Object { $_.Worktree -and $_.Worktree -ieq $wt } | Select-Object -First 1; if ($l) { $a = "lock:$($l.Owner)" } }
 	if (-not $a -and (Test-Path -LiteralPath (Join-Path $wt '.git') -PathType Container)) { $a = "main checkout ($branch)" }
 	if (-not $a -and $branch -and $branch -notmatch '^(stage|main|master|production|develop)$') {

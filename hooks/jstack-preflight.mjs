@@ -229,6 +229,9 @@ function edit(payload, env = process.env) {
       const ask = `${readBrief(repo)}\n${firstAsk(payload)}`
       const sug = suggestClass({ branch, files, lines, target: rel, ask })
       text = nudgeText({ repo, branch, sug, tools })
+      let agentIsFile = false
+      try { agentIsFile = fs.statSync(path.join(repo, '.agent')).isFile() } catch {}
+      if (agentIsFile) text += '\n.agent is a file here (an old name marker); move its line to .agent/name, then create the .agent folder.'
       seen.nudged = true
       if (sug.cls === 'full') seen.riskNudged = true
     } else {

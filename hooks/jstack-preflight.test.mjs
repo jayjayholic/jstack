@@ -42,6 +42,12 @@ test('first edit in a repo without a pre-flight gets one nudge, never a deny', (
   assert.equal(call(path.join(repo, 'src', 'a.ts')), null, 'second edit in the same session is silent')
 })
 
+test('an old .agent marker file is pointed out, since it blocks the .agent folder', () => {
+  fs.writeFileSync(path.join(repo, '.agent'), 'me: task\n')
+  assert.match(ctx(call(path.join(repo, 'src', 'a.ts'))), /\.agent is a file here/)
+  fs.rmSync(path.join(repo, '.agent'))
+})
+
 test('another agent in the same session gets its own nudge', () => {
   assert.ok(ctx(call(path.join(repo, 'src', 'a.ts'), { agent: 'x' })))
   assert.ok(ctx(call(path.join(repo, 'src', 'a.ts'), { agent: 'y' })))
