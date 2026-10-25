@@ -19,10 +19,12 @@ Carried over from the research pass of 2026-10-25 (`02-research-coding-agent-dis
 - S15 - IETF draft-ietf-httpapi-ratelimit-headers-11 (RateLimit, RateLimit-Policy) - May 2026, still a draft - V
 - S16 - RFC 6585 (HTTP 429), RFC 9110 (Retry-After) - 2012 / 2022 - C
 - S17 - Candea & Fox, "Crash-Only Software" - HotOS IX, 2003 - V
+- S18 - Temporal docs, Event History / durable execution (docs.temporal.io/encyclopedia/event-history) - live docs - V
 - S19 - Garcia-Molina & Salem, "Sagas" - SIGMOD 1987 - C
 - S20 - Klein, "Performing a Project Premortem" - HBR 85(9), Sept 2007 - V (title, author, date; article body paywalled, so the 30% figure is C)
 - S21 - Flyvbjerg, "From Nobel Prize to Project Management: Getting Risks Right" (reference class forecasting) - Project Management Journal 37(3), 2006 - V
 - S22 - Kahneman & Tversky, planning fallacy ("Intuitive prediction: biases and corrective procedures") - 1979 - C
+- S23 - Myers, "The importance of percent-done progress indicators for computer-human interfaces" - CHI '85 / SIGCHI Bulletin 16(4) - C (ACM page returned 403; title and venue only, findings not re-read)
 - S24 - Nielsen, response-time limits (0.1 s / 1 s / 10 s), from *Usability Engineering* - 1993 (restated by NN/g in 2014) - V
 - S25 - Nielsen, 10 usability heuristics (visibility of system status; user control and freedom) - 1994 - C
 - S26 - Zeller, *Why Programs Fail*, 2nd ed., ch. 6 "Scientific Debugging" - Morgan Kaufmann 2009 - V
