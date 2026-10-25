@@ -362,12 +362,19 @@ $candidates = @(foreach ($r in $rows) {
 $candIds = @{}; foreach ($c in $candidates) { $candIds[$c.Id] = $true }
 $candidates = @($candidates | Where-Object { $a = $s.ParentOf[$_.Id]; $inner = $false; while ($a) { if ($candIds.ContainsKey([int]$a.ProcessId)) { $inner = $true; break }; $a = $s.ParentOf[[int]$a.ProcessId] }; -not $inner })
 
+$kids = @{}
+foreach ($p in $s.All) { $pp = $s.ParentOf[[int]$p.ProcessId]; if ($pp) { $k = [int]$pp.ProcessId; if (-not $kids[$k]) { $kids[$k] = @() }; $kids[$k] += [int]$p.ProcessId } }
+function Get-Tree([int]$id) { $out = @(); foreach ($c in @($kids[$id])) { if ($c) { $out += Get-Tree $c } }; $out + $id }
+# A tree still burning CPU is working (an install's postinstall, a detached job), not leftover: it is listed, never killed.
+if ($candidates) {
+	$treeCpu = { param($ids) $sum = 0.0; foreach ($i in $ids) { $q = Get-CimInstance Win32_Process -Filter "ProcessId=$i"; if ($q) { $sum += ([double]$q.KernelModeTime + [double]$q.UserModeTime) / 1e7 } }; $sum }
+	$before = @{}; foreach ($c in $candidates) { $before[$c.Id] = & $treeCpu (Get-Tree $c.Id) }
+	Start-Sleep -Seconds 3
+	foreach ($c in $candidates) { $busy = ((& $treeCpu (Get-Tree $c.Id)) - $before[$c.Id]) -gt 0.05; $c | Add-Member -NotePropertyName Busy -NotePropertyValue $busy -Force }
+}
 $killed = @()
 if ($Kill -eq 'orphans' -and $candidates) {
-	$kids = @{}
-	foreach ($p in $s.All) { $pp = $s.ParentOf[[int]$p.ProcessId]; if ($pp) { $k = [int]$pp.ProcessId; if (-not $kids[$k]) { $kids[$k] = @() }; $kids[$k] += [int]$p.ProcessId } }
-	function Get-Tree([int]$id) { $out = @(); foreach ($c in @($kids[$id])) { if ($c) { $out += Get-Tree $c } }; $out + $id }
-	foreach ($c in $candidates) {
+	foreach ($c in ($candidates | Where-Object { -not $_.Busy })) {
 		foreach ($tid in (Get-Tree $c.Id)) {
 			$t = $s.ById[$tid]
 			if (-not $t -or $s.Self.ContainsKey($tid) -or ([string]$t.CommandLine) -match $protectRe -or $t.Name -eq 'claude.exe') { continue }
@@ -399,8 +406,8 @@ if ($vm) { $vm | Format-Table -AutoSize | Out-String -Width 200 } else { "  no v
 if ($docker) { $docker | Format-Table -AutoSize | Out-String -Width 200 } else { "  docker: not running or no containers`n" }
 "== listening ports $PortFrom-$PortTo"
 if ($ports) { $ports | Format-Table -AutoSize | Out-String -Width 200 } else { "  none`n" }
-"== orphan candidates (-Kill orphans terminates each tree via WMI)"
-if ($candidates) { $candidates | Select-Object Id, Kind, PrivGb, AgeMin, Port, Why, Agent, @{ n = 'Cmd'; e = { $_.Cmd.Substring(0, [Math]::Min(70, $_.Cmd.Length)) } } | Format-Table -AutoSize | Out-String -Width 260 } else { "  none`n" }
+"== orphan candidates (-Kill orphans terminates idle trees via WMI; Busy trees are still working and are left alone)"
+if ($candidates) { $candidates | Select-Object Id, Kind, PrivGb, AgeMin, Port, Why, Busy, Agent, @{ n = 'Cmd'; e = { $_.Cmd.Substring(0, [Math]::Min(70, $_.Cmd.Length)) } } | Format-Table -AutoSize | Out-String -Width 260 } else { "  none`n" }
 "== heavy-lock slots"
 if ($s.Locks) { $s.Locks | Format-Table Slot, Owner, AgeMin, Worktree -AutoSize | Out-String -Width 200 } else { "  all free" }
 if ($killed) { "== killed"; $killed }
