@@ -31,3 +31,7 @@ export JSTACK_HEAVY_MIN_AVAIL_GB=12                      # free RAM a build wait
 export JSTACK_TC_MIN_AVAIL_GB=10                         # free RAM a typecheck lane waits for
 export JSTACK_MEM_WAIT_MAX_MIN=15                        # after this a memory wait gives up and runs anyway (still capped)
 export JSTACK_QUEUE_FILE="$HOME/.jstack/train-queue.md"  # the orchestrator's queue; mem-map reads it to name agents
+export JSTACK_LOCK_SCRIPT="$JSTACK_TOOLS/heavy-lock.sh"   # the lock ready-gate.sh sources for tc_run
+export JSTACK_UNIT_TEST_CMD="bunx vitest run"            # ready-gate.sh runs it with the touched test files; empty = skip
+export JSTACK_PRETTIER_CHECK_CMD="bunx prettier --check --ignore-unknown" # ready-gate.sh, on touched files
+export JSTACK_READY_EXTRA_CMD=""                         # optional extra gate check; touched files are in $READY_TOUCHED

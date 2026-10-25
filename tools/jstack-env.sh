@@ -37,6 +37,10 @@ JSTACK_HEAVY_MIN_AVAIL_GB="${JSTACK_HEAVY_MIN_AVAIL_GB:-12}"
 JSTACK_TC_MIN_AVAIL_GB="${JSTACK_TC_MIN_AVAIL_GB:-10}"
 JSTACK_MEM_WAIT_MAX_MIN="${JSTACK_MEM_WAIT_MAX_MIN:-15}"
 JSTACK_QUEUE_FILE="${JSTACK_QUEUE_FILE:-}"
+JSTACK_LOCK_SCRIPT="${JSTACK_LOCK_SCRIPT:-$JSTACK_TOOLS/heavy-lock.sh}"
+JSTACK_UNIT_TEST_CMD="${JSTACK_UNIT_TEST_CMD:-}"
+JSTACK_PRETTIER_CHECK_CMD="${JSTACK_PRETTIER_CHECK_CMD:-npx prettier --check --ignore-unknown}"
+JSTACK_READY_EXTRA_CMD="${JSTACK_READY_EXTRA_CMD:-}"
 
 # Free physical RAM in whole GB. Linux reads /proc/meminfo (MemAvailable, or MemFree where that's missing, like
 # Git Bash on Windows), macOS vm_stat, Windows PowerShell. Set JSTACK_FREE_GB_CMD to any command that prints a
