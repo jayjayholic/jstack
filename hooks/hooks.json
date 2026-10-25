@@ -1,7 +1,13 @@
 {
-  "description": "jstack guards: heavy commands only through the lock, no recursive scans over the repo, cleanup of what a subagent left running, and closing the automation browsers it left open. No-ops unless ~/.jstack/guards.json names the project.",
+  "description": "jstack guards: heavy commands only through the lock, no recursive scans over the repo, cleanup of what a subagent left running, and closing the automation browsers it left open. No-ops unless ~/.jstack/guards.json names the project. Plus the pre-flight nudge on the first edit in a git repo (context only, never blocks; off with JSTACK_PREFLIGHT=off or \"preflight\": {\"enabled\": false}).",
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.mjs", "edit"], "timeout": 10 }
+        ]
+      },
       {
         "matcher": "Bash|PowerShell|Grep|Glob|LSP",
         "hooks": [

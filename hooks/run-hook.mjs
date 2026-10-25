@@ -22,8 +22,16 @@ process.on('uncaughtException', e => { crashLog(e); process.exit(0) })
 process.on('unhandledRejection', e => { crashLog(e); process.exit(0) })
 
 try {
-  const guards = await import('./jstack-guards.mjs')
-  await guards.runHook(mode)
+  if (mode === 'edit') {
+    const chunks = []
+    for await (const c of process.stdin) chunks.push(c)
+    const { edit } = await import('./jstack-preflight.mjs')
+    const out = edit(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    if (out) process.stdout.write(JSON.stringify(out))
+  } else {
+    const guards = await import('./jstack-guards.mjs')
+    await guards.runHook(mode)
+  }
 } catch (e) {
   crashLog(e)
 }
