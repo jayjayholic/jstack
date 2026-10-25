@@ -69,6 +69,7 @@ Done when: every merged train has been reported as live, and its post-deploy ste
 
 While agents run, the main session keeps a periodic watch (for example `/loop 15m`). Each round:
 
+- **Memory map.** Run `mem_map` (the `machine-memory` skill) every round and before every build, and keep one sampler running for the whole train (`mem_map -Watch -Every 30`). At 80% used or more, find the agent and the pattern behind it and tell the human, before it gets to 5%.
 - **Free RAM.** Below 5% free, kill the heaviest process tree yourself (usually a build and its workers) and tell its agent. Never kill the agent CLI itself: it is often a node process too, and killing it kills every agent at once. On Windows `node-memory-watch.ps1` does the same thing as a seatbelt, with the CLI protected.
 - **Build workers.** Count the build's worker processes. A build with a pile of workers is the RAM problem, not the number of agents.
 - **Silent agents.** An agent running over 60 minutes without a report is a suspect: check what it is doing (its last notification, the slot owner, its worktree), then nudge it or stop it.
