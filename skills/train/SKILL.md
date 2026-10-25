@@ -39,7 +39,7 @@ For an agent already running when the train starts, send it the same clause with
 
 **Gates first.** Write down what "done" means for a ticket (tests, screenshots, audits, numbers) before any agent starts. A gate added halfway forces rework on everything already READY.
 
-**Pre-flight and /unslop.** The clause makes every worker run `/preflight` before its first edit and `/unslop` before READY. Pre-flight turns "what does done mean" into runnable checks in `.agent/brief.md`; /unslop reports only findings a second agent reproduced, so the orchestrator gets evidence, not opinions.
+**Pre-flight and /unslop, scaled to the task.** The clause makes every worker class its task before the first edit: a hotfix or quick fix writes one line and moves on, an ambiguous task writes four lines, a feature, refactor, migration, auth, money or model-call change runs `/preflight` and, before READY, `/unslop --fix` on its diff. The jstack hook reminds the agent on its first edit, so nobody has to remember. Pre-flight turns "what does done mean" into runnable checks in `.agent/brief.md`; /unslop reports only findings a second agent reproduced, so the orchestrator gets evidence, not opinions.
 
 Done when: no worker prompt says "run the full build", "push" or "merge", and every ticket has its gates written down.
 
