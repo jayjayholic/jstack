@@ -69,7 +69,7 @@ test('negative: an inline unslop-ignore with a reason suppresses and is reported
     r.write('src/a.ts', "// unslop-ignore: i18n.utc-today build stamp, UTC on purpose\nconst stamp = new Date().toISOString().slice(0, 10)\nexport { stamp }\n")
     r.commit('change')
     const res = scan({ repo: r.dir, base: 'base', ruleIds: ['i18n.utc-today'] })
-    assert.equal(res.candidates.length, 0)
+    assert.deepEqual(res.candidates.map(c => c.rule), ['unslop.new-suppression'], 'the new ignore itself is shown to the reviewer')
     assert.match(res.suppressed[0].reason, /UTC on purpose/)
   } finally { r.done() }
 })

@@ -11,7 +11,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
-import { loadRules, loadProjectConfig, matchAny, ignoreGlobs } from './rules.mjs'
+import { loadRules, loadProjectConfig, loadProjectConfigAt, baseCommit, readAtRef, matchAny, ignoreGlobs } from './rules.mjs'
 import { SCRIPTS } from './scripts.mjs'
 import { enclosingSymbol, normalize, hashText, langOf } from '../memory/symbols.mjs'
 
@@ -100,11 +100,13 @@ function ruleApplies(rule, file, ignore) {
   return true
 }
 
+// The inline unslop-ignore on the hit's line or the line above: { reason, line } or null.
 function suppressedInline(lines, line, ruleId) {
-  for (const l of [lines[line - 1], lines[line - 2]]) {
+  for (const at of [line, line - 1]) {
+    const l = lines[at - 1]
     if (!l) continue
     const m = /unslop-ignore(?::|\s)\s*([\w.,-]+)?\s*(.*)$/.exec(l)
-    if (m && (!m[1] || m[1].split(',').includes(ruleId) || m[1] === 'all')) return m[2]?.trim() || 'inline unslop-ignore'
+    if (m && (!m[1] || m[1].split(',').includes(ruleId) || m[1] === 'all')) return { reason: m[2]?.trim() || 'inline unslop-ignore', line: at }
   }
   return null
 }
@@ -145,20 +147,80 @@ function regexHits(rule, file) {
   return hits
 }
 
-function loadMemorySuppressions(repo) {
-  const out = new Map()
-  if (!repo) return out
-  const dir = path.join(repo, '.jstack', 'memory', 'entries')
+const ENTRIES_DIR = '.jstack/memory/entries'
+
+// Memory entries as text: from the working tree, or from `ref` (diff mode, so a branch can't waive its own hits).
+function memoryEntryTexts(repo, ref) {
+  if (!repo) return []
+  if (ref) {
+    const list = git(repo, ['ls-tree', '-r', '--name-only', '--end-of-options', ref, '--', ENTRIES_DIR])
+    if (!list.ok) return []
+    return list.out.split('\n').filter(f => f.endsWith('.json')).map(f => readAtRef(repo, ref, f)).filter(t => t != null)
+  }
   let files = []
-  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.json')) } catch { return out }
-  for (const f of files) {
+  try { files = fs.readdirSync(path.join(repo, ENTRIES_DIR)).filter(f => f.endsWith('.json')) } catch { return [] }
+  return files.map(f => readText(path.join(repo, ENTRIES_DIR, f))).filter(t => t != null)
+}
+
+// What a memory entry suppresses, if anything: a false positive, or a waived known slop (which carries an expiry).
+function suppressionOf(e) {
+  if (!e?.fingerprint) return null
+  if (e.kind === 'false-positive') return { fingerprint: e.fingerprint, reason: `known false positive (memory ${e.id})`, waiver: false }
+  if (e.kind === 'known-slop' && e.status === 'waived') return { fingerprint: e.fingerprint, reason: `waived known slop (memory ${e.id}): ${e.waiver?.reason ?? ''}`, waiver: true, expires: e.waiver?.expires ?? null }
+  return null
+}
+
+function loadMemorySuppressions(repo, ref = null) {
+  const out = new Map()
+  for (const t of memoryEntryTexts(repo, ref)) {
     try {
-      const e = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))
-      if (!e.fingerprint) continue
-      if (e.kind === 'false-positive') out.set(e.fingerprint, `known false positive (memory ${e.id})`)
-      else if (e.kind === 'known-slop' && e.status === 'waived') out.set(e.fingerprint, `waived known slop (memory ${e.id}): ${e.waiver?.reason ?? ''}`)
+      const sup = suppressionOf(JSON.parse(t))
+      if (sup) out.set(sup.fingerprint, sup)
       // unslop-ignore: conc.empty-catch a malformed entry only loses its suppression; memory.mjs lint reports it
     } catch {}
+  }
+  return out
+}
+
+// A waiver counts while its expiry is in the future. One without an expiry never covers a high-severity hit:
+// high findings get waived for a while, not forever.
+function waiverActive(w, severity, now = Date.now()) {
+  if (!w) return false
+  if (w.waiver === false) return true
+  if (w.expires) return Date.parse(w.expires) > now
+  return severity !== 'high'
+}
+
+// Diff mode: a branch that adds or edits its own suppressions gets them on the report as their own hits.
+const SELF_RULES = {
+  'unslop.config-changed': { title: 'The branch changes the unslop config (rule modes, waivers, ignores, gate); the scan used the base copy', why: 'A branch must not loosen the checks that judge it. The change counts once a reviewer merges it.', fixHint: 'land the config change in its own reviewed PR first' },
+  'unslop.new-waiver': { title: 'The branch adds or edits a memory waiver or false positive; the scan used the base copy', why: 'A waiver written by the branch it waives is self-certification.', fixHint: 'get the waiver reviewed on its own, with an expiry for high-severity rules' },
+  'unslop.new-suppression': { title: 'The branch adds an inline unslop-ignore', why: 'A suppression written in the same diff as the hit it hides needs a reviewer to see both.', fixHint: 'name the reason in the comment; the reviewer accepts or rejects it' },
+}
+
+function selfCandidate(ruleId, { path: p, line, snippet, severity = 'high', mode = 'block-when-confirmed', domain = 'agent-discipline', runId, detail = null }) {
+  const meta = SELF_RULES[ruleId]
+  const fp = `${ruleId}|${p}@${line}|${hashText(normalize(String(snippet ?? ''), 'ts')).slice(7, 11)}`
+  return {
+    id: 'c-' + crypto.createHash('sha1').update(fp + (detail ?? '')).digest('hex').slice(0, 6),
+    run: runId, source: 'static', rule: ruleId, domain, title: meta.title, path: p, line, endLine: line,
+    snippet: String(snippet ?? '').slice(0, 200), detail, symbol: null, snippet_hash: null, fingerprint: fp,
+    scenario: meta.why, severity, mode, confirmHint: 'static-proof: the diff itself', fixHint: meta.fixHint,
+  }
+}
+
+function jstackSelfCandidates(ctx, repo, runId) {
+  const out = []
+  for (const [p, st] of ctx.diffStatus) {
+    if (!p.startsWith('.jstack/') || st === 'D') continue
+    if (p === '.jstack/unslop.json') {
+      out.push(selfCandidate('unslop.config-changed', { path: p, line: 1, snippet: st === 'A' ? 'new file' : 'modified', runId, detail: st === 'A' ? 'added by this branch' : 'modified by this branch' }))
+      continue
+    }
+    if (!p.startsWith(ENTRIES_DIR + '/') || !p.endsWith('.json')) continue
+    let sup = null
+    try { sup = suppressionOf(JSON.parse(readText(path.join(repo, p)) ?? '')) } catch { sup = null }
+    if (sup) out.push(selfCandidate('unslop.new-waiver', { path: p, line: 1, snippet: sup.reason, runId, detail: `fingerprint ${sup.fingerprint}` }))
   }
   return out
 }
@@ -167,13 +229,15 @@ function loadMemorySuppressions(repo) {
 function scan(opts = {}) {
   const t0 = Date.now()
   const repo = opts.root ? null : path.resolve(opts.repo ?? process.cwd())
-  const project = opts.root ? null : loadProjectConfig(repo)
+  const diffMode = !opts.root && !opts.full
+  const trustRef = diffMode ? baseCommit(repo, opts.base ?? 'origin/main') : null
+  const project = opts.root ? null : (diffMode ? loadProjectConfigAt(repo, trustRef) : loadProjectConfig(repo))
   const ignore = opts.root ? [] : ignoreGlobs(project)
-  const rules = opts.rules ?? loadRules({ repo, domains: opts.domains ?? null, ruleIds: opts.ruleIds ?? null })
+  const rules = opts.rules ?? loadRules({ repo, project, domains: opts.domains ?? null, ruleIds: opts.ruleIds ?? null })
   const ctx = collect({ repo, base: opts.base ?? 'origin/main', full: opts.full, root: opts.root, diffStatus: opts.diffStatus })
   const runId = opts.runId ?? new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + 'Z-' + crypto.randomBytes(2).toString('hex')
-  const waivers = new Map((project?.waivers ?? []).filter(w => !w.expires || Date.parse(w.expires) > Date.now()).map(w => [w.fingerprint, `waiver: ${w.reason}`]))
-  const memory = loadMemorySuppressions(repo)
+  const waivers = new Map((project?.waivers ?? []).filter(w => w?.fingerprint).map(w => [w.fingerprint, { reason: 'waiver: ' + w.reason, waiver: true, expires: w.expires ?? null }]))
+  const memory = loadMemorySuppressions(repo, diffMode ? trustRef : null)
   const candidates = [], suppressed = [], notChecked = [], eyesRules = []
   for (const rule0 of rules) {
     let rule = rule0
@@ -215,11 +279,18 @@ function scan(opts = {}) {
         confirmHint: rule.confirm ?? null,
         fixHint: rule.fixHint ?? null,
       }
-      const why = suppressedInline(lines, h.line, rule.id) ?? waivers.get(c.fingerprint) ?? memory.get(c.fingerprint)
+      const inline = suppressedInline(lines, h.line, rule.id)
+      const stored = [waivers.get(c.fingerprint), memory.get(c.fingerprint)].find(w => waiverActive(w, c.severity))
+      const why = inline?.reason ?? stored?.reason
       if (why) suppressed.push({ candidate: c, reason: why })
       else candidates.push(c)
+      const file = ctx.files.find(f => f.path === h.path)
+      if (inline && !ctx.all && file && (!file.added || file.added.has(inline.line))) {
+        candidates.push(selfCandidate('unslop.new-suppression', { path: h.path, line: inline.line, snippet: lines[inline.line - 1]?.trim(), severity: c.severity, mode: c.mode, domain: c.domain, runId, detail: 'hides ' + rule.id + ' at line ' + h.line }))
+      }
     }
   }
+  if (diffMode && repo) candidates.push(...jstackSelfCandidates(ctx, repo, runId))
   return { run: runId, candidates, suppressed, notChecked, eyesRules, files: ctx.files.length, ms: Date.now() - t0 }
 }
 
@@ -258,4 +329,4 @@ function main(argv) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)))
 
-export { scan, parseDiff, collect, regexHits, fingerprintOf, ruleApplies, main }
+export { scan, parseDiff, collect, regexHits, fingerprintOf, ruleApplies, waiverActive, loadMemorySuppressions, SELF_RULES, main }

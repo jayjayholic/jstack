@@ -4,6 +4,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { wilson } from './stats.mjs'
 
 const JSTACK_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -51,6 +52,33 @@ function loadPacks(skillsDir = SKILLS_DIR) {
 function loadProjectConfig(repo) {
   if (!repo) return null
   return readJson(path.join(repo, '.jstack', 'unslop.json'), null)
+}
+
+function gitOut(repo, args) {
+  const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 << 20 })
+  return r.status === 0 ? (r.stdout ?? '').replace(/\r/g, '') : null
+}
+
+// The commit a branch's diff is measured from: merge-base(base, HEAD), else base itself if it names a commit.
+function baseCommit(repo, base) {
+  if (!repo || !base) return null
+  const mb = gitOut(repo, ['merge-base', '--end-of-options', base, 'HEAD'])?.trim()
+  if (mb) return mb
+  return gitOut(repo, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${base}^{commit}`])?.trim() || null
+}
+
+// A file as it is at `ref`, or null when it is not there.
+function readAtRef(repo, ref, rel) {
+  if (!repo || !ref) return null
+  return gitOut(repo, ['show', '--end-of-options', `${ref}:${rel}`])
+}
+
+// The project config as the base ref has it. A branch can't loosen its own scan or gate: suppressions, waivers,
+// rule modes and the gate mode it adds only count once they are on the base branch.
+function loadProjectConfigAt(repo, ref) {
+  const t = readAtRef(repo, ref, '.jstack/unslop.json')
+  if (t == null) return null
+  try { return JSON.parse(t) } catch { return null }
 }
 
 // Per rule: { n, accepted, rejected, precision, lower } from .jstack/local/feedback.jsonl.
@@ -102,8 +130,9 @@ function houseRules(project) {
 }
 
 // All rules for the chosen domains, with project tuning applied. Each rule carries .domain and .effectiveMode.
-function loadRules({ repo = null, domains = null, ruleIds = null, skillsDir = SKILLS_DIR, includeEyes = true } = {}) {
-  const project = loadProjectConfig(repo)
+// `project` overrides the config read from the working tree (diff mode passes the merge-base's copy).
+function loadRules({ repo = null, domains = null, ruleIds = null, skillsDir = SKILLS_DIR, includeEyes = true, project: given } = {}) {
+  const project = given !== undefined ? given : loadProjectConfig(repo)
   const field = fieldPrecision(repo)
   const packs = loadPacks(skillsDir)
   const rules = []
@@ -124,4 +153,4 @@ function ignoreGlobs(project) {
   return [...DEFAULT_IGNORE, ...(project?.paths?.ignore ?? [])]
 }
 
-export { loadPacks, loadRules, loadProjectConfig, fieldPrecision, effectiveMode, globToRegExp, matchGlob, matchAny, ignoreGlobs, JSTACK_ROOT, SKILLS_DIR, DEFAULT_IGNORE, CATALOG_GLOBS, PROMOTE, DEMOTE }
+export { loadPacks, loadRules, loadProjectConfig, loadProjectConfigAt, baseCommit, readAtRef, fieldPrecision, effectiveMode, globToRegExp, matchGlob, matchAny, ignoreGlobs, JSTACK_ROOT, SKILLS_DIR, DEFAULT_IGNORE, CATALOG_GLOBS, PROMOTE, DEMOTE }
