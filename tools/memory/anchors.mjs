@@ -12,9 +12,33 @@ const RENAME_MARGIN = 0.15
 const SPLIT_PART = 0.25
 const SPLIT_TOTAL = 0.7
 
+const SHA_RE = /^[0-9a-f]{7,40}$/
+
+// An anchor's commit comes from a JSON file a branch can edit, so it is never handed to git unchecked: a value like
+// `--output=<path>` would be read as an option and write files. Only a hex object name that names a commit passes.
+function isCommitId(c) {
+  return typeof c === 'string' && SHA_RE.test(c)
+}
+
+// A repo-relative POSIX path: not absolute, no '..' segment, no leading '-', no NUL.
+function isSafeRelPath(p) {
+  if (typeof p !== 'string' || !p || p.includes('\0')) return false
+  const posix = p.replace(/\\/g, '/')
+  if (posix.startsWith('-') || posix.startsWith('/') || /^[A-Za-z]:/.test(posix) || path.isAbsolute(p)) return false
+  return !posix.split('/').includes('..')
+}
+
 function git(repo, args) {
   const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 << 20 })
   return { ok: r.status === 0, out: (r.stdout ?? '').replace(/\r/g, ''), err: r.stderr ?? '' }
+}
+
+// The full commit id when `c` is a hex id naming a commit in this repo, else null.
+function verifiedCommit(repo, c) {
+  if (!isCommitId(c)) return null
+  const r = git(repo, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${c}^{commit}`])
+  const sha = r.out.trim()
+  return r.ok && /^[0-9a-f]{40,64}$/.test(sha) ? sha : null
 }
 
 function headSha(repo) {
@@ -22,11 +46,14 @@ function headSha(repo) {
 }
 
 function readFile(repo, rel) {
+  if (!isSafeRelPath(rel)) return null
   try { return fs.readFileSync(path.join(repo, rel), 'utf8') } catch { return null }
 }
 
 function showAt(repo, commit, rel) {
-  const r = git(repo, ['show', `${commit}:${rel}`])
+  const sha = verifiedCommit(repo, commit)
+  if (!sha || !isSafeRelPath(rel)) return null
+  const r = git(repo, ['show', '--end-of-options', `${sha}:${rel}`])
   return r.ok ? r.out : null
 }
 
@@ -39,6 +66,8 @@ function splitRef(ref) {
 function makeAnchor(repo, ref, { role = 'subject', commit } = {}) {
   const { path: rel, symbol } = typeof ref === 'string' ? splitRef(ref) : ref
   const posix = rel.replace(/\\/g, '/')
+  if (!isSafeRelPath(posix)) throw new Error(`anchor path refused (absolute, '..' or leading '-'): ${posix}`)
+  if (commit != null && !isCommitId(commit)) throw new Error(`anchor commit refused (expected 7-40 hex characters): ${commit}`)
   const text = readFile(repo, posix)
   if (text === null) throw new Error(`anchor path not found: ${posix}`)
   const lang = langOf(posix)
@@ -51,7 +80,9 @@ function makeAnchor(repo, ref, { role = 'subject', commit } = {}) {
 
 // New path of a file renamed since `commit` (committed or in the working tree), or null.
 function renamedTo(repo, commit, rel) {
-  for (const args of [['diff', '-M50%', '--name-status', commit], ['diff', '-M50%', '--name-status', commit, 'HEAD']]) {
+  const sha = verifiedCommit(repo, commit)
+  if (!sha) return null
+  for (const args of [['diff', '-M50%', '--name-status', '--end-of-options', sha], ['diff', '-M50%', '--name-status', '--end-of-options', sha, 'HEAD']]) {
     const r = git(repo, args)
     if (!r.ok) continue
     for (const line of r.out.split('\n')) {
@@ -86,7 +117,9 @@ function symbolEntries(repo, files, lang) {
 
 function changedSince(repo, commit) {
   const files = new Set()
-  for (const args of [['diff', '--name-only', '-M50%', commit], ['diff', '--name-only', '-M50%', commit, 'HEAD']]) {
+  const sha = verifiedCommit(repo, commit)
+  if (!sha) return []
+  for (const args of [['diff', '--name-only', '-M50%', '--end-of-options', sha], ['diff', '--name-only', '-M50%', '--end-of-options', sha, 'HEAD']]) {
     const r = git(repo, args)
     if (r.ok) r.out.split('\n').filter(Boolean).forEach(f => files.add(f))
   }
@@ -94,8 +127,10 @@ function changedSince(repo, commit) {
 }
 
 function removalCommit(repo, anchor) {
+  const sha = verifiedCommit(repo, anchor.commit)
+  if (!sha || !isSafeRelPath(anchor.path)) return null
   const name = anchor.symbol ? anchor.symbol.split('.').pop() : null
-  const args = name ? ['log', '-S', name, '--format=%h %s', '-1', `${anchor.commit}..HEAD`, '--', anchor.path] : ['log', '--diff-filter=D', '--format=%h %s', '-1', `${anchor.commit}..HEAD`, '--', anchor.path]
+  const args = name ? ['log', `-S${name}`, '--format=%h %s', '-1', '--end-of-options', `${sha}..HEAD`, '--', anchor.path] : ['log', '--diff-filter=D', '--format=%h %s', '-1', '--end-of-options', `${sha}..HEAD`, '--', anchor.path]
   const r = git(repo, args)
   return r.out.trim() || null
 }
@@ -105,7 +140,9 @@ function result(status, extra) {
 }
 
 // Resolves one anchor against the current working tree.
-function resolveAnchor(repo, anchor) {
+function resolveAnchor(repo, anchor0) {
+  if (!isSafeRelPath(anchor0?.path)) return result('STALE', { path: String(anchor0?.path ?? ''), detail: "anchor path refused (absolute, '..' or leading '-')", suggestion: `memory.mjs retire <id> --reason "<why>"` })
+  const anchor = isCommitId(anchor0.commit) ? anchor0 : { ...anchor0, commit: null }
   const lang = anchor.lang ?? langOf(anchor.path)
   let cur = anchor.path
   let moved = false
@@ -184,4 +221,4 @@ function resolveAnchor(repo, anchor) {
 
 function round(x) { return Math.round(x * 100) / 100 }
 
-export { makeAnchor, resolveAnchor, renamedTo, splitRef, headSha, git, RENAME_MIN, RENAME_MARGIN }
+export { makeAnchor, resolveAnchor, renamedTo, splitRef, headSha, git, isCommitId, isSafeRelPath, verifiedCommit, RENAME_MIN, RENAME_MARGIN }

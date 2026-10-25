@@ -18,7 +18,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { scanFields } from './secrets.mjs'
-import { makeAnchor, resolveAnchor, splitRef, git } from './anchors.mjs'
+import { makeAnchor, resolveAnchor, splitRef, git, isCommitId, isSafeRelPath } from './anchors.mjs'
 
 const KINDS = ['decision', 'budget-rationale', 'known-slop', 'failure', 'convention', 'false-positive']
 const STATUSES = { 'known-slop': ['open', 'fixed', 'waived'], default: ['active', 'retired'] }
@@ -84,7 +84,11 @@ function validate(entry) {
   for (const [k, n] of Object.entries(LIMITS)) if (typeof entry[k] === 'string' && entry[k].length > n) errs.push(`${k}: at most ${n} characters`)
   if (!Array.isArray(entry.domains)) errs.push('domains: array')
   if (!Array.isArray(entry.anchors)) errs.push('anchors: array')
-  else entry.anchors.forEach((a, i) => { if (!a?.path) errs.push(`anchors[${i}].path: required`) })
+  else entry.anchors.forEach((a, i) => {
+    if (!a?.path) errs.push(`anchors[${i}].path: required`)
+    else if (!isSafeRelPath(a.path)) errs.push(`anchors[${i}].path: repo-relative only (no absolute path, no '..', no leading '-')`)
+    if (a?.commit != null && !isCommitId(a.commit)) errs.push(`anchors[${i}].commit: 7-40 lowercase hex characters`)
+  })
   if (entry.kind === 'known-slop' && entry.status === 'waived' && !entry.waiver?.reason) errs.push('waiver.reason: required for a waived known-slop')
   if (!entry.created) errs.push('created: required')
   return errs
