@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "domains": "auto",
+  "gate": { "mode": "warn", "blockSeverities": ["high"], "maxSeconds": 60 },
+  "paths": {
+    "ignore": ["skills/eng-*/checks.json", "tools/unslop/*.test.mjs", "tools/memory/*.test.mjs"],
+    "why": "the packs and the scanner's own tests quote the slop they look for"
+  }
+}
