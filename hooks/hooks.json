@@ -1,0 +1,27 @@
+{
+  "description": "jstack guards: heavy commands only through the lock, no recursive scans over the repo, and cleanup of what a subagent left running. No-ops unless ~/.jstack/guards.json names the project.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Grep|Glob|LSP",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/jstack-guards.mjs", "pre"], "timeout": 10 }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/jstack-guards.mjs", "cleanup"], "timeout": 45 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/jstack-guards.mjs", "cleanup"], "timeout": 45 }
+        ]
+      }
+    ]
+  }
+}
