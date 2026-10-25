@@ -2,6 +2,19 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25: guard hooks, a READY gate, and a report on whether either hurts
+
+**What:**
+- The jstack plugin now ships hooks (`hooks/hooks.json`, `hooks/jstack-guards.mjs`). They do nothing until `~/.jstack/guards.json` names your project (example in `tools/guards.example.json`), so only people who install jstack and write that file get them. Nothing goes in a repo's `.claude/settings.json`.
+  - **heavy-lock** (PreToolUse, Bash and PowerShell): denies `tsc`, `tsgo`, `next build`, `run typecheck`/`build`, `turbo build` and `bun/npm/pnpm/yarn install` unless they go through `tc_run`, `heavy_capped` or `heavy_acquire`. The denial names the exact command to retry with.
+  - **scan** (same hook): denies recursive `grep -r`, `find`, `du`, `ls -R`, `tree` and `Get-ChildItem -Recurse` over a repo root, a `.worktrees` folder, anything above the repo, or `node_modules`, and points to Grep/Glob, `git grep` or LSP. Scoped searches in a subfolder pass.
+  - **cleanup** (SubagentStop; Stop only with `"onStop": true`): kills node, bun, bash, tail and friends whose command line names a worktree the agent used and that started after its first command. Never the main checkout, never older processes, never the Claude CLI.
+- Every block is logged to `~/.jstack/guard-log.jsonl` with the agent, the command, the suggested retry, and whether the agent's next call took it. `tools/hook-report.mjs` (`jstack hook-report`) sums it up: blocks per day, agents blocked twice or more, ignored advice, cleanups.
+- `tools/ready-gate.sh`: what the train checks before accepting READY. The tree is committed, the typecheck is green on that commit (via `tc_run`, cached per SHA), unit tests next to touched files pass, prettier passes on touched files, and `.agent/brief.md` has every item ticked. New settings `JSTACK_UNIT_TEST_CMD`, `JSTACK_PRETTIER_CHECK_CMD`, `JSTACK_READY_EXTRA_CMD`, `JSTACK_LOCK_SCRIPT`.
+- `/train` gets section 6c (gate before boarding, brief checklist, daily hook report); the worker clause and orchestrator brief use the gate; `machine-memory` mentions the guards and the daily report.
+
+**Why:** an audit of two days of agent work found 28 "done" claims with no proof, 21 typechecks and builds outside the lock (5 to 8 GB each), `grep -r` over 185 worktrees, and servers left running after their agents ended. The laptop sat at 0.2 to 3% free RAM and got rebooted. The rules were already in every brief. Agents skipped them anyway, so now a hook enforces them. The brief checklist stays a rule the gate reads, not a hook: a hook can't tell whether a brief item is done. The report exists because blocking an agent can also make it flail, and that should be a number, not a feeling. The 32 GB laptop has been asked for comment and is just happy to be in the room.
+
 ## 2026-10-25: the file cache that wouldn't leave, and one sweeper at a time
 
 **What:**

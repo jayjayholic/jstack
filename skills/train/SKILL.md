@@ -102,6 +102,15 @@ The train owns worktree hygiene.
 
 Done when: the sweep report says, for each item, removed (what) or listed (why).
 
+## 6c. The READY gate and the guard hooks
+
+- **The READY gate.** Before a branch boards, the orchestrator runs `bash {{JSTACK_TOOLS}}/ready-gate.sh <worktree> --base origin/{{INTEGRATION_BRANCH}}`. It checks: the tree is committed, a green typecheck on that exact commit (through `tc_run`, cached per SHA), the unit tests next to the touched files, prettier on the touched files, and the brief checklist in `<worktree>/.agent/brief.md` fully ticked. Exit 0 boards. Exit 1 means don't board: send the FAIL lines back to the worker. Workers run the same gate before READY, so the orchestrator's typecheck comes back from the cache in a second. A READY whose gate is red doesn't board, however sure the worker sounds.
+- **The brief checklist is a rule, not a hook.** The worker's first step is to copy the brief's items into `.agent/brief.md` as `- [ ]` lines (the file is ignored by git), and to tick each one with its evidence as it goes. An item not done is an unticked line, and the gate refuses it. A hook can't tell whether an item is really done, so the gate checks the file and the orchestrator checks the evidence.
+- **Guard hooks** (only where the jstack plugin is installed and `~/.jstack/guards.json` names the project): bare `tsc`, `next build`, `typecheck`, `build` and installs are denied unless they run through the lock, recursive grep/find/du over the repo root, the worktrees folder or `node_modules` is denied, and when a subagent stops, the servers, loops and `tail -f` it left in its worktree get killed. Each denial tells the agent the exact retry.
+- **Daily: read the hook report.** Once a day the orchestrator runs `node {{JSTACK_TOOLS}}/hook-report.mjs --days 1` (`jstack hook-report`). It shows blocks per day, agents blocked twice or more, and the calls that ignored the advice. An agent blocked over and over is struggling: nudge it or read its brief again. Tell the owner in one line whether the guards are costing agent quality (repeats and ignored advice going up) or not.
+
+Done when: no branch boarded without a green gate, and today's hook report was read and summed up for the owner.
+
 ## 7. Measure it
 
 Two formulas tell you where the time goes. Track the inputs hourly (from `gh pr list`, the queue file and the agent list), not from memory.
@@ -163,6 +172,8 @@ These come from the author's setup (Bun, Next.js with Turbopack, Windows, 32 GB,
 - **Reused generated code must be complete:** a copy taken from a sibling mid-codegen had the right schema hash and half the output, and a train typecheck failed with 80 errors from a missing typed-SQL client. Reuse needs the inputs hash to match AND every generated client to exist and be non-empty (`JSTACK_CODEGEN_REQUIRED`), checked again after the copy. With that, codegen per worktree went from 519 s to about zero.
 - **The pre-push hook that repeated CI:** it ran a full typecheck on every push, 10 to 15 min each, inside the slot. CI runs the same check. Deleted.
 - **One agent per chain (2026-10-22):** with one agent per ticket, merged throughput was about 3 tickets/h. Giving each dependency chain to one agent (stacked branch, READY per ticket) took it to about 27 tickets/h the same night. Honest footnote: part of that jump is parallel work that had piled up landing together, so the steady number is lower. Still the biggest single change of the night.
+- **"Done" without proof (2026-10-25):** 28 "ready" claims in two days came without proof: the typecheck was never run on the final commit, or brief items had quietly disappeared. Each one bounced the train or sent the owner back to repeat himself. Now READY goes through `ready-gate.sh` (section 6c), and the brief is a checklist the gate reads.
+- **Rules agents skipped became hooks (2026-10-25):** "typecheck only through `tc_run`" sat in every brief and still got skipped 21 times. Bare typechecks at 5 to 8 GB each, `grep -r` over 185 worktrees, and servers left behind by finished agents kept the laptop at 0.2 to 3% free RAM. The jstack guard hooks deny the first two and clean up the third, and the hook report shows whether the denials cost agents anything.
 - **Late gates:** a UI gate (layout and contrast audit) added after branches were READY sent them all back for rework. Gates go in the plan, before the first agent starts.
 - **Format, don't just check:** the ship step runs the formatter in write mode on the changed files and commits the result. A check that only warned let a train PR fail lint on one file.
 - **Never commit in a worker's live worktree:** an agent stacking its next ticket keeps uncommitted edits there, and `git add <dir>` sweeps them into your fix. Commit train fixes in the train worktree and tell the agent.

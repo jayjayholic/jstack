@@ -5,6 +5,7 @@ Paste at the end of every coding agent's prompt while a train runs; fill the orc
 ---
 
 Shipping (train system):
+- First step: copy every item of this brief into `<worktree>/.agent/brief.md` as `- [ ] <item>` lines. Tick each one (`- [x] <item>: <evidence>`) as you finish it. An item you didn't do stays unticked, and you say why in the report.
 - Work in your own worktree (`bash {{JSTACK_TOOLS}}/new-worktree.sh <branch> --install`), never in the main checkout.
 - You never run a production build. Prove your work with your tests (`{{TEST_CMD}}`, local test resources only) and ONE typecheck in the typecheck lane before READY: `source {{JSTACK_TOOLS}}/heavy-lock.sh; tc_run "{{TYPECHECK_CMD}}"` (its own few parallel slots, capped, separate from the train's heavy slot). Never run a typecheck outside the lane.
 - Memory: first thing, `echo "<your name>: <task>" > .agent` in your worktree (ignored by git; `mem_map` uses it to say which processes are yours). One server at a time. Kill everything you start (servers, `tail -f`, loops, browsers) before you report. Before any other heavy step, `mem_guard`.
@@ -14,4 +15,6 @@ Shipping (train system):
 - Write the PR body from `{{PR_TEMPLATE}}` to `artifacts/pr-body.md` (untracked).
 - User-facing UI: READY only with screenshots, a layout and contrast (WCAG AA) check at zero findings, and the current UI unchanged with your feature flag off. New design: stop after the screenshots and report to the main session; send READY only after it says the owner approved.
 - Commit as you go, not at the end. If you own a CHAIN of tickets, build them in order on one stacked branch and send READY after each ticket, then keep going on the next one.
+- Before READY, run `bash {{JSTACK_TOOLS}}/ready-gate.sh <worktree> --base origin/{{INTEGRATION_BRANCH}}` (it runs the typecheck through `tc_run` for you) until it prints `READY accepted`. The orchestrator runs it again before boarding you.
+- If a jstack guard hook denies a command, run the retry it gives you, exactly. Don't rename, split or wrap the command to get around it.
 - When ready, send exactly `READY FOR BUILD: <worktree path> - <PR title> - typecheck green at <sha>` via SendMessage to: '<orchestrator id>', where `<sha>` is your branch head (commit everything first, nothing committed after the typecheck). Without that line, or when your head moved past it, the train replies "typecheck first" and does not board you. If the train's integration typecheck points at your files, it drops your branch and sends you the error lines: fix, typecheck in the lane, READY again. You board the next train; nobody waits for you. Then report to the main session in under 150 words.

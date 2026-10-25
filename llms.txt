@@ -27,6 +27,8 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 
 ## Plugins
 
+- [guard hooks](https://github.com/jayjayholic/jstack/blob/main/hooks/jstack-guards.mjs): opt-in hooks in the jstack plugin, enabled per project by ~/.jstack/guards.json: heavy commands only through the lock, no recursive scans over the repo, worktrees or node_modules, cleanup of what a subagent left running; every block logged, summed up by tools/hook-report.mjs. tools/ready-gate.sh is the check before READY boards a train.
+
 - [jay-claude-switcher](https://github.com/jayjayholic/jstack/blob/main/plugins/jay-claude-switcher/README.md): Claude Code side panel with every stored Claude account's 5-hour and weekly usage and an auto-switch to the least-used account at 99%; switch.py command line and an add-account skill. Install: `/plugin install jay-claude-switcher --marketplace jayjayholic/jstack`
 
 ## Scripts

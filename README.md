@@ -151,6 +151,9 @@ skills/wayfinder/        /wayfinder, from mattpocock/skills (MIT): turns a big p
 skills/research/         skills/prototype/         | what /wayfinder calls, also from mattpocock/skills (MIT), copied as-is
 skills/domain-modeling/   | so nothing else needs installing. setup-matt-pocock-skills
 skills/setup-matt-pocock-skills/ /  tells wayfinder where your issue tracker lives
+hooks/
+  hooks.json             the guard hooks (PreToolUse, SubagentStop, Stop); no-ops until ~/.jstack/guards.json names your project
+  jstack-guards.mjs      heavy commands only through the lock, no recursive scans over the repo, cleanup when a subagent stops
 skills/simplify/
   README.md              /simplify is built into Claude Code, so this is only a pointer (its licence doesn't allow a copy)
 plugins/jay-claude-switcher/
@@ -167,10 +170,29 @@ tools/
   clean-worktrees.sh     removes finished worktrees safely (merged, clean, idle, nothing running inside); --dry-run first
   mem-map.ps1            the detective: where the RAM went, by PRIVATE bytes, per agent (worktree > branch > .agent),
                          plus WSL/Docker, orphans, dev ports, lock slots; -Watch samples to a CSV, -Kill orphans cleans up
+  ready-gate.sh          the READY gate the orchestrator runs before accepting READY (typecheck on the final commit, tests, prettier, brief)
+  hook-report.mjs        `jstack hook-report`: what the guard hooks blocked per day, who got blocked twice, who took the advice
+  guards.example.json    the per-project guard config; copy to ~/.jstack/guards.json
   node-memory-watch.ps1  the bouncer: when RAM runs out, kills the fattest node/bun process (never your agent CLI) before Windows does something worse
 ```
 
 Every agent gets its own worktree from `new-worktree.sh`, so eight of them can edit the same repo without stepping on each other. The memory watcher is the last line of defense. It's not pretty, but a killed build beats a frozen laptop and a zeroed `.git/config` (yes, that happened).
+
+## Guard hooks (opt-in, per project)
+
+Rules in a skill get read. Rules in a hook get followed. The plugin ships three guards that run inside Claude Code, and they do nothing at all until `~/.jstack/guards.json` lists your project (copy `tools/guards.example.json`). That file lives in your home folder, not in any repo, so your teammates never get them unless they install jstack and write their own.
+
+| Guard | When | What it does |
+|---|---|---|
+| heavy-lock | PreToolUse on Bash and PowerShell | Denies `tsc`, `tsgo`, `next build`, `bun/npm/pnpm/yarn run typecheck` or `build`, `turbo build`, and `bun/npm install` unless the command goes through `tc_run`, `heavy_capped` or `heavy_acquire` (your list). The denial tells the agent the exact command to retry with. |
+| scan | PreToolUse on Bash and PowerShell | Denies recursive `grep -r`, `find`, `du`, `ls -R`, `tree` and `Get-ChildItem -Recurse` over a repo root, a `.worktrees` folder, anything above the repo, or `node_modules`. Points to the Grep/Glob tools, `git grep` or LSP. `grep -rn foo src/lib/chat` is fine. |
+| cleanup | SubagentStop (Stop only with `"onStop": true`) | Kills the node, bun, bash, tail and friends whose command line names a worktree the agent worked in and that started after the agent's first command. Never the main checkout, never older processes, never the Claude CLI. |
+
+Every block goes to `~/.jstack/guard-log.jsonl` with the agent, the command, the suggested retry, and whether the agent's next call took it. `node tools/hook-report.mjs` (that's `jstack hook-report`) turns it into blocks per day, agents blocked twice or more (a sign one is struggling), and the calls that ignored the advice. The orchestrator reads it once a day.
+
+Why: one stray `tsc` is 5 to 8 GB, two at once and my laptop is a space heater. A `grep -r` over 185 worktrees with their `node_modules` filled the file cache and nobody owned it. And agents end, their `next start` and `tail -f` don't.
+
+Needs `node` on the PATH. The cleanup's Linux/macOS branch is UNVERIFIED; only Windows has run it. Tests: `node --test hooks/jstack-guards.test.mjs`.
 
 ## Quickstart
 

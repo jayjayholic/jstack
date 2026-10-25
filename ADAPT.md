@@ -89,6 +89,8 @@ About the RAM ceiling: on Windows `heavy_capped` uses a Job Object (`run-capped.
 - Worker agents typecheck through `tc_run "<typecheck>"` before READY, never outside the lane. If your typecheck tool has an incremental mode, use it in `JSTACK_TYPECHECK_CMD`: the train only needs cross-branch errors.
 - Wire the heavy commands through `heavy_capped` wherever humans or other scripts build: `heavy_acquire <name>; heavy_capped "<build>"; heavy_release`.
 - The main session runs the watch from section 6 of the train skill (RAM, build workers, silent agents, orphans, the slot).
+- The READY gate: set `JSTACK_UNIT_TEST_CMD` and `JSTACK_PRETTIER_CHECK_CMD` in `~/.jstack/config.sh` (from the project's test runner and CI's format check). The train runs `ready-gate.sh` before boarding.
+- Optional, plugin installs only: the guard hooks. Copy `tools/guards.example.json` to `~/.jstack/guards.json` and set `roots` to the project's folder (and where its worktrees live), `lockScript` to the installed `heavy-lock.sh`. Without that file the hooks do nothing. Never put it in the project repo: teammates without jstack shouldn't get it.
 - Windows only, optional: start the memory watcher in a background PowerShell: `powershell -NoProfile -File "$HOME/jstack-tools/node-memory-watch.ps1" -LimitGB 5 -PressurePercent 95`. Pick `LimitGB` a bit above your biggest normal build. `-Protect` (default `claude`) is a pattern for command lines that are never killed; set it to match your agent CLI.
 
 ## Step 5: Verify
@@ -97,6 +99,7 @@ Run each check and fix what fails.
 
 - [ ] No placeholder left in the installed skills: `grep -rn "{{" ~/.claude/skills/train ~/.claude/skills/train-compound ~/.claude/skills/train-queue` prints nothing.
 - [ ] The config loads: `bash -c 'source ~/jstack-tools/heavy-lock.sh; echo "$JSTACK_REPO_ROOT $JSTACK_INTEGRATION_BRANCH $JSTACK_LOCK_DIR"'` prints your values.
+- [ ] Guard hooks (if you set them up): in a new session in the project, ask the agent to run `tsc --noEmit -p nothing.json` and `ls -R node_modules/.bin`. Both must come back denied, and `~/.jstack/guard-log.jsonl` must have two `block` lines. `node <jstack>/tools/hook-report.mjs` prints them.
 - [ ] RAM check works: `bash -c 'source ~/jstack-tools/heavy-lock.sh; jstack_free_gb'` prints a plausible number (not empty, not 0 on an idle machine).
 - [ ] The slot works:
   ```bash

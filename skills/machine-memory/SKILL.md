@@ -66,6 +66,8 @@ Done when the cache line in `mem_map` is back down, or the human has said no to 
 - Run one server at a time, after `server_wait {{MIN_FREE_GB}}`, and stop it after the test.
 - Kill everything you start (servers, `tail -f`, loops, browsers) before you report. Your agent row in `mem_map` should be empty.
 - Before any other heavy step (an install, a big script), run `mem_guard [gb]`.
+- Search with the Grep and Glob tools, `git grep` or LSP. Never run a recursive grep/find/du over the repo root, the worktrees folder or `node_modules`.
+- Where the jstack guard hooks are on (`~/.jstack/guards.json`), the typecheck, build, install and scan rules above are enforced: the denial says how to retry. When a subagent stops, the hook kills the processes it left in its worktree (only ones started after its first command, never the main checkout). That's a seatbelt, not permission to leave things running.
 
 ## 5. Orchestrator duty
 
@@ -76,5 +78,7 @@ Done when the cache line in `mem_map` is back down, or the human has said no to 
   - `JSTACK_TC_MIN_AVAIL_GB` (10): free RAM a typecheck lane waits for.
   - `JSTACK_MEM_WAIT_MAX_MIN` (15): after this, a wait gives up and the job runs anyway, still under the hard cap.
   - `MEM_GUARD=0` turns the waits off.
+
+- **Daily:** `node {{JSTACK_TOOLS}}/hook-report.mjs --days 1`. A day's cleanup line (processes the stop hook killed) says which agents keep leaving servers behind; tell them.
 
 Done when each watch tick has a map, and every tick at 80%+ ended with a cause and a suggestion sent to the human.
