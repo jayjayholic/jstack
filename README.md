@@ -72,7 +72,7 @@ Don't want to configure it by hand? Tell your agent: **"follow ADAPT.md in jayja
 | [Merge trains](#merge-trains) | Many agent branches ship as one typecheck, one build, one PR | `/train`, `/train-compound`, `/train-queue` |
 | [Plan first](#before-you-start-plan-first) | Grill the plan, map it into tickets with dependencies | `/grill-me`, `/wayfinder` |
 | [Preflight and unslop](#think-before-prove-after-preflight-and-unslop) | Ask the right questions before coding, prove every finding after | `/preflight`, `/unslop` |
-| [RAM](#keeping-the-ram-alive) | One heavy slot, a hard RAM ceiling, a memory map that names the guilty agent | `heavy-lock.sh`, `machine-memory` |
+| [RAM](#keeping-the-ram-alive) | One heavy slot, a hard RAM ceiling, a memory map that names the guilty agent, a minute-by-minute CPU and RAM log with a panel | `heavy-lock.sh`, `machine-memory`, `perf.mjs` |
 | [Guard hooks](#guard-hooks) | Hooks that block bare builds and repo-wide scans and clean up what agents leave running | `~/.jstack/guards.json` |
 | [Worktrees](#worktrees-and-shared-dependencies) | One worktree per agent, shared `node_modules` | `new-worktree.sh` |
 | [Domain packs](#domain-packs) | 16 packs of questions, budgets and red flags per domain | `skills/eng-*` |
@@ -327,6 +327,7 @@ One Turbopack build eats about 5 GB and ignores `--max-old-space-size`. A full `
 - `heavy-lock.sh`: `heavy_acquire` / `heavy_release`, `heavy_capped` (the RAM ceiling), `tc_run` (typecheck lane), `server_wait` (before any server).
 - `mem-map.ps1` and the `machine-memory` skill: who is eating the RAM, per agent.
 - `ram-clean.ps1` and `node-memory-watch.ps1`: free the file cache, and kill the fattest build before Windows does something worse.
+- `perf/perf.mjs`: a performance log that records, every minute, who used the CPU and RAM (per process and per agent), with a panel, a query CLI for agents and an optimize loop.
 
 <details>
 
@@ -375,6 +376,24 @@ The file cache kept coming back, and the fix (RAMMap) needed me to click a UAC p
 Builds and typecheck lanes wait for free RAM (12 and 10 GB by default) before they start, and give up after 15 minutes so nothing hangs forever. The laptop still has fewer friends than the build has workers, but at least now it knows their names.
 
 `node-memory-watch.ps1` is the bouncer and the last line of defense: when RAM runs out, it kills the fattest node/bun process (never your agent CLI). It's not pretty, but a killed build beats a frozen laptop and a zeroed `.git/config` (yes, that happened).
+
+</details>
+
+The memory map is a snapshot; the performance log is the security camera: every minute it writes down who used the CPU and RAM, per process and per agent, so an agent can ask "what ran during that freeze" and keep finding cheaper ways to run the same work.
+
+<details>
+
+<summary><b>The performance log</b>: a Grafana-style panel without Grafana, and an optimize loop</summary>
+
+I saw a macOS monitoring stack ([cnicolov/macos-monitoring-stack](https://github.com/cnicolov/macos-monitoring-stack): `ps` every 15 s into node_exporter, Prometheus, Grafana, with a "CPU by process name" panel showing mean and max) and wanted that panel on Windows without installing three servers.
+
+- **Install:** `node tools/perf/perf.mjs install` compiles a tiny snapshot tool (`perf-snap.cs`) with the C# compiler that already ships with Windows, and registers a scheduled task (at logon, restarts the collector if it dies, runs on battery, no admin). `uninstall [--purge]` undoes it.
+- **What a tick records** (every 60 s by default): CPU % per process over the interval (100% = one core, like the panel), private and working-set memory, I/O, which worktree and agent each process belongs to (the same attribution as `mem_map`), the heaviest processes with redacted command lines, machine CPU, RAM, commit, file cache, pagefile, disk queue, CPU nobody alive explains (processes that came and went between ticks), and who holds each heavy-lock slot.
+- **What it costs** (measured by the collector itself on the 32 GB laptop, 20 threads): about 0.17% of one core (0.01% of the machine), 19 MB private (30 to 42 MB working set), plus a 16 MB snapshot process for ~150 ms a minute. The first version used Windows performance counters for the disk queue and that alone burned 600 ms of CPU per tick, so it reads the disk driver directly now.
+- **Where it goes:** `~/.jstack/perf`, one JSON line per tick per day, past days gzipped; 14 days raw, 5-minute rollups for 90 days, hourly for 400. Command lines lose anything that looks like a secret before they're written (tested: `--token=`, `--api-key x`, `KEY=value`, Bearer, URL passwords, `?access_token=`, long random strings).
+- **Read it:** `perf.mjs top --since 60m`, `agents`, `spikes`, `at "<time>"` (what ran during a freeze), `patterns` (grep storms, duplicate typechecks, parallel builds, forgotten browsers and servers), `panel --open` (stacked CPU and RAM by process name and by agent with mean/max tables, the lock timeline, top offenders per hour). Everything takes `--json`. Want real Grafana anyway? `perf.mjs csv` feeds its CSV data source.
+- **The optimize loop** ([PERF.md](skills/machine-memory/PERF.md)): for each top consumer, research alternatives from primary sources, `perf.mjs bench` them interleaved in a Job Object (wall, CPU and peak memory of the whole process tree, same output required), adopt only when faster AND lighter, and keep every verdict in a ledger so nobody benchmarks the same pair twice. First round: listing processes through PowerShell and WMI took 682 ms, 484 ms of CPU and 105 MB; the snapshot tool does it in 68 ms, 62 ms and 19 MB with identical results.
+- macOS/Linux: the collector falls back to `ps`, never run on a Mac (UNVERIFIED); `bench` is Windows only for now.
 
 </details>
 

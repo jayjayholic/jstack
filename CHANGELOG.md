@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25 (night): a performance log, a panel, and an optimize loop
+
+**What:**
+- `tools/perf/`: a collector that writes one line a minute (configurable) to `~/.jstack/perf`: CPU % per process over the interval (100% = one core), private and working-set memory, I/O, attribution to worktree and agent (mem-map's rules; agent names from the new `mem-map.ps1 -Agents`), the heaviest processes with redacted command lines, machine CPU/RAM/commit/file cache/pagefile/disk queue, CPU no live process explains, and heavy-lock holders. Past days are gzipped and rolled up to 5 minutes (90 days) and hours (400 days); raw ticks stay 14 days.
+- `perf-snap.cs`: one `NtQuerySystemInformation` call per tick, compiled at install with the C# compiler that ships with Windows (no binary in git). Its `run` mode measures a command's whole process tree in a Job Object.
+- `perf.mjs`: `install`/`uninstall` (a scheduled task: at logon plus a 5 min self-heal, battery-safe, no admin), `status`, `top`, `agents`, `spikes`, `at <time>`, `patterns` (grep storms, duplicate typechecks, parallel builds, long-lived browsers, idle servers, stuck busy processes, short-lived churn), `panel` (a static HTML page), `csv`, `bench`, `ledger`.
+- `machine-memory` skill: section 6 and `PERF.md` with the watch routine and the optimize loop (primary sources, interleaved bench, adopt only when faster AND lighter with the same result, a ledger line either way).
+- First round of the loop, adopted: `jstack_free_gb` falls back to node before PowerShell (735 to 48 ms, 63 to 17 MB, same number), and `proc-table.mjs` gives the guard hooks' process table from perf-snap (682 to 68 ms, 484 to 62 ms of CPU, 105 to 19 MB, identical pids, parents, names and command lines). The hooks file itself is untouched; swapping its `listProcesses` to `listProcessesFast()` is a one-line follow-up.
+- `mem-map.ps1`: `-Agents`, `-Classify` (a parity test runs both implementations on the same rows), and a global `bun`/`npm` install under AppData is no longer taken for a project.
+
+**Why:** `mem_map` tells you who holds memory right now, not who made the laptop crawl twenty minutes ago, and nobody kept the numbers to find out what to make cheaper. The macOS stack that inspired this needs node_exporter, Prometheus and Grafana; this needs node and the compiler Windows already has. Measured cost on this machine over its first 15 minutes: 0.07% of one core for the collector plus 0.09% for the snapshot (0.008% of the 20-thread machine), 21 MB private (22 to 42 MB working set) and a 16 MB snapshot process for about 150 ms a minute. The first draft read the disk queue through performance counters and that alone cost 600 ms of CPU per tick. In its first 15 minutes it caught a test spinning at 98% of a core for 15 minutes, an orphaned grep doing the same for over an hour, and Windows Search spending most of a core indexing the worktrees. Tests: 304 green (25 new). UNVERIFIED: the macOS/Linux `ps` path, and `bench` is Windows-only. The laptop now has a diary. It reads like a crime novel.
+
 ## 2026-10-25: pre-flight by default, scaled to the task
 
 **What:**
