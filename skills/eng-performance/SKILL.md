@@ -64,6 +64,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `perf.loading-gate-blanks-shell` | Loading gate returns a spinner instead of the layout | The whole UI blanks while one region waits. | review agent (eyes) | medium |
 | `perf.no-pending-state` | Async click handler with no pending or optimistic state | Nothing happens for seconds; users click again. | review agent (eyes) | low |
 | `perf.dev-server-number` | Performance claim measured on the dev server or with n=1 | Dev builds are slower and noisier; the number says nothing about what ships. | review agent (eyes) | high |
+| `perf.coarse-lock` | Lock, queue or single-flight keyed wider than the unit that conflicts (per tenant, per user, global) | Independent work waits in one line, so throughput collapses to one item at a time. | review agent (eyes) | medium |
+| `perf.one-boundary-for-all` | Fast and slow data behind one loading boundary (a list waits for the slowest panel) | Everything shows as late as the slowest source. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -76,6 +78,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `perf.loading-gate-blanks-shell`: render: throttled screenshots at 100 ms / 500 ms / 1 s without the shell
 - `perf.no-pending-state`: failing-test: delay the request 3 s; assert pending state within 100 ms
 - `perf.dev-server-number`: measurement: rerun on the built app with >= 10 interleaved runs
+- `perf.coarse-lock`: measurement: push N independent items through the path with the current key and with a key per conflicting unit; time per item grows with N only under the current key Fix direction: key the lock by the smallest unit that truly conflicts.
+- `perf.one-boundary-for-all`: render: delay the slow source 3 s on the built app; a screenshot at 1 s shows the fast content missing Fix direction: one boundary per independent source, shell outside all of them.
 
 ## Verification steps
 

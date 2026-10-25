@@ -19,14 +19,14 @@ Language, locale, time zone and contrast are inputs to the system, not guesses m
 
 **MUST (asked at every tier)**
 
-- `i18n.q.language-source` Which language does each input and output of this change have, and which field is its source (member setting, then org default, then Accept-Language, then product default)? _(answer as: table; prevents: guessed-language)_
+- `i18n.q.language-source` Which language does each input and output of this change have, and which field is its source (user setting, then org default, then Accept-Language, then product default)? _(answer as: table; prevents: guessed-language)_
 - `i18n.q.both-catalogs` Does every new user-facing string have a key in every catalog? Do removed keys also have no code references? _(answer as: list; prevents: missing-keys)_
 
 **SHOULD (tier M and L)**
 
 - `i18n.q.detection` Does anything detect language from text or audio? If so, is that only for labelling input, never for choosing output? _(answer as: text; prevents: guessed-language)_
 - `i18n.q.explicit-language` Does every speech-to-text, OCR or LLM call receive the language explicitly (language parameter, expected languages + threshold, system-prompt line)? _(answer as: list; prevents: wrong-script)_
-- `i18n.q.time-zone` Is every time an instant, rendered in the member's IANA zone and computed at render or event time? Are dates without an instant stored floating? _(answer as: text; prevents: wrong-time)_
+- `i18n.q.time-zone` Is every time an instant, rendered in the user's IANA zone and computed at render or event time? Are dates without an instant stored floating? _(answer as: text; prevents: wrong-time)_
 - `i18n.q.error-mapping` Which error codes can reach the UI, and does each map to a localized sentence with a next step? _(answer as: table; prevents: raw-error-codes)_
 
 **DEEP (tier L, with the pre-mortem)**
@@ -51,23 +51,25 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 
 | id | what it looks like | why it is slop | detector | severity |
 |---|---|---|---|---|
-| `i18n.prompt-language-literal` | Output language hardcoded in a prompt ('respond in English') | Every member gets that language whatever their setting. | static `i18n.prompt-language-literal` (regex) | medium |
-| `i18n.date-no-timezone` | toLocaleString()/toLocaleDateString() with no locale or timeZone | Renders in the host's zone and locale (UTC on servers), not the member's. | static `i18n.date-no-timezone` (regex) | medium |
-| `i18n.utc-today` | 'Today' computed from toISOString() (UTC date) | Near midnight the UTC date is the member's yesterday or tomorrow. | static `i18n.utc-today` (regex) | medium |
-| `i18n.catalog-parity` | Locale catalog missing keys its sibling locales have | Members see raw keys or another language; merges that took one side whole cause exactly this. | static `i18n.catalog-parity` (script catalog-parity) | high |
+| `i18n.prompt-language-literal` | Output language hardcoded in a prompt ('respond in English') | Every user gets that language whatever their setting. | static `i18n.prompt-language-literal` (regex) | medium |
+| `i18n.date-no-timezone` | toLocaleString()/toLocaleDateString() with no locale or timeZone | Renders in the host's zone and locale (UTC on servers), not the user's. | static `i18n.date-no-timezone` (regex) | medium |
+| `i18n.utc-today` | 'Today' computed from toISOString() (UTC date) | Near midnight the UTC date is the user's yesterday or tomorrow. | static `i18n.utc-today` (regex) | medium |
+| `i18n.catalog-parity` | Locale catalog missing keys its sibling locales have | Users see raw keys or another language; merges that took one side whole cause exactly this. | static `i18n.catalog-parity` (script catalog-parity) | high |
 | `i18n.detect-language-for-output` | Language detected from text and used to choose output | Language ID is unreliable on short strings (card titles, folder names). | review agent (eyes) | medium |
-| `i18n.raw-error-to-ui` | Error code or message string shown to members (toast(error.message)) | Members read SOME_CODE or a stack trace instead of a sentence and a next step. | review agent (eyes) | medium |
+| `i18n.raw-error-to-ui` | Error code or message string shown to users (toast(error.message)) | Users read SOME_CODE or a stack trace instead of a sentence and a next step. | review agent (eyes) | medium |
 | `i18n.stt-no-language` | Speech-to-text call with no language or with 'auto' and no threshold | Detection picks the wrong language and fluent text in a foreign script gets stored. | review agent (eyes) | high |
+| `i18n.hardcoded-locale-param` | Language or locale passed as a literal to a call (language: 'pt') | Every user gets that language: speech, OCR and model calls degrade for everyone else. | static `i18n.hardcoded-locale-param` (regex) | medium |
 
 ## Confirm recipes
 
 - `i18n.prompt-language-literal`: failing-test: golden run in an org whose locale differs; output language is wrong Fix direction: interpolate the resolved locale's name into the system prompt.
 - `i18n.date-no-timezone`: failing-test: run under TZ=Pacific/Kiritimati and TZ=America/Sao_Paulo; outputs differ Fix direction: Intl.DateTimeFormat(locale, { timeZone: member.timeZone }).
-- `i18n.utc-today`: failing-test: freeze the clock at 23:30 in America/Sao_Paulo; assert the local date Fix direction: format the instant in the member's IANA zone.
+- `i18n.utc-today`: failing-test: freeze the clock at 23:30 in America/Sao_Paulo; assert the local date Fix direction: format the instant in the user's IANA zone.
 - `i18n.catalog-parity`: static-proof: the flattened key sets differ Fix direction: add the key to every locale in the same branch.
 - `i18n.detect-language-for-output`: failing-test: English source content in a pt-BR org yields pt-BR output
 - `i18n.raw-error-to-ui`: failing-test: force each error path; the DOM contains none of the enum's literal codes
 - `i18n.stt-no-language`: failing-test: short noisy clip in the org's language; output script matches
+- `i18n.hardcoded-locale-param`: failing-test: run the path for a user whose locale differs; the outgoing request still carries the literal Fix direction: pass the language resolved from the user's setting, then the org default.
 
 ## Verification steps
 

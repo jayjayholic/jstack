@@ -28,6 +28,7 @@ Interaction bugs live between states: the keyboard opens, a second modal stacks,
 - `ix.q.viewport` What sizes the shell: dvh/svh or vh? What does the keyboard do (interactive-widget)? _(answer as: text; prevents: hidden-by-keyboard)_
 - `ix.q.overlay-stack` Which overlays can stack here, who owns the stack, and what does Esc close first? _(answer as: list; prevents: wrong-layer)_
 - `ix.q.source-of-truth` For each state item: where is its one source of truth (URL, server or local)? What happens if two requests overlap? _(answer as: table; prevents: state-race)_
+- `ix.q.subscriptions` Which effects subscribe, append, poll or start timers, and what cleans each up on unmount and on a double mount? _(answer as: table; prevents: runaway-loop, leak)_
 
 **DEEP (tier L, with the pre-mortem)**
 
@@ -61,6 +62,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `ix.overlay-no-finally` | Overlay opened with no close in catch/finally | A failed call leaves an overlay over the whole UI. | review agent (eyes) | high |
 | `ix.device-read-in-render` | window/localStorage/matchMedia/Date read in render | Server and client render differ: hydration errors and flicker. | review agent (eyes) | medium |
 | `ix.unaborted-fetch-effect` | fetch in an effect without abort or stale guard | A slow old response overwrites the newer selection. | review agent (eyes) | medium |
+| `ix.effect-append-loop` | Effect that appends to state or the DOM with no cleanup, or with the appended state in its own dependencies | Each render or remount adds another copy: elements multiply and the page slows down. | review agent (eyes) | high |
+| `ix.menu-wrong-container` | Menu or popover placed with pointer coordinates against a scrolled or transformed ancestor | The menu opens far from the pointer as soon as the container scrolls or moves. | review agent (eyes) | medium |
+| `ix.url-write-before-ready` | URL or route written from an effect before the data it depends on (session, permissions) has loaded | The early write is read back as a new request and the deep link bounces somewhere else. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -73,6 +77,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `ix.overlay-no-finally`: failing-test: abort the call; assert no [aria-modal=true] left and the page is interactive
 - `ix.device-read-in-render`: render: built app route crawl with a non-UTC timezone; console has hydration errors
 - `ix.unaborted-fetch-effect`: failing-test: A delayed 1500 ms, B 100 ms; B stays shown
+- `ix.effect-append-loop`: failing-test: mount, wait 2 s, remount twice; the element count stays constant
+- `ix.menu-wrong-container`: render: open it at 4 pointer positions inside a scrolled container; the distance from the pointer is over 8 px Fix direction: position against the viewport or with a positioning library (virtual element at the pointer).
+- `ix.url-write-before-ready`: failing-test: delay that data 1.5 s and open a deep link; the final URL equals the deep link
 
 ## Verification steps
 
@@ -80,7 +87,7 @@ Run in this order after the change; each line is a pass criterion.
 
 1. `ix.v.built` run on the production build; dev-mode hydration and CLS differ _(render; build + start)_
 2. `ix.v.matrix` Pixel 7, iPhone 13, iPad, desktop 1440; non-UTC timezone and a second locale; light and dark _(render; Playwright devices)_
-3. `ix.v.per-route` per route: console clean, scrollers <= 1, no horizontal overflow, target-size and cursor scans _(render; DOM audit snippets)_
+3. `ix.v.per-route` per route: console clean, scrollers <= 1, no horizontal overflow, target-size and cursor scans, with the longest real content and with an empty state _(render; DOM audit snippets)_
 4. `ix.v.per-flow` per flow: race test, error-path matrix (abort and 500), reload-resume, overlay stack (Esc order, focus return) _(test; Playwright page.route)_
 5. `ix.v.cls` interaction CLS <= 0.1 _(measure; PerformanceObserver layout-shift)_
 6. `ix.v.device` real-device spot check of anything the keyboard touches, or say 'not verified on device' _(render; real device)_

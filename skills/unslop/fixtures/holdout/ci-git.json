@@ -26,6 +26,31 @@
         "README.md": "Never pass --no-verify.\n"
       },
       "expect": []
+    },
+    {
+      "id": "lint-or-true-script",
+      "rule": "ci.ignored-failure",
+      "kind": "slop",
+      "note": "package script that swallows lint failures",
+      "files": {
+        "package.json": "{\n  \"scripts\": {\n    \"lint\": \"eslint . || true\"\n  }\n}\n"
+      },
+      "expect": [
+        {
+          "path": "package.json",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "auto-merge",
+      "rule": "ci.skip-hooks",
+      "kind": "near-miss",
+      "note": "auto merge waits for checks",
+      "files": {
+        "scripts/ship.sh": "gh pr merge \"$PR\" --squash --auto\n"
+      },
+      "expect": []
     }
   ]
 }

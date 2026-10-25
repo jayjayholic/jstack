@@ -3,271 +3,45 @@
   "version": 1,
   "title": "Product agent loops and LLM features",
   "triggers": {
-    "paths": [
-      "**/agents/**",
-      "**/agent/**",
-      "**/prompts/**",
-      "**/*prompt*",
-      "**/tools/**",
-      "**/llm/**",
-      "**/ai/**",
-      "**/harness/**"
-    ],
-    "diffTokens": [
-      "system:",
-      "tool_choice",
-      "messages",
-      "judge",
-      "classifier",
-      "compact",
-      "contextWindow",
-      "slice(0,",
-      "untrusted"
-    ],
-    "taskWords": [
-      "agent",
-      "llm",
-      "prompt",
-      "model",
-      "tool",
-      "tools",
-      "judge",
-      "classifier",
-      "classify",
-      "compaction",
-      "context",
-      "approval",
-      "consent",
-      "voice",
-      "injection",
-      "chat",
-      "assistant"
-    ]
+    "paths": ["**/agents/**", "**/agent/**", "**/prompts/**", "**/*prompt*", "**/tools/**", "**/llm/**", "**/ai/**", "**/harness/**"],
+    "diffTokens": ["system:", "tool_choice", "messages", "judge", "classifier", "compact", "contextWindow", "slice(0,", "untrusted"],
+    "taskWords": ["agent", "llm", "prompt", "model", "tool", "tools", "judge", "classifier", "classify", "compaction", "context", "approval", "consent", "voice", "injection", "chat", "assistant"]
   },
   "questions": [
-    {
-      "id": "llm.q.root-cause",
-      "tier": "S",
-      "text": "What is the root cause (5 whys)? Can the loop fix it with a tool or a context fact instead of a new guard, judge, retry or wait layer?",
-      "produces": "text",
-      "prevents": [
-        "layer-creep"
-      ]
-    },
-    {
-      "id": "llm.q.what-is-cut",
-      "tier": "S",
-      "text": "Does any output get cut? Where does the agent learn what is left and how to get it?",
-      "produces": "text",
-      "prevents": [
-        "silent-truncation"
-      ]
-    },
-    {
-      "id": "llm.q.closed-decision",
-      "tier": "M",
-      "text": "Is any decision I am adding closed (finite labels and a fallback)? If not, the agent decides, not a classifier.",
-      "produces": "table",
-      "prevents": [
-        "classifier-overuse"
-      ]
-    },
-    {
-      "id": "llm.q.derived-budgets",
-      "tier": "M",
-      "text": "Is every numeric budget (tokens, turns, caps) derived from the current model or resource, with a measurement behind it?",
-      "produces": "text",
-      "prevents": [
-        "stale-constants"
-      ]
-    },
-    {
-      "id": "llm.q.effect-matrix",
-      "tier": "M",
-      "text": "For each action: requested? reversible? outward? sensitive? Does it ask only when needed, with undo otherwise?",
-      "produces": "table",
-      "prevents": [
-        "consent-fatigue"
-      ]
-    },
-    {
-      "id": "llm.q.receipts",
-      "tier": "M",
-      "text": "Can the agent verify its own result and act later through a mechanism with an id, not a promise?",
-      "produces": "text",
-      "prevents": [
-        "claims-without-receipts"
-      ]
-    },
-    {
-      "id": "llm.q.trifecta",
-      "tier": "L",
-      "text": "Which inputs are untrusted? Does any context hold private data, untrusted content and an external send together?",
-      "produces": "table",
-      "prevents": [
-        "prompt-injection"
-      ]
-    },
-    {
-      "id": "llm.q.bursts",
-      "tier": "L",
-      "text": "Who uses the budget, how is it shared, and what happens with a burst of 10 messages?",
-      "produces": "text",
-      "prevents": [
-        "budget-hog"
-      ]
-    },
-    {
-      "id": "llm.q.held-out",
-      "tier": "L",
-      "text": "Which held-out cases will show this generalises, and which metric and effect size decide it? Would every line make sense for a user in another industry and language?",
-      "produces": "text",
-      "prevents": [
-        "case-specific-fix"
-      ]
-    }
+    { "id": "llm.q.root-cause", "tier": "S", "text": "What is the root cause (5 whys)? Can the loop fix it with a tool or a context fact instead of a new guard, judge, retry or wait layer?", "produces": "text", "prevents": ["layer-creep"] },
+    { "id": "llm.q.what-is-cut", "tier": "S", "text": "Does any output get cut? Where does the agent learn what is left and how to get it?", "produces": "text", "prevents": ["silent-truncation"] },
+    { "id": "llm.q.closed-decision", "tier": "M", "text": "Is any decision I am adding closed (finite labels and a fallback)? If not, the agent decides, not a classifier.", "produces": "table", "prevents": ["classifier-overuse"] },
+    { "id": "llm.q.derived-budgets", "tier": "M", "text": "Is every numeric budget (tokens, turns, caps) derived from the current model or resource, with a measurement behind it?", "produces": "text", "prevents": ["stale-constants"] },
+    { "id": "llm.q.effect-matrix", "tier": "M", "text": "For each action: requested? reversible? outward? sensitive? Does it ask only when needed, with undo otherwise?", "produces": "table", "prevents": ["consent-fatigue"] },
+    { "id": "llm.q.receipts", "tier": "M", "text": "Can the agent verify its own result and act later through a mechanism with an id, not a promise?", "produces": "text", "prevents": ["claims-without-receipts"] },
+    { "id": "llm.q.capability", "tier": "M", "text": "Can the agent do, through its tools, everything the user can do by hand for this feature (connect, install, re-check, reschedule, fall back when a source fails)? Does each tool's description say when to use it?", "produces": "table", "prevents": ["missing-capability", "narrow-tool"] },
+    { "id": "llm.q.output-shape", "tier": "M", "text": "Which output-shape metrics must hold (length, rich-format rate, language, tool use), and are they re-measured on a replay set after any model, provider or prompt change?", "produces": "table", "prevents": ["format-regression"] },
+    { "id": "llm.q.trifecta", "tier": "L", "text": "Which inputs are untrusted? Does any context hold private data, untrusted content and an external send together?", "produces": "table", "prevents": ["prompt-injection"] },
+    { "id": "llm.q.bursts", "tier": "L", "text": "Who uses the budget, how is it shared, and what happens with a burst of 10 messages?", "produces": "text", "prevents": ["budget-hog"] },
+    { "id": "llm.q.held-out", "tier": "L", "text": "Which held-out cases will show this generalises, and which metric and effect size decide it? Would every line make sense for a user in another industry and language?", "produces": "text", "prevents": ["case-specific-fix"] }
   ],
   "budgets": [
-    {
-      "key": "llm.model_calls_per_turn",
-      "default": null,
-      "unit": "count",
-      "measure": "model calls per turn on a fixed replay set, before and after",
-      "source": "Anthropic, Building effective agents (2024)"
-    },
-    {
-      "key": "llm.trivial_turn_p95_s",
-      "default": null,
-      "unit": "s",
-      "measure": "golden set of trivial prompts: zero tool calls, p95 latency",
-      "source": "Nielsen response-time limits"
-    },
-    {
-      "key": "llm.claims_without_receipt",
-      "default": 0,
-      "unit": "count",
-      "measure": "trace scan: completion/commitment phrases without a tool call or job id",
-      "source": "Chain-of-Verification (ACL 2024)"
-    }
+    { "key": "llm.model_calls_per_turn", "default": null, "unit": "count", "measure": "model calls per turn on a fixed replay set, before and after", "source": "Anthropic, Building effective agents (2024)" },
+    { "key": "llm.trivial_turn_p95_s", "default": null, "unit": "s", "measure": "golden set of trivial prompts: zero tool calls, p95 latency", "source": "Nielsen response-time limits" },
+    { "key": "llm.claims_without_receipt", "default": 0, "unit": "count", "measure": "trace scan: completion/commitment phrases without a tool call or job id", "source": "Chain-of-Verification (ACL 2024)" }
   ],
   "rules": [
-    {
-      "id": "llm.silent-slice",
-      "title": "List cut with .slice(0, N) in a file that never reports what is left",
-      "engine": "regex",
-      "pattern": "\\.slice\\(\\s*0\\s*,\\s*[1-9]\\d+\\s*\\)",
-      "unlessFile": "\\b(?:remaining|nextCursor|hasMore|truncated|totalCount|total)\\b",
-      "scope": "added",
-      "severity": "low",
-      "mode": "eyes-hint",
-      "failureClass": "silent-truncation",
-      "why": "The agent never learns item N+1 exists and answers from a partial list.",
-      "confirm": "failing-test: input above the cap; output is neither complete nor {returned, total, nextCursor}",
-      "fixHint": "page with a cursor and say how much is left",
-      "files": [
-        "**/{agent,agents,llm,ai,harness,prompts,mcp}/**/*.{ts,tsx,js,jsx,mjs,cjs}",
-        "**/*{tool,tools,agent,prompt,retriev,search,context}*.{ts,tsx,js,jsx,mjs,cjs}"
-      ],
-      "unless": "toISOString|\\b(?:hash|sha|digest|hex|uuid|id|title|name|snippet|preview|label)\\b"
-    },
-    {
-      "id": "llm.token-threshold-literal",
-      "title": "Compaction/context threshold written as a literal token count",
-      "engine": "regex",
-      "pattern": "\\b\\w*(?:compact|context|summar)\\w*(?:threshold|limit|budget|max)\\w*\\s*[:=]\\s*\\d[\\d_]{4,}",
-      "flags": "i",
-      "languages": [
-        "ts",
-        "tsx",
-        "js",
-        "mjs",
-        "cjs",
-        "py"
-      ],
-      "scope": "added",
-      "severity": "medium",
-      "mode": "warn",
-      "failureClass": "stale-constants",
-      "why": "A number tuned for an older, smaller model compacts far too early on today's window.",
-      "confirm": "measurement: long replays at two thresholds; success and compactions per session",
-      "fixHint": "a measured fraction of the model's context window read at runtime"
-    },
-    {
-      "id": "llm.layer-around-loop",
-      "title": "New judge/guard/verify/retry/wait wrapper around the main loop with no ablation",
-      "engine": "eyes",
-      "severity": "medium",
-      "failureClass": "layer-creep",
-      "why": "Each layer adds latency and cost and hides the root cause.",
-      "confirm": "measurement: replay with and without the layer; no win beyond A/A noise"
-    },
-    {
-      "id": "llm.classifier-open-decision",
-      "title": "Classifier output feeding a free-text slot, or a threshold with no calibration data",
-      "engine": "eyes",
-      "severity": "medium",
-      "failureClass": "classifier-overuse",
-      "why": "Open decisions squeezed into labels fail on everything outside them.",
-      "confirm": "measurement: golden set accuracy and calibration report"
-    },
-    {
-      "id": "llm.untrusted-in-instructions",
-      "title": "Untrusted content (web, mail, documents, tool output) concatenated into the instruction slot",
-      "engine": "eyes",
-      "severity": "high",
-      "failureClass": "prompt-injection",
-      "why": "Planted text becomes an instruction.",
-      "confirm": "failing-test: canary instruction in a document triggers a tool call"
-    },
-    {
-      "id": "llm.promise-without-mechanism",
-      "title": "Reply says done or 'I will ...' with no tool call or scheduled job in the trace",
-      "engine": "eyes",
-      "severity": "high",
-      "failureClass": "claims-without-receipts",
-      "why": "The user trusts a promise nothing will keep.",
-      "confirm": "failing-test: scheduler tool removed; the reply still promises"
-    },
-    {
-      "id": "llm.case-words-in-prompt",
-      "title": "Proper nouns or quoted phrases from one user's case inside a generic prompt",
-      "engine": "eyes",
-      "severity": "medium",
-      "failureClass": "case-specific-fix",
-      "why": "Passes the visible case, fails everyone else.",
-      "confirm": "measurement: n-gram overlap between fixtures and the prompt; held-out delta"
-    }
+    { "id": "llm.silent-slice", "title": "List cut with .slice(0, N) in a file that never reports what is left", "engine": "regex", "pattern": "\\.slice\\(\\s*0\\s*,\\s*[1-9]\\d+\\s*\\)", "unlessFile": "\\b(?:remaining|nextCursor|hasMore|truncated|totalCount|total)\\b", "scope": "added", "severity": "low", "mode": "eyes-hint", "failureClass": "silent-truncation", "why": "The agent never learns item N+1 exists and answers from a partial list.", "confirm": "failing-test: input above the cap; output is neither complete nor {returned, total, nextCursor}", "fixHint": "page with a cursor and say how much is left", "files": ["**/{agent,agents,llm,ai,harness,prompts,mcp}/**/*.{ts,tsx,js,jsx,mjs,cjs}", "**/*{tool,tools,agent,prompt,retriev,search,context}*.{ts,tsx,js,jsx,mjs,cjs}"], "unless": "toISOString|\\b(?:hash|sha|digest|hex|uuid|id|title|name|snippet|preview|label)\\b" },
+    { "id": "llm.token-threshold-literal", "title": "Compaction/context threshold written as a literal token count", "engine": "regex", "pattern": "\\b\\w*(?:compact|context|summar)\\w*(?:threshold|limit|budget|max)\\w*\\s*[:=]\\s*\\d[\\d_]{4,}", "flags": "i", "languages": ["ts", "tsx", "js", "mjs", "cjs", "py"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "stale-constants", "why": "A number tuned for an older, smaller model compacts far too early on today's window.", "confirm": "measurement: long replays at two thresholds; success and compactions per session", "fixHint": "a measured fraction of the model's context window read at runtime" },
+    { "id": "llm.layer-around-loop", "title": "New judge/guard/verify/retry/wait wrapper around the main loop with no ablation", "engine": "eyes", "severity": "medium", "failureClass": "layer-creep", "why": "Each layer adds latency and cost and hides the root cause.", "confirm": "measurement: replay with and without the layer; no win beyond A/A noise" },
+    { "id": "llm.classifier-open-decision", "title": "Classifier output feeding a free-text slot, or a threshold with no calibration data", "engine": "eyes", "severity": "medium", "failureClass": "classifier-overuse", "why": "Open decisions squeezed into labels fail on everything outside them.", "confirm": "measurement: golden set accuracy and calibration report" },
+    { "id": "llm.untrusted-in-instructions", "title": "Untrusted content (web, mail, documents, tool output) concatenated into the instruction slot", "engine": "eyes", "severity": "high", "failureClass": "prompt-injection", "why": "Planted text becomes an instruction.", "confirm": "failing-test: canary instruction in a document triggers a tool call" },
+    { "id": "llm.promise-without-mechanism", "title": "Reply says done or 'I will ...' with no tool call or scheduled job in the trace", "engine": "eyes", "severity": "high", "failureClass": "claims-without-receipts", "why": "The user trusts a promise nothing will keep.", "confirm": "failing-test: scheduler tool removed; the reply still promises" },
+    { "id": "llm.case-words-in-prompt", "title": "Proper nouns or quoted phrases from one user's case inside a generic prompt", "engine": "eyes", "severity": "medium", "failureClass": "case-specific-fix", "why": "Passes the visible case, fails everyone else.", "confirm": "measurement: n-gram overlap between fixtures and the prompt; held-out delta" },
+    { "id": "llm.narrow-tool", "title": "New tool exposes less than the system under it (fixed formats, hardcoded options, no retry or re-check)", "engine": "eyes", "severity": "medium", "failureClass": "narrow-tool", "why": "The agent cannot do what the user asks even though the system can, so it improvises or asks the user.", "confirm": "repro-script: a request the underlying API supports that the tool cannot express" },
+    { "id": "llm.model-swap-no-replay", "title": "Model, provider or prompt changed with no replay of the regression set", "engine": "eyes", "severity": "medium", "failureClass": "format-regression", "why": "Output shape (format, length, tool use) silently regresses on the new model.", "confirm": "measurement: replay set on the old and the new model; a tracked output metric drops beyond the A/A noise" },
+    { "id": "llm.empty-completion", "title": "Model reply used without checking for empty content or the stop reason; a canned fallback stored as the answer", "engine": "eyes", "severity": "high", "failureClass": "empty-reply", "why": "Provider quirks (empty text after tools or thinking) become stored apologies or blank answers.", "confirm": "failing-test: the provider mock returns empty content; the stored reply is empty or a canned sentence instead of a retry or a visible error" }
   ],
   "verify": [
-    {
-      "id": "llm.v.replay",
-      "text": "the original failing case fails on the base commit and passes on the change",
-      "kind": "test",
-      "tool": "replay harness"
-    },
-    {
-      "id": "llm.v.held-out",
-      "text": "regression and held-out sets: delta with an effect size and interval, not one run",
-      "kind": "measure",
-      "tool": "stats.mjs"
-    },
-    {
-      "id": "llm.v.ablation",
-      "text": "remove each new layer or limit and re-run; keep it only if removal hurts",
-      "kind": "measure",
-      "tool": "A/B replay"
-    },
-    {
-      "id": "llm.v.properties",
-      "text": "property tests: completeness or pagination; effect matrix -> ask/do; untrusted never an instruction",
-      "kind": "test",
-      "tool": "fast-check / Hypothesis"
-    },
-    {
-      "id": "llm.v.claims",
-      "text": "claim audit on replay traces: every completion or commitment has a receipt",
-      "kind": "test",
-      "tool": "trace scan"
-    }
+    { "id": "llm.v.replay", "text": "the original failing case fails on the base commit and passes on the change", "kind": "test", "tool": "replay harness" },
+    { "id": "llm.v.held-out", "text": "regression and held-out sets: delta with an effect size and interval, not one run", "kind": "measure", "tool": "stats.mjs" },
+    { "id": "llm.v.ablation", "text": "remove each new layer or limit and re-run; keep it only if removal hurts", "kind": "measure", "tool": "A/B replay" },
+    { "id": "llm.v.properties", "text": "property tests: completeness or pagination; effect matrix -> ask/do; untrusted never an instruction", "kind": "test", "tool": "fast-check / Hypothesis" },
+    { "id": "llm.v.claims", "text": "claim audit on replay traces: every completion or commitment has a receipt", "kind": "test", "tool": "trace scan" }
   ]
 }

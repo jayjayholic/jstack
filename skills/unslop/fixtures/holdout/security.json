@@ -16,6 +16,31 @@
           "line": 2
         }
       ]
+    },
+    {
+      "id": "regexp-string-star",
+      "rule": "sec.nested-quantifier",
+      "kind": "slop",
+      "note": "nested star inside a RegExp string",
+      "files": {
+        "src/api/match.ts": "const RE = new RegExp('^(a+)+$')\nexport { RE }\n"
+      },
+      "expect": [
+        {
+          "path": "src/api/match.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "bounded-class",
+      "rule": "sec.nested-quantifier",
+      "kind": "near-miss",
+      "note": "a single quantified class is linear",
+      "files": {
+        "src/api/match.ts": "const RE = /^[a-z]{1,64}$/\nexport { RE }\n"
+      },
+      "expect": []
     }
   ]
 }

@@ -26,8 +26,10 @@ Copy slop is explanation instead of design: walls of text, filler headings, inte
 
 - `copy.q.real-data` Have I rendered this with >= 5 real records and the extreme values (longest, shortest, empty)? _(answer as: file; prevents: filler-templates)_
 - `copy.q.headings` Does every heading carry instance-specific information? Does every proactive item have one specific fact and one one-tap action? _(answer as: text; prevents: filler-headings, no-cta)_
-- `copy.q.member-words` Is every term the member's word? Is any internal or ops term left? _(answer as: list; prevents: jargon)_
+- `copy.q.member-words` Is every term the user's word? Is any internal or ops term left? _(answer as: list; prevents: jargon)_
 - `copy.q.pattern` Which established pattern governs this surface (consent, form, error, empty state), and does the copy follow it? _(answer as: text; prevents: reinvented-consent)_
+- `copy.q.defaults` What default name or value does a newly created item get? Create ten in a row: are they distinct and meaningful? Which field is asked first? _(answer as: list; prevents: identical-defaults)_
+- `copy.q.user-visible` For a changelog, announcement or release note: does each item name something the user can now see or do? Internal changes stay out. _(answer as: table; prevents: invisible-change)_
 
 **DEEP (tier L, with the pre-mortem)**
 
@@ -54,8 +56,10 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `copy.meta-narration` | Meta-narration ('This screen lets you...', 'Below you will find...') | Explains the UI instead of making it obvious; nobody reads it. | static `copy.meta-narration` (regex) | low |
 | `copy.generic-heading` | Generic heading value (Overview, Insights, Summary, Details...) | A heading that says nothing gives no information scent. | static `copy.generic-heading` (regex) | low |
 | `copy.consent-no-link` | 'You agree' / terms text with no link next to it | Assent without a linked, conspicuous notice is weak (Meyer v. Uber, 2017). | review agent (eyes) | high |
-| `copy.identical-cards` | Cards whose text differs only in one slot | Template text dominates the data; members stop reading. | review agent (eyes) | medium |
+| `copy.identical-cards` | Cards whose text differs only in one slot | Template text dominates the data; users stop reading. | review agent (eyes) | medium |
 | `copy.invented-claim` | Copy claims product behaviour with no source | The agent filled a gap with plausible framing; it may contradict the spec. | review agent (eyes) | high |
+| `copy.constant-default-name` | New items get one constant default name or label | Every created thing looks the same, so lists become unreadable and people rename by hand. | review agent (eyes) | medium |
+| `copy.invisible-change-item` | Release note or announcement item that describes an internal change the user never sees | Readers learn the note is noise and stop reading the items that matter. | review agent (eyes) | low |
 
 ## Confirm recipes
 
@@ -65,6 +69,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `copy.consent-no-link`: render: DOM test finds no a[href] to the terms in the notice
 - `copy.identical-cards`: measurement: pairwise token Jaccard > 0.8 across rendered cards for different entities
 - `copy.invented-claim`: repro-script: claim-to-source table with an empty source cell
+- `copy.constant-default-name`: render: create 3 items with no input; their names are identical
+- `copy.invisible-change-item`: repro-script: table item -> screen and element where the user sees it; an empty cell
 
 ## Verification steps
 

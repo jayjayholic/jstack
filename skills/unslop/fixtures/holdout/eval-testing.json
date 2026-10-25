@@ -26,6 +26,31 @@
         "src/a.test.ts": "it('x', () => {\n  expect(find()).toBeNull()\n})\n"
       },
       "expect": []
+    },
+    {
+      "id": "script-fixed-loopback",
+      "rule": "test.hardcoded-port",
+      "kind": "slop",
+      "note": "a script hits a fixed loopback port",
+      "files": {
+        "scripts/smoke.mjs": "const res = await fetch('http://127.0.0.1:8080/health')\nconsole.log(res.status)\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/smoke.mjs",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "script-base-url",
+      "rule": "test.hardcoded-port",
+      "kind": "near-miss",
+      "note": "base URL from env",
+      "files": {
+        "scripts/smoke.mjs": "const res = await fetch(`${process.env.BASE_URL}/health`)\nconsole.log(res.status)\n"
+      },
+      "expect": []
     }
   ]
 }

@@ -26,7 +26,9 @@ The coding agent is itself a source of slop: it answers a question by changing s
 
 - `agent.q.acceptance` What is the acceptance check for each requested item? _(answer as: list; prevents: hallucinated-work)_
 - `agent.q.sources` Which of my claims will rest on a source I have not opened yet? Open it now. _(answer as: list; prevents: claims-from-memory)_
+- `agent.q.disagree` Where do the evidence and the user's belief or proposal disagree? Say it with the source instead of agreeing. _(answer as: list; prevents: sycophancy)_
 - `agent.q.own-tools` What tools, sessions and credentials do I already hold that can verify this without the owner? _(answer as: list; prevents: asking-owner-to-test)_
+- `agent.q.docs` Which docs, quoted code or links describe what I change, and do they change in the same diff? _(answer as: list; prevents: stale-docs)_
 - `agent.q.checkpoint` Where is my checkpoint written, and can a fresh process resume from it? _(answer as: file; prevents: lost-work)_
 
 **DEEP (tier L, with the pre-mortem)**
@@ -58,6 +60,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `agent.ask-owner-first` | 'Can you test / click / give me access' with no tool-tried evidence | The owner does work the agent's own tools could do. | review agent (eyes) | medium |
 | `agent.blame-without-repro` | 'Probably the provider / network / cache' with no repro output | The real cause stays and the fix targets the wrong thing. | review agent (eyes) | medium |
 | `agent.report-only-in-chat` | Final report only in chat, nothing on disk | An interrupted agent loses everything it found. | review agent (eyes) | low |
+| `agent.unasked-feature` | New user-visible feature, setting, route or flow not named in the quoted ask | Unrequested features ship without agreement and someone has to find and remove them later. | review agent (eyes) | high |
+| `agent.md-dead-link` | Markdown link to a repository path that does not exist | Docs that point at moved or deleted files send the next reader, often an agent, to nothing. | static `agent.md-dead-link` (script md-dead-link) | medium |
 
 ## Confirm recipes
 
@@ -68,6 +72,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `agent.ask-owner-first`: repro-script: the capability inventory shows a tool that could do it
 - `agent.blame-without-repro`: repro-script: minimal repro + control run + timestamp
 - `agent.report-only-in-chat`: static-proof: no report file in the run folder
+- `agent.unasked-feature`: repro-script: list new routes, settings and user-facing strings from the diff beside the quoted ask; an item with no match
+- `agent.md-dead-link`: static-proof: the linked path is absent at HEAD Fix direction: update the link in the same diff that moved or deleted the file.
 
 ## Verification steps
 

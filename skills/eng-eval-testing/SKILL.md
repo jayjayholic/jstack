@@ -59,6 +59,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `test.never-red` | New test never seen failing on the parent commit | It may pass for the wrong reason. | review agent (eyes) | medium |
 | `test.unguarded-egress` | Test can reach real third-party hosts (no egress deny, hold flag not enforced in code) | Tests send mail, register clients or post for real. | review agent (eyes) | high |
 | `test.invalid-ab` | A/B or perf number with no A/A run, baseline arm, environment fingerprint or interval | Noise or a starved machine reads as an effect. | review agent (eyes) | high |
+| `test.stubbed-proof` | Proof (screenshot, e2e run) produced with the path under test mocked or its route intercepted | The proof shows the stub working, not the change. | review agent (eyes) | high |
+| `test.hardcoded-port` | Test or script talks to a fixed localhost port instead of its own lane | Two lanes running at once test each other's servers, so a pass proves nothing. | static `test.hardcoded-port` (regex) | medium |
 
 ## Confirm recipes
 
@@ -69,6 +71,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `test.never-red`: failing-test: run it against the parent's source; it must fail for the stated reason
 - `test.unguarded-egress`: repro-script: run with network logging; external hosts contacted
 - `test.invalid-ab`: measurement: A/A pair under the same conditions shows a difference of the same size
+- `test.stubbed-proof`: static-proof: the proof test intercepts the endpoint the diff changed (route mock, request handler, stubbed fetch)
+- `test.hardcoded-port`: repro-script: run two lanes at once; the second talks to the first one's server Fix direction: read the base URL or port from the lane environment.
 
 ## Verification steps
 

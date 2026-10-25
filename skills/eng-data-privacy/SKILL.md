@@ -25,7 +25,7 @@ Applied migration history is immutable, every new table that holds a person's da
 **SHOULD (tier M and L)**
 
 - `data.q.which-script` Which project script applies this to each database (test, eval, dev, prod), and what host will it actually hit? _(answer as: text; prevents: destructive-shortcut)_
-- `data.q.provenance` What is the provenance class of every piece of content this saves (member-authored, member's app, member-viewed, agent-fetched)? Did the member see it? _(answer as: table; prevents: foreign-content-saved)_
+- `data.q.provenance` What is the provenance class of every piece of content this saves (user-authored, user's app, user-viewed, agent-fetched)? Did the user see it? _(answer as: table; prevents: foreign-content-saved)_
 - `data.q.bind-by-id` Are resources bound by id and owner, never by a matching name? _(answer as: text; prevents: confused-deputy)_
 - `data.q.scope-missing` What tenant or scope does each read and write resolve to server-side? What happens when it is missing (deny)? _(answer as: text; prevents: tenant-leak)_
 
@@ -56,7 +56,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `data.ddl-not-idempotent` | DDL without IF NOT EXISTS (not safe to re-run) | A migration that fails halfway fails again on retry. | static `data.ddl-not-idempotent` (regex) | low |
 | `data.destructive-db-command` | Destructive database shortcut (accept-data-loss, migrate reset, DROP DATABASE) | One wrong env file and it wipes a shared database; it also leaves no migration history. | static `data.destructive-db-command` (regex) | high |
 | `data.person-table-no-erasure` | New table with user_id/email/author_id while the erasure module is untouched | Deleting an account leaves rows behind. | review agent (eyes) | high |
-| `data.save-without-provenance` | Save/ingest of content that came from fetch, a browser or web search, or with no provenance argument | Agent-fetched content poisons the member's store and carries injected instructions. | review agent (eyes) | high |
+| `data.save-without-provenance` | Save/ingest of content that came from fetch, a browser or web search, or with no provenance argument | Agent-fetched content poisons the user's store and carries injected instructions. | review agent (eyes) | high |
 | `data.lookup-by-name` | Owner-scoped resource chosen by display name | A name match picks someone else's resource. | review agent (eyes) | high |
 | `data.acl-overwrite` | ACL assigned or spread in merge code instead of a lattice join | A private fact turns public after a merge. | review agent (eyes) | high |
 | `data.no-inverse` | Merge/delete/move with no paired inverse and no stored pre-image | Undo is impossible or reconstructs the wrong state. | review agent (eyes) | medium |

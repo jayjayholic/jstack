@@ -144,6 +144,56 @@
         "messages/pt/settings.json": "{\n  \"theme\": \"Tema\"\n}\n"
       },
       "expect": []
+    },
+    {
+      "id": "stt-literal-language",
+      "rule": "i18n.hardcoded-locale-param",
+      "kind": "slop",
+      "note": "speech-to-text pinned to one language",
+      "files": {
+        "src/voice/transcribe.ts": "const opts = {\n  model: 'best',\n  language: 'pt',\n}\nexport { opts }\n"
+      },
+      "expect": [
+        {
+          "path": "src/voice/transcribe.ts",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "language-from-user",
+      "rule": "i18n.hardcoded-locale-param",
+      "kind": "near-miss",
+      "note": "language resolved from the user",
+      "files": {
+        "src/voice/transcribe.ts": "const opts = (user) => ({\n  language: user.locale,\n})\nexport { opts }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "product-default-fallback",
+      "rule": "i18n.hardcoded-locale-param",
+      "kind": "near-miss",
+      "note": "a fallback chain ending in the product default is fine",
+      "files": {
+        "src/voice/transcribe.ts": "const opts = (user) => ({\n  language: user.locale ?? 'en',\n})\nexport { opts }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "prompt-adjective-language",
+      "rule": "i18n.prompt-language-literal",
+      "kind": "slop",
+      "note": "an adjective before the language name still hardcodes it",
+      "files": {
+        "src/agent/prompt.ts": "const SYSTEM = `You are helpful. Reply in Brazilian Portuguese.`\nexport { SYSTEM }\n"
+      },
+      "expect": [
+        {
+          "path": "src/agent/prompt.ts",
+          "line": 1
+        }
+      ]
     }
   ]
 }

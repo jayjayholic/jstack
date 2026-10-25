@@ -58,6 +58,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `cost.unconditional-handler` | Message or webhook handler calls the model on every event | Group chatter becomes paid calls. | review agent (eyes) | medium |
 | `cost.unstable-prefix` | Timestamp, id or user name before the cache breakpoint; tools in non-deterministic order | Every request misses the prompt cache. | review agent (eyes) | medium |
 | `cost.precomputed-credits` | Usage logged as converted credits or dollars instead of raw provider units | Pricing changes cannot be replayed; reconciliation with the invoice breaks. | review agent (eyes) | medium |
+| `cost.shared-pool` | One spend or rate pool shared by several agents or users with no per-consumer cap | One busy consumer spends the pool and every other one is refused. | review agent (eyes) | medium |
+| `cost.limit-from-session` | Quota or plan limit read from the session, token claims or a long-lived cache at decision time | A raised or lowered limit takes effect only after re-login, so users are blocked or overspend. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -68,6 +70,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `cost.unconditional-handler`: failing-test: replay a chat log; paid calls > messages meeting the trigger
 - `cost.unstable-prefix`: measurement: cache hit ratio per call site near 0; prompt prefix diff across two users
 - `cost.precomputed-credits`: static-proof: the usage event has no input/output token fields
+- `cost.shared-pool`: failing-test: consumer A loops until the pool is spent; consumer B is refused
+- `cost.limit-from-session`: failing-test: raise the limit in the store; the next request is still refused until re-login
 
 ## Verification steps
 

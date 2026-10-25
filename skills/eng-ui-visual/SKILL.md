@@ -28,6 +28,7 @@ Visual slop comes from designing without a reference and checking without a rend
 - `ui.q.states-themes` Which states and themes exist: default, empty, loading, error, 404, permission-denied x light/dark x desktop/mobile? _(answer as: table; prevents: one-theme-only)_
 - `ui.q.brand-surfaces` Which brand surfaces could this touch (logo, mascot, sign-in), and are they under screenshot baselines? _(answer as: list; prevents: brand-regression)_
 - `ui.q.artifact-template` For generated artifacts (documents, images, chat answers): what is the template, and what do the first line and first page look like? _(answer as: file; prevents: ugly-artifact)_
+- `ui.q.gallery` Is every new component or screen registered where the project keeps its component gallery or catalogue, so the next restyle reaches it? _(answer as: list; prevents: orphan-ui)_
 
 **DEEP (tier L, with the pre-mortem)**
 
@@ -57,6 +58,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `ui.one-theme-only` | Surface checked in one theme only; portal rendered outside the theme root | Invisible buttons and wrong-theme modals in the other theme. | review agent (eyes) | high |
 | `ui.artifact-chat-preface` | Generated document opens with a chat preface or carries Markdown residue | The document reads like a chat reply, not a document. | review agent (eyes) | medium |
 | `ui.stale-screenshot` | Screenshot older than the last source change or without a commit stamp | The image shows code that is no longer there. | review agent (eyes) | medium |
+| `ui.raw-palette-class` | Raw utility palette class (bg-black/55, text-green-500) instead of a token class | A palette colour is a literal with another name: it ignores the theme and drifts from the tokens. | static `ui.raw-palette-class` (regex) | medium |
+| `ui.component-not-in-gallery` | New shared component with no entry in the component gallery or stories | A component nobody can see in the gallery is missed by the next restyle and audit. | review agent (eyes) | low |
+| `ui.invented-restriction` | New 'never / only / always' constraint in a generation prompt or design spec with no source in the request | Self-invented limits narrow every output (one colour, one body type, refused styles) and nobody asked for them. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -66,6 +70,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `ui.one-theme-only`: render: axe color-contrast per emulated colorScheme with each modal open
 - `ui.artifact-chat-preface`: static-proof on extracted text: first paragraph matches a preface pattern
 - `ui.stale-screenshot`: static-proof: screenshot mtime < newest changed source file
+- `ui.raw-palette-class`: static-proof plus render: the class is on an added line; in the other theme the element fails contrast or differs from the token value Fix direction: map it to a semantic token class (bg-surface, text-danger). Known false positives: projects whose tokens are the raw palette by design (turn the rule off in .jstack/unslop.json).
+- `ui.component-not-in-gallery`: static-proof: the component name has no reference under the gallery or stories folder at HEAD
+- `ui.invented-restriction`: repro-script: quote the request next to each new constraint (empty source cell), then generate 10 samples with and without it and show the narrowed spread
 
 ## Verification steps
 

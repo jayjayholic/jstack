@@ -59,6 +59,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `deploy.manual-schedule` | Schedule, cron or webhook created by hand, not declared in the repo | Undeclared infrastructure drifts and points at the wrong host. | review agent (eyes) | medium |
 | `deploy.reused-flag` | Retired flag name reused for a new meaning, or a deleted page whose route/keys/cron remain | Old code wakes up (Knight Capital, 2012). | review agent (eyes) | high |
 | `deploy.one-client-tested` | 'Tested in client A' generalized to every client | Each client discovers and authenticates differently. | review agent (eyes) | medium |
+| `deploy.shared-generated-dir` | Generated code or build cache shared with other checkouts or sessions (a link or an absolute path outside the worktree) | Another session's regenerate empties it and this checkout's running server starts failing. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -70,6 +71,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `deploy.manual-schedule`: measurement: live schedule list vs the declared list differs
 - `deploy.reused-flag`: repro-script: git log -S<flag> shows the old meaning; retired URL returns 200
 - `deploy.one-client-tested`: measurement: client matrix run records a failure
+- `deploy.shared-generated-dir`: repro-script: regenerate in a second checkout; the first checkout's running server starts failing
 
 ## Verification steps
 

@@ -110,6 +110,56 @@
         "scripts/deploy.sh": "#!/usr/bin/env bash\n./bin/upload --no-verify-ssl-for-localhost dist/\n"
       },
       "expect": []
+    },
+    {
+      "id": "ci-continue-on-error",
+      "rule": "ci.ignored-failure",
+      "kind": "slop",
+      "note": "a red step that cannot fail the job",
+      "files": {
+        ".github/workflows/test.yml": "jobs:\n  test:\n    steps:\n      - run: npm test\n        continue-on-error: true\n"
+      },
+      "expect": [
+        {
+          "path": ".github/workflows/test.yml",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "id": "ci-plain-step",
+      "rule": "ci.ignored-failure",
+      "kind": "near-miss",
+      "note": "a normal failing step",
+      "files": {
+        ".github/workflows/test.yml": "jobs:\n  test:\n    steps:\n      - run: npm test\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "cleanup-or-true",
+      "rule": "ci.ignored-failure",
+      "kind": "near-miss",
+      "note": "|| true on cleanup, not on a check",
+      "files": {
+        "scripts/clean.sh": "rm -f out.log || true\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "admin-merge",
+      "rule": "ci.skip-hooks",
+      "kind": "slop",
+      "note": "admin merge bypasses required checks",
+      "files": {
+        "scripts/ship.sh": "gh pr merge \"$PR\" --squash --admin\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/ship.sh",
+          "line": 1
+        }
+      ]
     }
   ]
 }

@@ -106,6 +106,41 @@
         "src/job.test.ts": "it('fails the job', async () => {\n  const result = await run()\n  assert.ok(result.status === 'FAILED')\n})\n"
       },
       "expect": []
+    },
+    {
+      "id": "e2e-fixed-port",
+      "rule": "test.hardcoded-port",
+      "kind": "slop",
+      "note": "e2e goes to a fixed port another lane may own",
+      "files": {
+        "e2e/chat.spec.ts": "test('opens', async ({ page }) => {\n  await page.goto('http://localhost:3000/chat')\n})\n"
+      },
+      "expect": [
+        {
+          "path": "e2e/chat.spec.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "relative-url",
+      "rule": "test.hardcoded-port",
+      "kind": "near-miss",
+      "note": "relative URL against the configured base",
+      "files": {
+        "e2e/chat.spec.ts": "test('opens', async ({ page }) => {\n  await page.goto('/chat')\n})\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "port-from-env",
+      "rule": "test.hardcoded-port",
+      "kind": "near-miss",
+      "note": "port read from the lane env",
+      "files": {
+        "e2e/chat.spec.ts": "const base = `http://localhost:${process.env.PORT}`\nexport { base }\n"
+      },
+      "expect": []
     }
   ]
 }

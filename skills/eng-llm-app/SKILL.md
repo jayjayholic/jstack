@@ -28,6 +28,8 @@ Start with the simplest loop that works and add a layer only when an A/B shows i
 - `llm.q.derived-budgets` Is every numeric budget (tokens, turns, caps) derived from the current model or resource, with a measurement behind it? _(answer as: text; prevents: stale-constants)_
 - `llm.q.effect-matrix` For each action: requested? reversible? outward? sensitive? Does it ask only when needed, with undo otherwise? _(answer as: table; prevents: consent-fatigue)_
 - `llm.q.receipts` Can the agent verify its own result and act later through a mechanism with an id, not a promise? _(answer as: text; prevents: claims-without-receipts)_
+- `llm.q.capability` Can the agent do, through its tools, everything the user can do by hand for this feature (connect, install, re-check, reschedule, fall back when a source fails)? Does each tool's description say when to use it? _(answer as: table; prevents: missing-capability, narrow-tool)_
+- `llm.q.output-shape` Which output-shape metrics must hold (length, rich-format rate, language, tool use), and are they re-measured on a replay set after any model, provider or prompt change? _(answer as: table; prevents: format-regression)_
 
 **DEEP (tier L, with the pre-mortem)**
 
@@ -58,6 +60,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `llm.untrusted-in-instructions` | Untrusted content (web, mail, documents, tool output) concatenated into the instruction slot | Planted text becomes an instruction. | review agent (eyes) | high |
 | `llm.promise-without-mechanism` | Reply says done or 'I will ...' with no tool call or scheduled job in the trace | The user trusts a promise nothing will keep. | review agent (eyes) | high |
 | `llm.case-words-in-prompt` | Proper nouns or quoted phrases from one user's case inside a generic prompt | Passes the visible case, fails everyone else. | review agent (eyes) | medium |
+| `llm.narrow-tool` | New tool exposes less than the system under it (fixed formats, hardcoded options, no retry or re-check) | The agent cannot do what the user asks even though the system can, so it improvises or asks the user. | review agent (eyes) | medium |
+| `llm.model-swap-no-replay` | Model, provider or prompt changed with no replay of the regression set | Output shape (format, length, tool use) silently regresses on the new model. | review agent (eyes) | medium |
+| `llm.empty-completion` | Model reply used without checking for empty content or the stop reason; a canned fallback stored as the answer | Provider quirks (empty text after tools or thinking) become stored apologies or blank answers. | review agent (eyes) | high |
 
 ## Confirm recipes
 
@@ -68,6 +73,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `llm.untrusted-in-instructions`: failing-test: canary instruction in a document triggers a tool call
 - `llm.promise-without-mechanism`: failing-test: scheduler tool removed; the reply still promises
 - `llm.case-words-in-prompt`: measurement: n-gram overlap between fixtures and the prompt; held-out delta
+- `llm.narrow-tool`: repro-script: a request the underlying API supports that the tool cannot express
+- `llm.model-swap-no-replay`: measurement: replay set on the old and the new model; a tracked output metric drops beyond the A/A noise
+- `llm.empty-completion`: failing-test: the provider mock returns empty content; the stored reply is empty or a canned sentence instead of a retry or a visible error
 
 ## Verification steps
 

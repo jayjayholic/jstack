@@ -60,6 +60,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `sec.role-name-check` | Authorization by role name (role === 'ADMIN', isAdmin) instead of the permission resolver | Custom roles and scopes are bypassed or over-granted. | review agent (eyes) | medium |
 | `sec.open-redirect` | Redirect target from request input without an origin compare | Phishing via a trusted domain (CWE-601). | review agent (eyes) | high |
 | `sec.no-revocation-path` | Token without expiry, or an ACL copied to another store with no update path | Removed users keep access. | review agent (eyes) | high |
+| `sec.nested-quantifier` | Regex with a quantified group that itself contains a quantifier ((\w+\s?)+, (.*)*) | Nested quantifiers backtrack exponentially on a near-miss input: one request can pin a CPU. | static `sec.nested-quantifier` (regex) | medium |
+| `sec.dev-shortcut` | Verification skipped when the host or env looks local (localhost, development, missing base URL) | An attacker or a misconfigured deploy makes production look local and the check turns off. | review agent (eyes) | high |
 
 ## Confirm recipes
 
@@ -67,11 +69,13 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `sec.password-in-command`: static-proof: the credential is in the command or file Fix direction: read credentials from env or a password file.
 - `sec.raw-error-log`: failing-test: canary secret in env, force a provider error, grep outputs for the canary Fix direction: log message, code and status only.
 - `sec.public-port-bind`: measurement: ss -ltn / netstat shows 0.0.0.0:<port> Fix direction: bind to 127.0.0.1:<host>:<container>.
-- `sec.missing-ownership`: failing-test: two tenants; B's member requests A's id and gets 200
+- `sec.missing-ownership`: failing-test: two tenants; B's user requests A's id and gets 200
 - `sec.route-without-gate`: failing-test: call it with a token lacking the permission; expect 403
 - `sec.role-name-check`: failing-test: permission matrix property test finds an over- or under-grant
 - `sec.open-redirect`: failing-test: next=https://evil.example and //evil.example resolve off-origin
 - `sec.no-revocation-path`: failing-test: grant, use, revoke, reuse the same token -> still works
+- `sec.nested-quantifier`: measurement: pumped attack string at 1e3/1e4/1e5 chars; time grows super-linearly or breaks sec.redos_ms_at_max_input Fix direction: make repetitions unambiguous, bound the input length, or use a linear-time engine. Known false positives: groups whose repetitions cannot overlap because a literal separator starts each one, e.g. (?:-\w+)*.
+- `sec.dev-shortcut`: failing-test: production build with a localhost-like base URL; an unsigned or unauthenticated request is accepted
 
 ## Verification steps
 

@@ -54,11 +54,12 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 |---|---|---|---|---|
 | `ci.conflict-marker` | Conflict marker committed | The file no longer parses, or both sides ship half each. | static `ci.conflict-marker` (regex) | high |
 | `ci.blanket-merge-side` | Blanket -X ours/theirs or checkout --ours/--theirs over many files | Every conflicting hunk is resolved unread; exports, imports and catalog keys disappear silently. | static `ci.blanket-merge-side` (regex) | high |
-| `ci.skip-hooks` | Hooks bypassed (--no-verify, HUSKY=0, SKIP_HOOKS) | The check that would have caught the break never runs. | static `ci.skip-hooks` (regex) | high |
+| `ci.skip-hooks` | Hooks or required checks bypassed (--no-verify, HUSKY=0, SKIP_HOOKS, gh pr merge --admin) | The check that would have caught the break never runs. | static `ci.skip-hooks` (regex) | high |
 | `ci.signature-callers` | Exported signature changed with fewer callers updated than a search finds | Another package or adapter breaks at runtime or in the train. | review agent (eyes) | high |
 | `ci.unasked-infra` | New Dockerfile, runner, workflow or service not named in the request | Somebody now owns and pays for a thing nobody asked for. | review agent (eyes) | medium |
 | `ci.heap-bump-fix` | OOM 'fixed' by raising --max-old-space-size without a profile | The real growth stays; the next build OOMs on a bigger machine. | review agent (eyes) | medium |
 | `ci.ready-without-proof` | READY/done with no command, exit code and SHA attached | The train bounces and the owner re-checks by hand. | review agent (eyes) | high |
+| `ci.ignored-failure` | A check whose failure cannot fail the job (continue-on-error, \|\| true, ; exit 0) | A red check that cannot fail becomes a baseline everyone learns to ignore, and new reds hide in it. | static `ci.ignored-failure` (regex) | medium |
 
 ## Confirm recipes
 
@@ -69,6 +70,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `ci.unasked-infra`: repro-script: quote the request; the component is not in it
 - `ci.heap-bump-fix`: measurement: --extendedDiagnostics or trace shows the hot file
 - `ci.ready-without-proof`: repro-script: run the CI command on the stated SHA; it fails
+- `ci.ignored-failure`: repro-script: make the check fail; the job still exits 0 Fix direction: fix or quarantine the failing case by name with an owner and a date.
 
 ## Verification steps
 

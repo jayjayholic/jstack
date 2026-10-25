@@ -16,6 +16,31 @@
           "line": 1
         }
       ]
+    },
+    {
+      "id": "python-ocr-lang",
+      "rule": "i18n.hardcoded-locale-param",
+      "kind": "slop",
+      "note": "OCR call with a literal language in Python",
+      "files": {
+        "workers/ocr.py": "params = {\"lang\": \"en\", \"dpi\": 300}\n"
+      },
+      "expect": [
+        {
+          "path": "workers/ocr.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "auto-detect-flag",
+      "rule": "i18n.hardcoded-locale-param",
+      "kind": "near-miss",
+      "note": "'auto' is not a locale literal (other rules cover it)",
+      "files": {
+        "workers/ocr.py": "params = {\"lang\": \"auto\", \"dpi\": 300}\n"
+      },
+      "expect": []
     }
   ]
 }

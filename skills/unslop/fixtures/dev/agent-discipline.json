@@ -75,6 +75,42 @@
         "docs/guide.md": "# Guide\n\nIf the token is valid the import should work on the first try.\n"
       },
       "expect": []
+    },
+    {
+      "id": "dead-relative-link",
+      "rule": "agent.md-dead-link",
+      "kind": "slop",
+      "note": "link to a file that is not in the repo",
+      "files": {
+        "docs/guide.md": "# Guide\n\nSee [the setup](setup/install.md) first.\n"
+      },
+      "expect": [
+        {
+          "path": "docs/guide.md",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "live-relative-link",
+      "rule": "agent.md-dead-link",
+      "kind": "near-miss",
+      "note": "link to a file that exists",
+      "files": {
+        "docs/guide.md": "# Guide\n\nSee [the setup](setup/install.md#steps) first.\n",
+        "docs/setup/install.md": "# Install\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "external-and-fenced",
+      "rule": "agent.md-dead-link",
+      "kind": "near-miss",
+      "note": "URLs, anchors and links inside code fences are not repo paths",
+      "files": {
+        "docs/guide.md": "# Guide\n\n[site](https://example.com) and [top](#guide)\n\n```md\n[x](missing.md)\n```\n"
+      },
+      "expect": []
     }
   ]
 }

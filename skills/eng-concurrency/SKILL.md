@@ -62,6 +62,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `conc.position-cursor` | Persisted array index or position used as a cursor | An insert before the cursor makes the next step skip or repeat. | review agent (eyes) | medium |
 | `conc.timing-in-comment` | Timing constants related only by a comment | Someone edits one value and the 'must stay below' relation breaks silently. | review agent (eyes) | low |
 | `conc.prose-outcome` | Tool or endpoint returns prose ('ok', 'kept as is') with no typed outcome | The caller (often a model) reads a no-op as success. | review agent (eyes) | medium |
+| `conc.timeout-mismatch` | Caller timeout shorter than the work it waits for (the caller gives up while the callee keeps going) | The caller reports failure while the effect still lands, and its retry runs the work twice. | review agent (eyes) | high |
+| `conc.second-writer` | Background result written into a conversation, document or session the user is acting in, with no owner or ordering check | Two writers interleave: the background answer lands in the middle of what the user is doing. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -75,6 +77,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `conc.position-cursor`: failing-test: complete step k, insert a step before k, advance; assert no skip and no repeat
 - `conc.timing-in-comment`: failing-test: assert HEARTBEAT_MS * 3 <= STALE_AFTER_MS
 - `conc.prose-outcome`: repro-script: run the no-op path; show the reply cannot be told apart from success
+- `conc.timeout-mismatch`: failing-test: make the callee take the caller timeout + 5 s; the caller reports failure while the effect lands, or a retry runs it twice Fix direction: caller timeout above the callee timeout, or hand off to a job with a status.
+- `conc.second-writer`: failing-test: a user action and a background result arrive in the same tick; assert one ordered outcome and nothing overwritten
 
 ## Verification steps
 

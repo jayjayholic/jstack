@@ -141,6 +141,41 @@
         "docker-compose.yml": "services:\n  db:\n    image: postgres:16\n    expose:\n      - \"5432\"\n"
       },
       "expect": []
+    },
+    {
+      "id": "nested-plus",
+      "rule": "sec.nested-quantifier",
+      "kind": "slop",
+      "note": "classic catastrophic backtracking",
+      "files": {
+        "src/api/validate.ts": "const WORDS = /^(\\w+\\s?)+$/\nexport { WORDS }\n"
+      },
+      "expect": [
+        {
+          "path": "src/api/validate.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "separator-led-group",
+      "rule": "sec.nested-quantifier",
+      "kind": "near-miss",
+      "note": "repetitions start with a literal separator, so they cannot overlap",
+      "files": {
+        "src/api/validate.ts": "const SLUG = /^\\w+(?:-\\w)*$/\nexport { SLUG }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "arithmetic",
+      "rule": "sec.nested-quantifier",
+      "kind": "near-miss",
+      "note": "parentheses and * in arithmetic",
+      "files": {
+        "src/api/math.ts": "const area = (a, b) => (a + b) * 2\nexport { area }\n"
+      },
+      "expect": []
     }
   ]
 }

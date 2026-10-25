@@ -97,7 +97,7 @@ function houseRules(project) {
   const words = (h.bannedWords ?? []).filter(Boolean)
   if (words.length) rules.push({ id: 'copy.house-banned', domain: 'copy', title: 'House-banned word in user-facing text', engine: 'regex', pattern: `\\b(?:${words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, flags: 'i', files, scope: 'added', severity: 'medium', mode: 'warn', failureClass: 'house-rule', why: 'The project banned this word; a rule that lives only in memory gets broken.', confirm: 'static-proof: the word is in a user-facing string', house: true })
   const jargon = (h.jargon ?? []).filter(Boolean)
-  if (jargon.length) rules.push({ id: 'copy.house-jargon', domain: 'copy', title: 'Internal jargon in user-facing text', engine: 'regex', pattern: `\\b(?:${jargon.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, flags: 'i', files, scope: 'added', severity: 'low', mode: 'warn', failureClass: 'jargon', why: 'Members read the system\'s words instead of theirs.', confirm: 'static-proof plus a cold read of the string', house: true })
+  if (jargon.length) rules.push({ id: 'copy.house-jargon', domain: 'copy', title: 'Internal jargon in user-facing text', engine: 'regex', pattern: `\\b(?:${jargon.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, flags: 'i', files, scope: 'added', severity: 'low', mode: 'warn', failureClass: 'jargon', why: 'Users read the system\'s words instead of theirs.', confirm: 'static-proof plus a cold read of the string', house: true })
   return rules
 }
 

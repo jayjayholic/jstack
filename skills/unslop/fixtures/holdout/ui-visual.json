@@ -26,6 +26,31 @@
         "src/ui/Icon.tsx": "const Icon = () => <svg><use href=\"#icon-check\" /></svg>\nexport { Icon }\n"
       },
       "expect": []
+    },
+    {
+      "id": "green-status-text",
+      "rule": "ui.raw-palette-class",
+      "kind": "slop",
+      "note": "status colour hardcoded as a palette step",
+      "files": {
+        "src/ui/Status.tsx": "const Ok = () => <span className=\"text-green-500\">ok</span>\nexport { Ok }\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/Status.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "size-utility",
+      "rule": "ui.raw-palette-class",
+      "kind": "near-miss",
+      "note": "text-sm and border-subtle are not palette colours",
+      "files": {
+        "src/ui/Status.tsx": "const Ok = () => <span className=\"text-sm border-subtle\">ok</span>\nexport { Ok }\n"
+      },
+      "expect": []
     }
   ]
 }

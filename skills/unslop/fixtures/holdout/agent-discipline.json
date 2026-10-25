@@ -26,6 +26,33 @@
         "src/cache.ts": "const stash = new Map()\nexport { stash }\n"
       },
       "expect": []
+    },
+    {
+      "id": "dead-parent-link",
+      "rule": "agent.md-dead-link",
+      "kind": "slop",
+      "note": "link climbs to a sibling folder that was renamed",
+      "files": {
+        "docs/a/readme.md": "Read [the plan](../plans/plan.md).\n",
+        "docs/planning/plan.md": "# Plan\n"
+      },
+      "expect": [
+        {
+          "path": "docs/a/readme.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "live-parent-link",
+      "rule": "agent.md-dead-link",
+      "kind": "near-miss",
+      "note": "the sibling exists",
+      "files": {
+        "docs/a/readme.md": "Read [the plan](../planning/plan.md).\n",
+        "docs/planning/plan.md": "# Plan\n"
+      },
+      "expect": []
     }
   ]
 }

@@ -59,6 +59,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `dq.zero-yield-success` | Job logs done with 0 changes as success | A filter removing 100% of candidates looks like a quiet night. | review agent (eyes) | medium |
 | `dq.stacked-thresholds` | Confidence thresholds stacked with AND, no funnel counts logged | Each threshold is reasonable; together they block everything. | review agent (eyes) | medium |
 | `dq.learned-text-no-source` | Learned note or report injected into a prompt with no source or as-of date | A stale lesson beats fresh evidence. | review agent (eyes) | medium |
+| `dq.degenerate-output` | Stage output accepted with no sanity bound (one segment, one label for everything, empty, output/input ratio far off) | A stalled or collapsed stage still reports success and its junk flows downstream. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -69,6 +70,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `dq.zero-yield-success`: measurement: funnel counts per stage show the filter removing ~100%
 - `dq.stacked-thresholds`: measurement: precision vs coverage sweep on labelled candidates
 - `dq.learned-text-no-source`: failing-test: seed a lesson contradicting the source; the answer follows the lesson
+- `dq.degenerate-output`: failing-test: feed a degenerate stage output fixture; the pipeline still marks the item complete
 
 ## Verification steps
 

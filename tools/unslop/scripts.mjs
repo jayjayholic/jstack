@@ -1,6 +1,7 @@
 // Built-in "script" engine checks: defects that are a property of several files or of the diff, not of one line.
 // Each check gets ctx = { files: [{ path, text, added }], listFiles(globs) -> [{ path, text }], diffStatus: Map }
 // and returns hits [{ path, line, snippet, detail }].
+import fs from 'node:fs'
 import path from 'node:path'
 import { matchAny } from './rules.mjs'
 
@@ -93,6 +94,32 @@ const SCRIPTS = {
         const other = members.find(o => o !== m && o.keys.has(missing[0]))
         hits.push({ path: m.path, line: 1, snippet: missing.slice(0, 5).join(', '), detail: `${missing.length} key(s) missing in ${m.locale}${other ? ` (present in ${other.locale}, e.g. line ${keyLine(other.text, missing[0])} of ${path.posix.basename(other.path)})` : ''}: ${missing.slice(0, 8).join(', ')}` })
       }
+    }
+    return hits
+  },
+
+  // A Markdown link on an added line points at a repository path that does not exist (moved, renamed or never there).
+  'md-dead-link'(ctx, rule) {
+    const globs = rule.files ?? ['**/*.md']
+    const LINK = /\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g
+    const hits = []
+    for (const f of ctx.files) {
+      if (!matchAny(f.path, globs)) continue
+      let fenced = false
+      f.text.split('\n').forEach((l, i) => {
+        if (/^\s*(?:```|~~~)/.test(l)) { fenced = !fenced; return }
+        if (fenced || (f.added && !f.added.has(i + 1))) return
+        for (const m of l.matchAll(LINK)) {
+          const raw = m[1]
+          if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('#') || raw.startsWith('/') || raw.includes('{{')) continue
+          let target = raw.split('#')[0].split('?')[0]
+          try { target = decodeURI(target) } catch {}
+          if (!target) continue
+          const rel = path.posix.normalize(path.posix.join(path.posix.dirname(f.path), target))
+          if (rel.startsWith('..')) continue
+          if (!fs.existsSync(path.join(ctx.base, rel))) hits.push({ path: f.path, line: i + 1, snippet: l.trim(), detail: `links to ${rel}, which does not exist` })
+        }
+      })
     }
     return hits
   },

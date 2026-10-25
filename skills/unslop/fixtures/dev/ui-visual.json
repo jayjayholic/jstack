@@ -36,6 +36,41 @@
         "src/ui/root.css": ":root {\n  --brand: #0a66c2;\n}\n"
       },
       "expect": []
+    },
+    {
+      "id": "palette-class-overlay",
+      "rule": "ui.raw-palette-class",
+      "kind": "slop",
+      "note": "a raw palette class with opacity in a feature file",
+      "files": {
+        "src/ui/Overlay.tsx": "export function Overlay() {\n  return <div className=\"fixed inset-0 bg-black/55\" />\n}\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/Overlay.tsx",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "semantic-token-class",
+      "rule": "ui.raw-palette-class",
+      "kind": "near-miss",
+      "note": "semantic token classes are the fix",
+      "files": {
+        "src/ui/Overlay.tsx": "export function Overlay() {\n  return <div className=\"fixed inset-0 bg-scrim text-danger\" />\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "palette-in-token-file",
+      "rule": "ui.raw-palette-class",
+      "kind": "near-miss",
+      "note": "the token file is where palette names map to tokens",
+      "files": {
+        "src/theme/classes.tsx": "const SCRIM = 'bg-black/55'\nexport { SCRIM }\n"
+      },
+      "expect": []
     }
   ]
 }
