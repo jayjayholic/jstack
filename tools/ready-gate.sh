@@ -120,6 +120,14 @@ if [ "$JSTACK_READY_PREFLIGHT" != off ]; then
   pf=".agent/preflight.md"
   if [ ! -f "$pf" ]; then
     soft "$JSTACK_READY_PREFLIGHT" "no pre-flight at $pf (run /preflight; tier S takes about 3 minutes)"
+  elif cls=$(head -1 "$pf" | sed -nE 's/.*class: *(quick|light).*/\1/p') && [ -n "$cls" ]; then
+    if [ "$cls" = quick ]; then pass "pre-flight (class quick: $(head -1 "$pf" | sed -E 's/.*class: *quick *-? *//' | cut -c1-60))"
+    else
+      missing=()
+      for k in ask check scope; do grep -qiE "^$k:" "$pf" || missing+=("$k:"); done
+      if [ ${#missing[@]} -eq 0 ]; then pass "pre-flight (class light)"
+      else soft "$JSTACK_READY_PREFLIGHT" "light pre-flight lacks: ${missing[*]}"; fi
+    fi
   else
     tier=$(head -1 "$pf" | sed -nE 's/.*tier: *([SML]).*/\1/p'); tier=${tier:-S}
     need=("Ask" "Domains" "Answers" "Acceptance checks" "Scope fence")
