@@ -40,6 +40,7 @@ test('negative: block mode blocks a high rule that earned precision in this proj
   const r = repo()
   try {
     r.write('.jstack/unslop.json', JSON.stringify({ enabled: true, gate: { mode: 'block', blockSeverities: ['high'] }, rules: { 'conc.empty-catch': { mode: 'block-when-confirmed' } } }))
+    r.commit('config on the base'); r.git('branch', '-f', 'base')
     r.write('src/jobs/sync.ts', 'async function run(x) {\n  try { await x() } catch {}\n}\nexport { run }\n'); r.commit('slop')
     const g = gate({ repo: r.dir, base: 'base', memory: false })
     assert.equal(g.exit, 1)
@@ -63,5 +64,39 @@ test('negative: a rule whose engine is missing says "not checked", never a silen
     r.write('src/b.ts', 'export const b = 2\n'); r.commit('x')
     const g = gate({ repo: r.dir, base: 'base', memory: false })
     assert.ok(g.lines.some(l => /conc\.unawaited-promise|not checked|measure rule/.test(l)) || g.res.notChecked.length === 0)
+  } finally { r.done() }
+})
+
+test('negative: a branch that sets its own gate to off is still gated, and the config change blocks', () => {
+  const r = repo()
+  try {
+    r.write('.jstack/unslop.json', JSON.stringify({ gate: { mode: 'off' }, rules: { 'conc.empty-catch': { mode: 'off' } } }))
+    r.write('src/jobs/sync.ts', 'async function run(x) {\n  try { await x() } catch {}\n}\nexport { run }\n'); r.commit('slop + quiet config')
+    const g = gate({ repo: r.dir, base: 'base', memory: false })
+    assert.equal(g.exit, 1)
+    assert.ok(g.lines.some(l => l.startsWith('BLOCK unslop.config-changed')))
+    assert.ok(g.lines.some(l => l.startsWith('warn  conc.empty-catch')), 'the rule the branch switched off still ran')
+  } finally { r.done() }
+})
+
+test('negative: "off" in the base config reads as warn; only the operator turns the gate off', () => {
+  const r = repo()
+  try {
+    r.write('.jstack/unslop.json', JSON.stringify({ gate: { mode: 'off' } })); r.commit('off on base'); r.git('branch', '-f', 'base')
+    r.write('src/jobs/sync.ts', 'async function run(x) {\n  try { await x() } catch {}\n}\nexport { run }\n'); r.commit('slop')
+    const g = gate({ repo: r.dir, base: 'base', memory: false })
+    assert.ok(g.lines.some(l => l.startsWith('warn  conc.empty-catch')))
+    assert.match(g.lines.at(-1), /only the operator turns the gate off/)
+    assert.deepEqual(gate({ repo: r.dir, base: 'base', mode: 'off', memory: false }).lines, ['unslop gate: off (operator)'])
+  } finally { r.done() }
+})
+
+test('a reviewed config change passes with --accept-config-change and is still listed', () => {
+  const r = repo()
+  try {
+    r.write('.jstack/unslop.json', JSON.stringify({ gate: { mode: 'warn' }, houseRules: { bannedWords: ['synergy'] } })); r.commit('config')
+    const g = gate({ repo: r.dir, base: 'base', memory: false, acceptConfigChange: true })
+    assert.equal(g.exit, 0)
+    assert.ok(g.lines.some(l => l.startsWith('warn  unslop.config-changed')))
   } finally { r.done() }
 })
