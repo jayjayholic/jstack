@@ -176,10 +176,10 @@ const median = xs => { const s = [...xs].sort((a, b) => a - b); const n = s.leng
 // Verdict rule: adopt only when B is faster (wall), lighter on CPU and lighter on peak memory than A, all medians,
 // and gave the same result on every run.
 function verdict(a, b, same) {
-  if (!same) return { verdict: 'reject', why: 'results differ' }
   const ma = { wall: median(a.map(r => r.wallMs)), cpu: median(a.map(r => r.cpuMs)), peak: median(a.map(r => r.peakMb)) }
   const mb = { wall: median(b.map(r => r.wallMs)), cpu: median(b.map(r => r.cpuMs)), peak: median(b.map(r => r.peakMb)) }
   const worse = ['wall', 'cpu', 'peak'].filter(k => !(mb[k] < ma[k]))
+  if (!same) return { a: ma, b: mb, verdict: 'reject', why: `results differ${worse.length ? `; also not better on ${worse.join(', ')}` : ''}` }
   return { a: ma, b: mb, verdict: worse.length ? 'reject' : 'adopt', why: worse.length ? `not better on ${worse.join(', ')}` : 'faster, less CPU and lower peak memory, same result' }
 }
 
@@ -189,7 +189,8 @@ function measure(cmdline, cwd) {
   const r = spawnSync(exe, ['run', out, cmdline], { encoding: 'utf8', cwd, windowsHide: true, maxBuffer: 1 << 20 })
   if (r.status !== 0) throw new Error(`perf-snap run failed: ${r.stderr || r.error?.message}`)
   const res = JSON.parse(r.stdout.trim())
-  const body = fs.readFileSync(out)
+  // Same result = same text: line endings (CRLF from Windows tools, LF from others) and trailing blanks don't count.
+  const body = Buffer.from(fs.readFileSync(out, 'utf8').replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trimEnd())
   fs.rmSync(out, { force: true })
   return { ...res, hash: crypto.createHash('sha256').update(body).digest('hex').slice(0, 16), bytes: body.length }
 }
