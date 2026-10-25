@@ -61,3 +61,42 @@ For each high consumer (CPU or RAM, by process name and by agent), find somethin
 6. **Port the winner.** Generic changes (a jstack tool, a hook, a skill) go to jstack; project changes go on a branch in that project with READY to the orchestrator, never pushed by you. Then watch `top` for a day to see the consumer actually dropped, and add a ledger line with the before/after.
 
 Done when every top-10 consumer of the day has a ledger line: adopted with numbers, rejected with numbers, or why there is nothing to try.
+
+## 5. The warden: what runs on its own every minute
+
+The collector runs the warden after each tick (`tools/perf/warden.mjs`). It's deterministic, needs no session and no LLM, and costs a few milliseconds a tick. Every action goes to `~/.jstack/perf/actions.jsonl` with what, why, the metric before and, one tick later, available RAM after: that log is its memory. `perf.mjs actions --since 24h` reads it.
+
+- **Orphans.** Kills a process whose parent is gone when it's a known dev tool and nobody can be waiting for it: `grep`, `rg`, `find`, `tail`, `sleep`, `tsc`, `tsgo`, `esbuild` after 10 minutes; `node`/`bun` inside an agent worktree and automation browsers after 30 minutes idle (under 1% of a core the whole time). Never: the agent CLI, MCP servers, Docker/WSL, editors and language servers, jstack's own tools, anything in the heavy-lock holder's worktree, a `keep-browser` pid, a main checkout's server (that's the human's local app), anything whose command line it couldn't read, or a tree with any of those inside. At most 10 a tick.
+- **RAM.** Under 10% available it runs the RAM clean task (`JSTACK_RAM_CLEAN_TASK`), sharing ram-clean.ps1's cooldown stamp, and at most once per 10 minutes.
+- **Hung tests.** A test at 90%+ of a core for 15+ minutes goes to `notices.jsonl` (and a trigger), once. Never killed: its agent decides.
+- **Idle Docker stack** (only when `--docker-project` is set): stopped (`docker compose stop`, volumes kept, `undo` in the log) after 30+ minutes with no container above 2% CPU, no TCP client on its published ports and no process matching `--docker-busy`. The first 30 minutes after the collector starts only observe.
+- **Triggers** for the optimizer (`triggers.jsonl`, each type and key at most once per 30 minutes): `ram-low`, `hung`, `new-top-consumer` (a name entering the 15-minute top 5 by CPU or RAM; the first 15 ticks only learn), `new-heavy-process` (a never-seen name at 50%+ of a core or 1 GB+), `regression` (machine CPU over 15 minutes above the floor's p75 + 15 points).
+- **Modes:** `install --warden-mode act|dry|off` (`dry` logs every decision without acting). A failing step is logged as an `error` action and the rest of the tick goes on.
+
+One-time changes the owner approved, done by command, logged as actions: `perf.mjs search-exclude` keeps the dev roots (`C:\dev`, `~/.claude`, `~/.jstack`, `~/.bun`, `~/.cache`, the npm/pnpm/Yarn caches, Playwright's browsers, plus `--add a;b`) out of Windows Search through the Crawl Scope Manager API. No admin needed on the machine where this was built; when it is, it writes a one-click elevated `.cmd` and says so. `search-scope.exe include <folder>` undoes it.
+
+## 6. The optimizer agent: the loop the warden can't do
+
+The warden only does what needs no judgment. Finding a cheaper way to run the same work needs reading, research and a benchmark, so an agent does it, in the background, one at a time: the orchestrator's watch runs `perf.mjs optimizer due` every round and launches one when it exits 0 (a pending trigger, or 30 minutes since the last run).
+
+**There is a floor.** 32 GB, 20 threads and N agents doing real builds, typechecks and tests: much of the load is the work itself. `perf.mjs floor --write` estimates it (the p25 of 15-minute windows with agent work running, over 24 h) and says how far above it the last 15 minutes are. Report gains against the floor, not against zero. A consumer that is the legitimate work (a build in the slot, a typecheck in its lane, the agent CLI) is `at-floor` in the ledger with the evidence, and nobody benchmarks it again until the workload changes (new tool version, new kind of job, a jump in its share).
+
+**Priority = expected saving.** Mean CPU or RAM above the floor × how often it runs × how likely an alternative exists (a known cheaper tool or flag, an orphan or duplicate pattern) − the risk of changing it. Take the top one or two per run; don't chase noise (anything under about 2% of a core or 200 MB on average), and don't re-bench what the ledger already settled.
+
+**What it may do by itself:** low-risk and reversible only. A jstack tool, script or skill change proven by `bench` (faster AND lighter, same output) goes to a branch with tests and READY to the orchestrator; a config the warden owns (its thresholds, `--protect`, the Docker project) via `perf.mjs install`; ledger and floor updates. **What it only proposes:** anything that touches the human's apps, system settings that need admin, deleting data, stopping something someone might be using, changing a project's code or dependencies (that's a branch for the project's own agents), or squeezing the last percent at the cost of disruption.
+
+## 7. The prompt for the optimizer agent
+
+Launch as a background agent on a cheap model, never waiting for it:
+
+```
+You are the machine's performance optimizer, one background run. Follow the machine-memory skill's PERF.md sections 4, 6 and 7 exactly. P="node {{JSTACK_TOOLS}}/perf/perf.mjs".
+1. `$P optimizer start` (if it says started:false, stop: another run is active). Read the pending triggers it prints.
+2. Context: `$P floor --write`, `$P top --since 60m`, `$P top --since 60m --sort mem`, `$P agents --since 60m`, `$P patterns --since 2h`, `$P actions --since 2h`, `$P notices`, `$P ledger list`.
+3. Pick at most two consumers by expected saving above the floor (PERF.md 6). Skip anything the ledger already settled (adopt, reject, at-floor, in-progress-elsewhere, human-decision) unless the workload changed. Mark the legitimate work at-floor with evidence: `$P ledger add --consumer ... --verdict at-floor --evidence ... --why ...`.
+4. For each pick: research alternatives from primary sources only (docs, release notes, repos, issues with numbers; keep the URLs), then `$P bench --consumer ... --a "<current>" --b "<alternative>" --runs 5 --source <url> --record` on the same workload. Adopt only if faster AND less CPU AND lower peak with the same output.
+5. Apply only low-risk reversible winners yourself (PERF.md 6): a branch in jstack with tests, READY to the orchestrator; never push, never build, never take the heavy slot, never kill anything (the warden does that), never touch the human's apps or anything needing admin. Everything else: `$P ledger add --verdict human-decision --alternative ... --why ...`.
+6. `$P optimizer finish --summary "<one line: what you looked at, verdicts, gain vs floor>"`. Your final message: that line, plus one line per proposal that needs the human. Nothing else.
+```
+
+Done when each run ends with `optimizer finish`, a ledger line per consumer it looked at, and proposals only where a human must decide.
