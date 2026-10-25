@@ -39,6 +39,8 @@ For an agent already running when the train starts, send it the same clause with
 
 **Gates first.** Write down what "done" means for a ticket (tests, screenshots, audits, numbers) before any agent starts. A gate added halfway forces rework on everything already READY.
 
+**Pre-flight and /unslop.** The clause makes every worker run `/preflight` before its first edit and `/unslop` before READY. Pre-flight turns "what does done mean" into runnable checks in `.agent/brief.md`; /unslop reports only findings a second agent reproduced, so the orchestrator gets evidence, not opinions.
+
 Done when: no worker prompt says "run the full build", "push" or "merge", and every ticket has its gates written down.
 
 ## 4. Gate by the owner's approval
@@ -106,7 +108,7 @@ Done when: the sweep report says, for each item, removed (what) or listed (why).
 
 ## 6c. The READY gate and the guard hooks
 
-- **The READY gate.** Before a branch boards, the orchestrator runs `bash {{JSTACK_TOOLS}}/ready-gate.sh <worktree> --base origin/{{INTEGRATION_BRANCH}}`. It checks: the tree is committed, a green typecheck on that exact commit (through `tc_run`, cached per SHA), the unit tests next to the touched files, prettier on the touched files, and the brief checklist in `<worktree>/.agent/brief.md` fully ticked. Exit 0 boards. Exit 1 means don't board: send the FAIL lines back to the worker. Workers run the same gate before READY, so the orchestrator's typecheck comes back from the cache in a second. A READY whose gate is red doesn't board, however sure the worker sounds.
+- **The READY gate.** Before a branch boards, the orchestrator runs `bash {{JSTACK_TOOLS}}/ready-gate.sh <worktree> --base origin/{{INTEGRATION_BRANCH}}`. It checks: the tree is committed, a green typecheck on that exact commit (through `tc_run`, cached per SHA), the unit tests next to the touched files, prettier on the touched files, the brief checklist in `<worktree>/.agent/brief.md` fully ticked, the pre-flight file with its tier's sections (`JSTACK_READY_PREFLIGHT`, warn by default), the unslop gate on the added lines (`JSTACK_READY_UNSLOP`, warn by default; it blocks only on rules that earned it in this project) and, in repos with `.jstack/memory`, memory anchors the branch moved (`JSTACK_READY_MEMORY`). Exit 0 boards. Exit 1 means don't board: send the FAIL lines back to the worker. Workers run the same gate before READY, so the orchestrator's typecheck comes back from the cache in a second. A READY whose gate is red doesn't board, however sure the worker sounds.
 - **The brief checklist is a rule, not a hook.** The worker's first step is to copy the brief's items into `.agent/brief.md` as `- [ ]` lines (the file is ignored by git), and to tick each one with its evidence as it goes. An item not done is an unticked line, and the gate refuses it. A hook can't tell whether an item is really done, so the gate checks the file and the orchestrator checks the evidence.
 - **Guard hooks** (only where the jstack plugin is installed and `~/.jstack/guards.json` names the project): bare `tsc`, `next build`, `typecheck`, `build` and installs are denied unless they run through the lock, recursive grep/find/du over the repo root, the worktrees folder or `node_modules` is denied, and when a subagent stops, the servers, loops and `tail -f` it left in its worktree get killed. Each denial tells the agent the exact retry.
 - **Daily: read the hook report.** Once a day the orchestrator runs `node {{JSTACK_TOOLS}}/hook-report.mjs --days 1` (`jstack hook-report`). It shows blocks per day, agents blocked twice or more, and the calls that ignored the advice. An agent blocked over and over is struggling: nudge it or read its brief again. Tell the owner in one line whether the guards are costing agent quality (repeats and ignored advice going up) or not.
@@ -126,6 +128,8 @@ Done when: you can say λ, W, L and p for the last few hours, and which rule cha
 Tools behind the orchestrator: `{{JSTACK_TOOLS}}/train.sh` (`build <wt...>`, `shiptrain`), `{{JSTACK_TOOLS}}/coordinator-build.sh` (waits for {{MIN_FREE_GB}} GB free, one build at a time).
 
 ## Lessons
+
+Every new lesson also goes into the project's memory, so the next pre-flight reads it: `node {{JSTACK_TOOLS}}/memory/memory.mjs add --kind failure --title "<symptom>" --domain <pack> --anchor <path#symbol> --body "<root cause and the rule>"`. When a check or a question would have caught it earlier, `/unslop learn` drafts it.
 
 These come from the author's setup (Bun, Next.js with Turbopack, Windows, 32 GB, 2026-10-20 to 22). The numbers are his; the rules carry over.
 
