@@ -5,6 +5,7 @@
 // secret-scanned (a hit is refused, exit 2); `lint` catches hand edits of the folder (schema and secrets).
 //
 //   node memory.mjs init
+//   (kind preference: explanation preferences for /unslop:explain, written by tools/unslop/explain.mjs prefer)
 //   node memory.mjs add --kind decision --title "..." [--domain a,b] [--anchor path[#symbol]]... [--guard path] [--body "..."]
 //   node memory.mjs query [--paths a,b] [--domains x,y] [--kinds k] [--all] [--json]
 //   node memory.mjs show <id>
@@ -20,7 +21,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { scanFields } from './secrets.mjs'
 import { makeAnchor, resolveAnchor, splitRef, git, isCommitId, isSafeRelPath } from './anchors.mjs'
 
-const KINDS = ['decision', 'budget-rationale', 'known-slop', 'failure', 'convention', 'false-positive']
+const KINDS = ['decision', 'budget-rationale', 'known-slop', 'failure', 'convention', 'false-positive', 'preference']
+const PREF_LEVELS = ['short', 'full']
 const STATUSES = { 'known-slop': ['open', 'fixed', 'waived'], default: ['active', 'retired'] }
 const LIMITS = { title: 160, body: 2000, humanQuote: 300, lesson: 600 }
 const JSTACK_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -90,6 +92,14 @@ function validate(entry) {
     if (a?.commit != null && !isCommitId(a.commit)) errs.push(`anchors[${i}].commit: 7-40 lowercase hex characters`)
   })
   if (entry.kind === 'known-slop' && entry.status === 'waived' && !entry.waiver?.reason) errs.push('waiver.reason: required for a waived known-slop')
+  if (entry.kind === 'preference') {
+    const pr = entry.prefs
+    if (!pr || typeof pr !== 'object') errs.push('prefs: required for a preference')
+    else {
+      if (pr.level != null && !PREF_LEVELS.includes(pr.level)) errs.push(`prefs.level: one of ${PREF_LEVELS.join(', ')}`)
+      for (const k of ['mute', 'unmute']) if (pr[k] != null && !(Array.isArray(pr[k]) && pr[k].every(x => typeof x === 'string' && /^[\w.-]{1,80}$/.test(x)))) errs.push(`prefs.${k}: array of rule ids`)
+    }
+  }
   if (!entry.created) errs.push('created: required')
   return errs
 }
