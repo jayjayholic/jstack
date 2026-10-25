@@ -366,11 +366,21 @@ $kids = @{}
 foreach ($p in $s.All) { $pp = $s.ParentOf[[int]$p.ProcessId]; if ($pp) { $k = [int]$pp.ProcessId; if (-not $kids[$k]) { $kids[$k] = @() }; $kids[$k] += [int]$p.ProcessId } }
 function Get-Tree([int]$id) { $out = @(); foreach ($c in @($kids[$id])) { if ($c) { $out += Get-Tree $c } }; $out + $id }
 # A tree still burning CPU is working (an install's postinstall, a detached job), not leftover: it is listed, never killed.
-if ($candidates) {
-	$treeCpu = { param($ids) $sum = 0.0; foreach ($i in $ids) { $q = Get-CimInstance Win32_Process -Filter "ProcessId=$i"; if ($q) { $sum += ([double]$q.KernelModeTime + [double]$q.UserModeTime) / 1e7 } }; $sum }
-	$before = @{}; foreach ($c in $candidates) { $before[$c.Id] = & $treeCpu (Get-Tree $c.Id) }
-	Start-Sleep -Seconds 3
-	foreach ($c in $candidates) { $busy = ((& $treeCpu (Get-Tree $c.Id)) - $before[$c.Id]) -gt 0.05; $c | Add-Member -NotePropertyName Busy -NotePropertyValue $busy -Force }
+# One 3 s sample of every process: CPU (busy trees) and disk I/O (what is filling the file cache).
+$t0 = @{}; foreach ($p in $s.All) { $t0[[int]$p.ProcessId] = $p }
+Start-Sleep -Seconds 3
+$cpuDelta = @{}; $ioRows = @()
+foreach ($q in @(Get-CimInstance Win32_Process)) {
+	$id = [int]$q.ProcessId; $o = $t0[$id]
+	if (-not $o -or $o.CreationDate -ne $q.CreationDate) { continue }
+	$cpuDelta[$id] = (([double]$q.KernelModeTime + [double]$q.UserModeTime) - ([double]$o.KernelModeTime + [double]$o.UserModeTime)) / 1e7
+	$io = (([double]$q.ReadTransferCount + [double]$q.WriteTransferCount) - ([double]$o.ReadTransferCount + [double]$o.WriteTransferCount)) / 3 / 1MB
+	if ($io -ge 1) { $r = $rows | Where-Object Id -eq $id | Select-Object -First 1; $ioRows += [pscustomobject]@{ Id = $id; Name = $q.Name; MBps = [math]::Round($io, 1); Agent = (Get-AgentLabel $r) } }
+}
+$ioTop = @($ioRows | Sort-Object MBps -Descending | Select-Object -First 6)
+foreach ($c in $candidates) {
+	$sum = 0.0; foreach ($i in (Get-Tree $c.Id)) { $sum += [double]$cpuDelta[[int]$i] }
+	$c | Add-Member -NotePropertyName Busy -NotePropertyValue ($sum -gt 0.05) -Force
 }
 $killed = @()
 if ($Kill -eq 'orphans' -and $candidates) {
@@ -385,7 +395,7 @@ if ($Kill -eq 'orphans' -and $candidates) {
 	}
 }
 
-$result = [ordered]@{ at = $s.Now.ToString('s'); totals = $totals; groups = $groups; agents = $agents; dev = $devRows; wsl = $vm; docker = $docker; ports = $ports; candidates = $candidates; locks = @($s.Locks); killed = $killed }
+$result = [ordered]@{ at = $s.Now.ToString('s'); totals = $totals; groups = $groups; agents = $agents; dev = $devRows; diskIo = $ioTop; wsl = $vm; docker = $docker; ports = $ports; candidates = $candidates; locks = @($s.Locks); killed = $killed }
 if ($Json) { $result | ConvertTo-Json -Depth 5; return }
 
 $t = $totals
@@ -401,6 +411,8 @@ $groups | Format-Table -AutoSize | Out-String -Width 200
 $agents | Format-Table -AutoSize | Out-String -Width 240
 "== node / bun / tsc / bash"
 $devRows | Select-Object Id, Kind, PrivGb, WsGb, PagedOut, AgeMin, Parent, Agent, @{ n = 'Cmd'; e = { $_.Cmd.Substring(0, [Math]::Min(80, $_.Cmd.Length)) } } | Format-Table -AutoSize | Out-String -Width 260
+"== disk I/O over 3 s (reads + writes; Defender's scanner is protected and may not show)"
+if ($ioTop) { $ioTop | Format-Table -AutoSize | Out-String -Width 200 } else { "  nothing above 1 MB/s`n" }
 "== WSL VM and Docker"
 if ($vm) { $vm | Format-Table -AutoSize | Out-String -Width 200 } else { "  no vmmem process (WSL VM stopped)`n" }
 if ($docker) { $docker | Format-Table -AutoSize | Out-String -Width 200 } else { "  docker: not running or no containers`n" }
