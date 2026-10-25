@@ -3,12 +3,14 @@
 // body, and each must still carry evidence that reproduced (the report re-checks the sidecars and refuses a row
 // whose evidence is missing or whose rerun failed). DISMISSED, UNPROVEN, SUPPRESSED and not-examined candidates
 // appear only as counts and one-line reasons in the footer, so the human never reads a hypothesis as a finding.
-//   node report.mjs <run-dir> [--out report.md] [--cost-usd 1.23] [--minutes 14]
+//   node report.mjs <run-dir> [--out report.md] [--cost-usd 1.23] [--minutes 14] [--scope branch|pr|recent|full] [--no-metrics]
+// Every run also leaves its before/after record in .jstack/metrics/runs/ (metrics.mjs) for /unslop:metrify.
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { states, readEvidence, reproduced, passes, REPORTABLE } from './ledger.mjs'
 import { redact } from '../memory/secrets.mjs'
+import { record as recordMetrics } from './metrics.mjs'
 
 function readJsonl(file) {
   try { return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) } catch { return [] }
@@ -76,6 +78,14 @@ function buildReport(dir, { costUsd = null, minutes = null } = {}) {
   return { markdown: out.join('\n') + '\n', shown: body.length, refused, counts }
 }
 
+// <repo>/.jstack/unslop/runs/<id> -> <repo>; any other layout -> the current folder.
+function repoOfRun(dir) {
+  const abs = path.resolve(dir)
+  const parts = abs.split(path.sep)
+  const i = parts.lastIndexOf('.jstack')
+  return i > 0 && parts[i + 1] === 'unslop' && parts[i + 2] === 'runs' ? parts.slice(0, i).join(path.sep) : process.cwd()
+}
+
 function main(argv) {
   const [dir] = argv
   const get = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined }
@@ -83,9 +93,13 @@ function main(argv) {
   const out = get('--out') ?? path.join(dir, 'report.md')
   fs.writeFileSync(out, r.markdown)
   console.log(`${out}: ${r.shown} finding(s)${r.refused.length ? `, ${r.refused.length} refused for weak evidence` : ''}`)
+  if (!argv.includes('--no-metrics')) {
+    const repo = repoOfRun(dir)
+    try { console.log(`metrics: ${recordMetrics(dir, { repo, scope: get('--scope') ?? null }).file}`) } catch (e) { console.error(`metrics: not recorded (${e.message})`) }
+  }
   return 0
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)))
 
-export { buildReport }
+export { buildReport, repoOfRun, main }
