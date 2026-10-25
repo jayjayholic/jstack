@@ -5,6 +5,8 @@
 #   mem-map.ps1 -Kill orphans [-DryRun]   terminate orphan-candidate trees via WMI (never Claude, MCP, Docker/WSL, eval stack)
 #   mem-map.ps1 -Watch [-Every 30]    sampler: appends one CSV row per dev process per tick (+ a _machine row) to -Log
 #   mem-map.ps1 -Summary [-SinceMin 180]  per-agent peak/average/CPU from the log, and who held memory at the worst ticks
+#   mem-map.ps1 -Agents "<wt>;<wt>"   JSON [{worktree, branch, agent}] with this script's naming (tools/perf uses it)
+#   mem-map.ps1 -Classify <file.json> JSON [{kind, worktree}] for [{name, cmd, cwd}] (parity test for tools/perf)
 # Attribution: each process -> worktree (its current directory, else its command line, else an ancestor's) -> branch
 # (the worktree's git HEAD) -> agent (first line of <worktree>/.agent/name or a legacy .agent file, else a lock owner tag "@ <path>", else the
 # train queue file mentioning the branch, else the branch). Subagents themselves run inside claude.exe and cannot be
@@ -26,7 +28,9 @@ param(
 	[int]$PortTo = 3200,
 	[string[]]$LockDirs = @(),
 	[string]$QueueFile = '',
-	[string]$Protect = ''
+	[string]$Protect = '',
+	[string]$Agents = '',
+	[string]$Classify = ''
 )
 $ErrorActionPreference = 'SilentlyContinue'
 [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
@@ -41,7 +45,7 @@ $ownerNames = @('claude.exe', 'windowsterminal.exe', 'code.exe', 'cursor.exe', '
 $protectRe = 'claude|@anthropic|anthropic-ai|[\\/]mcp|mcp-server|modelcontextprotocol|docker|com\.docker|vmmem|wsl|harness-eval|eval-env|mem-map\.ps1|idle-reaper|node-memory-watch|vscode|Code\.exe|cursor'
 if ($Protect) { $protectRe = "$protectRe|$Protect" }
 
-Add-Type -TypeDefinition @"
+if (-not ($Agents -or $Classify)) { Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 public static class ProcCwd {
@@ -70,14 +74,15 @@ public static class ProcCwd {
 		} finally { CloseHandle(h); }
 	}
 }
-"@
+"@ }
 
 function Get-WorktreeOf([string]$text) {
 	if (-not $text) { return '' }
-	$m = [regex]::Match($text, '[A-Za-z]:[\\/][^"''<>|*?\r\n]*?[\\/]\.?worktrees[\\/][^\\/"'' ]+')
+	$m = [regex]::Match($text, '(?i)[A-Za-z]:[\\/][^"''<>|*?\r\n]*?[\\/]\.?worktrees[\\/][^\\/"'' ]+')
 	if ($m.Success) { return ($m.Value -replace '/', '\').TrimEnd('\') }
-	$m = [regex]::Match($text, '([A-Za-z]:[\\/][^"''<>|*?\r\n ]*?)[\\/]node_modules[\\/]')
-	if ($m.Success) { return ($m.Groups[1].Value -replace '/', '\').TrimEnd('\') }
+	# A node_modules path names a project, except a global install (npm -g, bun -g under AppData or Program Files).
+	$m = [regex]::Match($text, '(?i)([A-Za-z]:[\\/][^"''<>|*?\r\n ]*?)[\\/]node_modules[\\/]')
+	if ($m.Success -and $m.Groups[1].Value -notmatch '[\\/](AppData|Program Files[^\\/]*)[\\/]') { return ($m.Groups[1].Value -replace '/', '\').TrimEnd('\') }
 	return ''
 }
 $repoCache = @{}
@@ -236,6 +241,28 @@ function Get-Totals {
 }
 
 function Get-AgentLabel($r) { if ($r.Kind -eq 'claude') { 'claude.exe (sessions + subagents reasoning)' } elseif ($r.Agent) { $r.Agent } elseif ($r.IsDev) { '(no worktree)' } else { '' } }
+
+# ---------- attribution only (tools/perf) ----------
+if ($Agents) {
+	$locks = @(Get-LockList); $queue = @(Get-QueueLines)
+	$out = @(foreach ($wt in ($Agents -split ';' | Where-Object { $_ })) {
+		$w = ($wt -replace '/', '').TrimEnd('')
+		$b = Get-Branch $w
+		[pscustomobject]@{ worktree = $w; branch = $b; agent = (Get-Agent $w $b $locks $queue) }
+	})
+	ConvertTo-Json -InputObject $out -Depth 3 -Compress
+	return
+}
+if ($Classify) {
+	$items = Get-Content -LiteralPath $Classify -Raw | ConvertFrom-Json
+	$out = @(foreach ($it in $items) {
+		$p = [pscustomobject]@{ Name = [string]$it.name; CommandLine = [string]$it.cmd }
+		$wt = Get-WorktreeOf ([string]$it.cwd); if (-not $wt) { $wt = Get-WorktreeOf ([string]$it.cmd) }
+		[pscustomobject]@{ kind = (Get-Kind $p); worktree = $wt }
+	})
+	ConvertTo-Json -InputObject $out -Depth 3 -Compress
+	return
+}
 
 # ---------- sampler ----------
 if ($Watch) {
