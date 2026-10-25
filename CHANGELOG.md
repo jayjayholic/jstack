@@ -2,6 +2,19 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25: pre-flight by default, scaled to the task
+
+**What:**
+- `hooks/jstack-preflight.mjs` (PreToolUse on Edit/Write/MultiEdit/NotebookEdit, through the fail-safe `run-hook.mjs`): on an agent's first edit in a git repo with no `.agent/preflight.md` for the branch, one note with the suggested class (quick / light / full) and the signals behind it: risk paths (migrations, schema, auth, permissions, payments, billing, prompts, model-call files), the first 700 characters of the ask (quick words like hotfix/rápido, risk words like migration/idempotent/webhook, feature words), the branch prefix, the diff so far. One more note at most if a quick class reaches a risk path or grows past 8 files / 300 lines. Never denies. Off with `JSTACK_PREFLIGHT=off` or `"preflight": {"enabled": false}`.
+- Packs in context while coding: once a pre-flight names its domains, the next edit gets those packs' questions and red flags for its tier (about 300 tokens a pack), once per domain set.
+- `/preflight` step 0: class the task. Quick is one line, light is four (`ask`, `check`, `scope`), full is the existing ten steps. The skill's description now says when to skip, so it triggers on features, not on every typo. Both `/preflight` and `/unslop` say where `tools/` is when `{{JSTACK_TOOLS}}` was never filled (plugin installs).
+- `ready-gate.sh` check 7 accepts `class: quick` and `class: light` (light needs its three lines).
+- Worker clause: class first; full (or light with domains) runs `/unslop --base origin/<integration> --fix` before READY without being asked and puts the counts in the READY line; quick skips it.
+- Version 0.10.0: plugin caches refresh only on a version change, and the author's 0.9.0 cache had no preflight, unslop or packs at all (the hook would never have loaded).
+- Tests: `hooks/jstack-preflight.test.mjs`, 13 cases (fires once per agent, other agents get their own, ignores non-git dirs, `.agent/` files and non-edit tools, quick class silences it, risk-path and growth escalation once each, packs digest once, other-branch pre-flight counts as missing, env and config opt-out, broken config and garbage stdin exit 0 silently, class signals both ways, digest size bound).
+
+**Why:** an audit of the first day with /preflight and /unslop: of ~8 coding agents started after the kit landed, one ran /preflight (because my brief said so) and none ran /unslop. The dashboard's own train clause never mentioned either, briefs mostly didn't, and the skill text pointed at a `{{JSTACK_TOOLS}}` folder that plugin installs never fill. The owner wants prevention by default, but not a ceremony on a hotfix: so the hook nudges, the agent picks the class, and a quick fix costs one line. Replayed on 11 real tasks: about 250 tokens and 70-690 ms once per agent; quick for the 3 hotfixes, full for the 2 feature branches and 1 "implement" fix, light for the 5 unclear fixes. Unverified: how often agents follow the note. The 32 GB laptop read the note too and classed itself "full".
+
 ## 2026-10-25: a README that gets to the point
 
 **What:**

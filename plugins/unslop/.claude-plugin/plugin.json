@@ -1,6 +1,6 @@
 {
   "name": "unslop",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "The /unslop side commands: /unslop:explain builds a local page explaining what a run found and fixed and why (sources, before/after evidence, learns from your verdicts), /unslop:metrify charts every recorded run to show whether slop stops recurring, /unslop:retro mines fix commits and transcripts for recurring escapes. Needs the jstack plugin's tools.",
   "author": { "name": "João Lima", "url": "https://github.com/jayjayholic" },
   "homepage": "https://github.com/jayjayholic/jstack/tree/main/plugins/unslop",

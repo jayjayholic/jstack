@@ -216,6 +216,7 @@ CI was busy only a third of the night, so CI was never the bottleneck. My laptop
 I went back through months of my agents' work: about a thousand of my messages, 2,500 subagent transcripts and 1,900 fix, perf and revert commits. The bugs were almost never hard. They were questions nobody asked before (no budget, no test oracle, no "what if this runs twice") or claims nobody proved after (a READY that meant "should work"). So now there's a step on each side.
 
 - **`/preflight`**, before the first edit: quote the ask, tier the risk S/M/L, pick the domain packs, write budgets, runnable acceptance checks and a scope fence into `.agent/preflight.md`. Tier S takes about three minutes.
+- **The pre-flight hook**, so nobody has to remember: on an agent's first edit in a git repo with no `.agent/preflight.md`, it tells the agent once what the signals say (branch prefix, diff size, risk paths, the ask's first words) and lets the agent pick the class. A hotfix writes one line and moves on, an unclear task writes four, a feature or a migration gets the full `/preflight`. Once a pre-flight names its packs, the next edit gets those packs' questions and red flags in context. It never blocks.
 - **`/unslop`**, before READY: scan the diff, confirm each red flag with evidence a second agent reproduces, show the report, and fix only after you say yes.
 - **`/unslop:explain`, `/unslop:metrify`, `/unslop:retro`**: a page that explains each finding, a trend page that answers "does the same slop stop coming back?", and a miner for what keeps escaping.
 
@@ -224,6 +225,23 @@ I went back through months of my agents' work: about a thousand of my messages, 
 <summary><b>/preflight</b> in detail</summary>
 
 The agent quotes the ask word for word and splits it into directives, questions and info (a question gets an answer, not a refactor). It scores the risk S, M or L, and `classify.mjs` picks the domain packs the task touches. Each pack asks its questions for that tier. The answers go into `.agent/preflight.md` with budgets (numbers, each with how it gets measured), acceptance checks you can run, and a scope fence (what the agent may touch, what needs a human). It fixes the WHAT and leaves the HOW to the model. Its checks land in `.agent/brief.md`, which the READY gate refuses to pass while anything is unticked.
+
+**Classes, so a hotfix isn't a ceremony.** Step 0 of `/preflight` is the class. `quick` (hotfix, quick fix, copy, style, config) is one line, `class: quick - <why>`. `light` (the default when it's unclear) is four lines: `class: light`, `ask:`, `check:`, `scope:`. `full` (feature, refactor, new flow, migration, auth, money, paid model calls) is the whole thing plus `/unslop` before READY. Touching migrations, auth, payments or model-call files is full whatever the branch is called. The READY gate accepts all three.
+
+<details>
+
+<summary><b>The pre-flight hook</b>: what it says, when, and what it costs</summary>
+
+`hooks/jstack-preflight.mjs`, a `PreToolUse` hook on Edit, Write, MultiEdit and NotebookEdit. It only adds context; it never denies a tool call, and a crash in it exits 0 (same fail-safe runner as the guards).
+
+- **First edit of a session (per agent, per repo)** with no `.agent/preflight.md` for this branch: one ~250-token note with the suggested class and why. Reads, tests, edits outside a git repo and edits under `.agent/` or `.jstack/` are ignored.
+- **Once more, at most**, if a quick (or missing) pre-flight then edits a risk path, or its diff passes 8 files or 300 lines (checked every 10th edit).
+- **Once a pre-flight names domains** (`eng-x` anywhere in its Domains section, a table's first column or a `domains:` line): the next edit gets those packs' MUST questions and high-severity red flags (tier S) or MUST + SHOULD and high + medium (M, L), about 300 tokens a pack. A light pre-flight with no domains gets the packs `classify` picks from the ask and the file.
+- **Off**: `JSTACK_PREFLIGHT=off`, or `"preflight": { "enabled": false }` in `~/.jstack/guards.json` (top level or per project). `"preflight": { "base": "origin/stage" }` sets the branch the diff is measured from (default `origin/HEAD`, then `main`, `master`).
+
+Measured on 11 real tasks from my last day (replayed: their branch, their brief, their first touched file): the note costs 243-271 tokens once per agent, the hook takes 70-690 ms on a 370-worktree repo, a pack digest is 630-1,260 tokens for 2-4 packs. It suggested quick for the 3 hotfixes, full for the 2 feature branches and 1 fix whose brief opened with "implement", light for the 5 unclear fixes (one of them, an idempotency fix, arguably deserved full; the agent decides). The one full pre-flight an agent wrote that day took 16 minutes, most of it measuring stage data it needed for the fix anyway. A quick class costs one line. Unverified: whether agents follow the note as often as they follow a brief; `/unslop:metrify` will show it.
+
+</details>
 
 Files: [SKILL.md](skills/preflight/SKILL.md), [TEMPLATE.md](skills/preflight/TEMPLATE.md) (the file it fills) and [RISK.md](skills/preflight/RISK.md) (the S/M/L rubric with worked examples).
 
@@ -506,6 +524,7 @@ The scripts have no hardcoded paths. Every setting is an env var with a default,
 | `JSTACK_TRAIN_BUILD` | `deploy` (stage builds on every merge anyway, so the laptop doesn't have to) |
 | `JSTACK_CODEGEN_INPUTS` / `JSTACK_CODEGEN_REUSE_PATHS` | my schema folder + lockfile / the generated client folder |
 | `JSTACK_READY_PREFLIGHT` / `JSTACK_READY_UNSLOP` / `JSTACK_READY_MEMORY` | READY gate checks 7 to 9 (warn by default, memory blocks) |
+| `JSTACK_PREFLIGHT` | on (the pre-flight hook; `off` silences it) |
 | `node-memory-watch.ps1` | `-LimitGB 5 -PressurePercent 95`, running in a background PowerShell |
 
 </details>
