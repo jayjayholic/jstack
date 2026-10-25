@@ -1,6 +1,6 @@
 ---
 name: preflight
-description: "Use before writing code for any task (/preflight, or as the first step of a train worker): quote the ask, tier the risk, pick the domain packs, read project memory, answer the questions, write budgets, runnable acceptance checks and a scope fence into .agent/preflight.md."
+description: "Use before the first edit of a feature, refactor, new flow, migration, auth, money or paid-model change (/preflight, a train worker's first step, or when the jstack hook finds no .agent/preflight.md). Class first: a hotfix or quick fix writes one line. Else quote the ask, tier the risk, load the packs, write budgets, runnable checks and a scope fence."
 ---
 
 # Pre-flight: think it through before the first edit
@@ -9,9 +9,21 @@ Almost everything that had to be fixed later was something nobody asked before: 
 
 Output: `<worktree>/.agent/preflight.md` (untracked, from [TEMPLATE.md](TEMPLATE.md)) plus `- [ ]` lines appended to `.agent/brief.md`, which `ready-gate.sh` already refuses to pass while unticked. Time box: tier S about 3 minutes, M 15, L 45 plus whatever `/grill-me` and prototypes take.
 
-Tools live in `{{JSTACK_TOOLS}}` (the jstack `tools/` folder). Without a project memory (`.jstack/` missing) everything still works; say "no project memory" in the file.
+Tools live in `{{JSTACK_TOOLS}}` (the jstack `tools/` folder). If `{{JSTACK_TOOLS}}` is still a literal placeholder (installed as a plugin, not adapted), the folder is the `tools/` next to this skill's `skills/` folder; the jstack pre-flight hook prints its absolute path. Without a project memory (`.jstack/` missing) everything still works; say "no project memory" in the file.
 
-## Steps
+## Step 0: class the task (always, takes seconds)
+
+The jstack hook names the signals on the first edit (branch prefix, diff size so far, risk paths, the ask's words). You decide:
+
+| class | when | `.agent/preflight.md` | after |
+|---|---|---|---|
+| **quick** | hotfix, quick fix, copy or style change, config value | one line: `class: quick - <why>` | nothing else; the READY gate's fast unslop scan is enough |
+| **light** | ambiguous (the default) | four lines: `class: light`, `ask: <quoted>`, `check: <command> -> pass when <threshold>`, `scope: <owned paths>`; add `domains: <a, b>` when you know them | the hook shows those packs' MUST questions and red flags |
+| **full** | feature, refactor, new flow, schema or migration, auth or permissions, money, paid model calls | steps 1-10 below (`class: full` or a `tier:` in the first line) | `/unslop --base origin/{{INTEGRATION_BRANCH}}` before READY |
+
+Edits under migrations, auth, payments or model-call paths are full whatever the branch says; the hook says so once if a quick class reaches one, and once more if a quick diff grows past 8 files or 300 lines. Add `branch: <name>` when the folder may switch branches. Never block yourself on the class: write the line and keep going.
+
+## Steps (class full)
 
 1. **Quote the ask.** Copy the request verbatim. Split it into items and tag each DIRECTIVE, QUESTION or INFO. A QUESTION gets an answer, never a state change. List what is explicitly NOT requested.
 2. **Tier the risk** with [RISK.md](RISK.md). Write the tier and its one reason in one line.

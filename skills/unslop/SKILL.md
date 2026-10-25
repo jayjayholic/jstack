@@ -7,7 +7,7 @@ description: "Use before READY on any branch (/unslop: a menu suggests this PR o
 
 A red flag is a hypothesis. Only a reproduced failure becomes a finding: a failing test, a measurement over its budget, a captured repro, or a property of the text itself (a conflict marker, an edited applied migration). Nothing reaches the human without evidence produced by someone other than the agent that claims it. The same goes for /unslop itself: its precision is measured ([SELF-EVAL.md](SELF-EVAL.md)), not asserted.
 
-You are the **orchestrator**. You never judge a candidate yourself: eyes agents find, prosecutors build evidence, skeptics try to knock it down. Tools live in `{{JSTACK_TOOLS}}/unslop/` and `{{JSTACK_TOOLS}}/memory/`.
+You are the **orchestrator**. You never judge a candidate yourself: eyes agents find, prosecutors build evidence, skeptics try to knock it down. Tools live in `{{JSTACK_TOOLS}}/unslop/` and `{{JSTACK_TOOLS}}/memory/`. If `{{JSTACK_TOOLS}}` is still a literal placeholder (installed as a plugin, not adapted), the folder is the `tools/` next to this skill's `skills/` folder; the jstack pre-flight hook prints its absolute path.
 
 ## Front desk (bare `/unslop`)
 
