@@ -82,6 +82,22 @@ While agents run, the main session keeps a periodic watch (for example `/loop 15
 
 Done when: each round ends with RAM above 5% free, no orphans, and every silent agent checked.
 
+## 6b. Worktree hygiene and the leftovers sweep
+
+The train owns worktree hygiene.
+
+- **Right after a train merges:** remove every boarded branch's worktree that is clean and merged into {{INTEGRATION_BRANCH}} (`{{JSTACK_TOOLS}}/clean-worktrees.sh --dry-run` first). The branches stay as backup.
+- **After each release, dispatch a leftovers sweep:** one agent per area, or per few worktrees, each told which worktrees and agents belonged to that train. A sweep agent removes only what is provably done and lists the rest for the human:
+  1. **Worktrees** still present: remove each one that is clean, merged, and has no process under it (`mem_map`) and no slot owner `@` its path. List the rest with the reason.
+  2. **Processes:** servers, loops, `tail -f` and grep started by the train's agents. Run `mem_map -Kill orphans`, then terminate whatever still runs under a removed worktree.
+  3. **Uncommitted work:** list it with the files. Never discard it.
+  4. **Dangling READYs:** branches that said READY but never boarded or bounced (queue file, orchestrator log). List them.
+  5. **Stopped containers** (`docker ps -a --filter status=exited`): list them. Test databases stay.
+  6. **Temp builds and proof folders** (before/after builds, build logs, scratch `.next` copies): remove what this train made and nothing uses; list the rest.
+  7. **Slots** still held (`{{LOCK_DIR}}`, its `-tc-N` lanes): clear one only when its owner's directory has no live process.
+
+Done when: the sweep report says, for each item, removed (what) or listed (why).
+
 ## 7. Measure it
 
 Two formulas tell you where the time goes. Track the inputs hourly (from `gh pr list`, the queue file and the agent list), not from memory.

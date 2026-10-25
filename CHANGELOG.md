@@ -2,6 +2,22 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-24: the train cleans up after itself
+
+**What:** `/train` gets a section 6b.
+- Boarded worktrees are removed right after the merge, once they're clean and merged; the branches stay.
+- After each release, a leftovers sweep checks seven things:
+  - stale worktrees;
+  - stray processes;
+  - uncommitted work;
+  - dangling READYs;
+  - stopped containers;
+  - temp builds;
+  - held slots.
+- The sweep removes what's provably done and lists the rest.
+
+**Why:** one repo had 368 worktrees, 354 of them with their own `node_modules`. Every install and git sweep walked all of them, and the file cache paid for it in RAM. Agents end; their worktrees, servers and loops don't.
+
 ## 2026-10-24: mem-map, a machine-memory skill, and lock guards that wait for RAM
 
 **What:**
