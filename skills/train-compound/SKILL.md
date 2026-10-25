@@ -10,7 +10,7 @@ A compound train is the `/train` system with one difference: nothing reaches `{{
 
 Read the `train` skill first. Its rules all apply here: READY lines, the heavy slot, the typecheck lane, conflict handling, running CI's checks locally when Actions can't run, never `-X ours` or `-X theirs`. Two of its sections matter even more here, because a compound lives for days:
 
-- **Section 6, the watch:** `mem_map` every round and before every build (the `machine-memory` skill), one sampler for the whole compound.
+- **Section 6, the watch:** `mem_map` every round and before every build (the `machine-memory` skill), one sampler for the whole compound; `perf.mjs ensure` at the start and `perf.mjs optimizer due` every round (spawn one background optimizer agent when it says so).
 - **Section 6b, worktree hygiene and the leftovers sweep:** remove boarded worktrees once they're merged and idle, one sweep owner at a time, and run the leftovers sweep after the release.
 
 If this file still has unfilled placeholders (names in double curly braces), fill them the way the `train` skill says.

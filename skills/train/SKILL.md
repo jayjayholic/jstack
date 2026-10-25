@@ -27,7 +27,9 @@ The orchestrator ends when its queue empties. When a new branch is ready and the
 
 At most **two trains** exist at once: one in CI or merging, and ONE boarding. Every READY boards that one train until it leaves. The two are pipelined: the boarding train is merged and typechecked while the other is in CI, and it leaves the moment that one merges. Boarding is continuous: each READY merges in and gets an incremental typecheck right away (`train.sh board <wt>@<sha>`). The orchestrator keeps its queue in `{{QUEUE_FILE}}` (format in the `/train-queue` skill), so anyone can ask `/train-queue` where things are without poking the orchestrator.
 
-Done when: the orchestrator is running and you hold its id.
+Before launching it, make sure the machine's performance warden is running (idempotent, prints one line; the `machine-memory` skill, [PERF.md](../machine-memory/PERF.md)): `node {{JSTACK_TOOLS}}/perf/perf.mjs ensure`.
+
+Done when: the orchestrator is running, you hold its id, and `perf.mjs ensure` said the collector and warden are running.
 
 ## 3. Brief every worker agent the train way
 
@@ -80,6 +82,7 @@ While agents run, the main session keeps a periodic watch (for example `/loop 15
 - **Orphans.** A server, browser or script whose agent has ended is an orphan; kill it. Otherwise its port stays busy and its RAM stays gone. Agents that end don't clean up after themselves as often as you'd hope.
 - **Count only `running` agents.** Waiting or idle agents are parked and hold almost nothing; counting them against the cap starves the queue for no reason.
 - **The slot.** `{{LOCK_DIR}}/owner` says who holds it and since when. Anything holding it that is not a build or a typecheck gets told to let go.
+- **The optimizer, in the background.** `node {{JSTACK_TOOLS}}/perf/perf.mjs optimizer due` exits 0 when the warden left a trigger (low RAM, a hung test, a new top consumer, a new heavy process, load above the floor) or 30 minutes passed. Then launch ONE background agent, on a cheap model, with the prompt in [PERF.md](../machine-memory/PERF.md) section 7, and don't wait for it. `due` says no while one is running, so there is never a second. Nothing it does goes to the human, except a proposal that needs their decision: one line in your round summary. It never holds the heavy slot and never builds.
 
 - **Freeze the rules while you measure.** Change one rule, then hold still long enough to see whether it helped (section 7). Five rule changes in one night means nobody can say which one worked.
 - **Commit as you go.** Crashes and rate limits hit everyone at once; whatever wasn't committed is gone.
