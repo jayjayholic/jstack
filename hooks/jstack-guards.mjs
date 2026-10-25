@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-// jstack guard hooks. One file, three entry points (see hooks.json):
+// jstack guard hooks. One file, entry points (see hooks.json):
 //   pre      PreToolUse on Bash|PowerShell|Grep|Glob|LSP: heavy-lock guard, recursive-scan guard, block log
-//   cleanup  SubagentStop (and Stop when opted in): kills what the agent left running in its worktrees
+//   post     PostToolUse on Bash|PowerShell: ends the call's time window (process ownership, jstack-calls.mjs)
+//   cleanup  SubagentStop (and Stop when opted in): kills what the agent's own tool calls left running in its
+//            worktrees and closes the automation browsers it left open; waits while its background work runs
+// Hooks run through run-hook.mjs, which turns any crash (even a syntax error here) into exit 0 + a guard-log line.
+// CLI: keep-browser [pid...] [--reason text] [--off]   browser-watch [--once] [--every 60] [--grace 600] [--install]
 // Everything is a no-op unless ~/.jstack/guards.json (or $JSTACK_GUARDS_CONFIG) has a project whose roots
 // contain the session's project dir or cwd. No dependencies, Node 18+.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
+import * as browsers from './jstack-browsers.mjs'
+import * as calls from './jstack-calls.mjs'
 
 const WIN = process.platform === 'win32'
 const DEFAULT_WRAPPERS = ['tc_run', 'heavy_capped', 'heavy_acquire']
@@ -376,7 +382,7 @@ function pre(payload, env = process.env) {
       state.blocks = repeats
       state.pending = { guard: verdict.guard, at: Date.now() }
       log(project, payload, { type: 'block', guard: verdict.guard, tool, command: cmd, suggestion: verdict.suggestion, repeat: repeats })
-    }
+    } else calls.openWindow(payload, env)
   }
   writeState(payload, state)
   if (!verdict) return null
@@ -408,51 +414,188 @@ function killTree(pids) {
   for (const p of pids) { try { process.kill(p, 'SIGKILL') } catch {} }
 }
 
-// Picks processes whose command line names one of the worktrees, started after the agent's first command,
-// with a configured name; then adds their descendants. Never the hook's own ancestors or the Claude CLI.
-function pickVictims(procs, worktrees, since, names, selfPid) {
+function post(payload, env = process.env) {
+  const project = loadProject(payload, env)
+  if (!project || !/^(?:Bash|PowerShell)$/.test(payload.tool_name ?? '')) return
+  calls.closeWindow(payload, env)
+}
+
+const NO_CLEANUP = Object.freeze({ killed: [], browsers: { closed: [], kept: [] } })
+
+// What the stopping agent left running. Ownership, not location: only processes descending from a shell this agent's
+// own tool call started (jstack-calls.mjs), or orphans only its calls could have started. A parent or sibling agent
+// working in the same worktree is never touched. An agent with background work still in flight is paused, not done:
+// nothing is cleaned until it stops again with nothing in flight.
+function cleanup(payload, env = process.env, deps = { listProcesses, killTree }) {
+  const project = loadProject(payload, env)
+  if (!project) return NO_CLEANUP
+  const isStop = payload.hook_event_name === 'Stop'
+  const wantProcs = project.cleanup?.enabled !== false && (!isStop || project.cleanup?.onStop === true)
+  const wantBrowsers = !!browsers.browsersConf(project) && (!isStop || project.browsers.onStop !== false)
+  const rec = calls.readRecord(payload, env)
+  const f = stateFile(payload)
+  const state = exists(f, 'file') ? readState(payload) : null
+  if (!rec.windows?.length || (!wantProcs && !wantBrowsers)) {
+    if (!isStop) calls.markStopped(payload, env)
+    if (state && !isStop) { try { fs.unlinkSync(f) } catch {} }
+    return NO_CLEANUP
+  }
+  const procs = deps.listProcesses()
+  const claudePid = calls.claudePidOf(deps.selfPid ?? process.pid, procs) ?? (Number(env.CLAUDE_PID) || null)
+  if (calls.hasLiveBackground(payload, rec, procs, calls.readAllRecords(env))) {
+    log(project, payload, { type: 'cleanup-skip', why: 'background work still in flight' })
+    return { ...NO_CLEANUP, skipped: 'background' }
+  }
+  if (!isStop) calls.markStopped(payload, env, Date.now(), claudePid)
+  const owners = calls.ownersOf(procs, calls.readAllRecords(env))
+  const isMine = pid => { const o = owners.get(pid); return !!o && calls.isRecordOf(o.r, payload) }
+  const browserResult = wantBrowsers
+    ? browsers.onStop(project, payload, { procs, isMine, closeBrowsers: deps.closeBrowsers, log: e => log(project, payload, e) }, env)
+    : NO_CLEANUP.browsers
+  let killed = []
+  if (wantProcs) {
+    const mains = (project.roots ?? []).map(norm)
+    const wts = (state?.worktrees ?? []).filter(w => !mains.includes(w))
+    if (wts.length) {
+      killed = pickOwned(procs, owners, payload, wts, project.cleanup?.processNames ?? DEFAULT_KILL_NAMES, deps.selfPid ?? process.pid)
+      deps.killTree(killed)
+      if (killed.length) {
+        const byPid = new Map(procs.map(p => [p.p, p]))
+        log(project, payload, { type: 'cleanup', worktrees: wts, killed: killed.map(p => ({ pid: p, name: byPid.get(p)?.n, cmd: String(byPid.get(p)?.c ?? '').slice(0, 200) })) })
+      }
+    }
+  }
+  if (state && !isStop) { try { fs.unlinkSync(f) } catch {} }
+  return { killed, browsers: browserResult }
+}
+
+const HELPERS = /ram-clean\.ps1|run-capped\.ps1|heavy-lock|mem-map\.ps1|node-memory-watch/i
+
+// Processes this agent owns, with a configured name, whose command line names one of its worktrees; then their
+// descendants (owned too). Orphans (launcher gone) qualify only when no other agent's call could have started them,
+// and never the lock/RAM helpers. Never the hook's own ancestors or the Claude CLI. Deepest first.
+function pickOwned(procs, owners, payload, worktrees, names, selfPid) {
   const byPid = new Map(procs.map(p => [p.p, p]))
-  const ancestors = new Set()
+  const ancestors = new Set([selfPid])
   for (let p = byPid.get(selfPid), i = 0; p && i < 50; p = byPid.get(p.pp), i++) ancestors.add(p.p)
-  ancestors.add(selfPid)
   const wanted = new Set(names.map(n => n.toLowerCase().replace(/\.exe$/, '')))
+  const mine = pid => { const o = owners.get(pid); return o && calls.isRecordOf(o.r, payload) ? o : null }
   const hits = new Set()
   for (const p of procs) {
     const name = String(p.n || '').toLowerCase().replace(/\.exe$/, '')
     if (!wanted.has(name) || ancestors.has(p.p) || /^claude/.test(name)) continue
-    if (p.t && p.t < since - 2000) continue
+    const o = mine(p.p)
+    if (!o) continue
     const c = normCmd(p.c || '')
+    if (o.via === 'orphan' && HELPERS.test(c)) continue
     if (worktrees.some(w => new RegExp(`${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[/"'\\s]|$)`, WIN ? 'i' : '').test(c))) hits.add(p.p)
   }
   const children = new Map()
   for (const p of procs) { if (!children.has(p.pp)) children.set(p.pp, []); children.get(p.pp).push(p.p) }
   const order = []
-  const visit = (pid, d) => { if (ancestors.has(pid) || order.some(o => o.pid === pid)) return; order.push({ pid, d }); for (const c of children.get(pid) ?? []) visit(c, d + 1) }
+  const visit = (pid, d) => {
+    if (ancestors.has(pid) || order.some(o => o.pid === pid)) return
+    if (d > 0 && !mine(pid)) return
+    order.push({ pid, d })
+    for (const c of children.get(pid) ?? []) visit(c, d + 1)
+  }
   for (const h of hits) visit(h, 0)
   return order.sort((a, b) => b.d - a.d).map(o => o.pid)
 }
 
-function cleanup(payload, env = process.env, deps = { listProcesses, killTree }) {
-  const project = loadProject(payload, env)
-  if (!project || project.cleanup?.enabled === false) return { killed: [] }
-  if (payload.hook_event_name === 'Stop' && project.cleanup?.onStop !== true) return { killed: [] }
-  const f = stateFile(payload)
-  if (!exists(f, 'file')) return { killed: [] }
-  const state = readState(payload)
-  const mains = (project.roots ?? []).map(norm)
-  const wts = (state.worktrees ?? []).filter(w => !mains.includes(w))
-  let killed = []
-  if (wts.length) {
-    const procs = deps.listProcesses()
-    killed = pickVictims(procs, wts, state.startedAt ?? Date.now(), project.cleanup?.processNames ?? DEFAULT_KILL_NAMES, process.pid)
-    deps.killTree(killed)
-    if (killed.length) {
-      const byPid = new Map(procs.map(p => [p.p, p]))
-      log(project, payload, { type: 'cleanup', worktrees: wts, killed: killed.map(p => ({ pid: p, name: byPid.get(p)?.n, cmd: String(byPid.get(p)?.c ?? '').slice(0, 200) })) })
-    }
+// ---------- CLI: keep-browser, browser-watch ----------
+
+function loadConfig() {
+  try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')) } catch { return null }
+}
+
+function globalLog(cfg, entry) {
+  try {
+    const f = cfg?.log || process.env.JSTACK_GUARDS_LOG || path.join(os.homedir(), '.jstack', 'guard-log.jsonl')
+    fs.mkdirSync(path.dirname(f), { recursive: true })
+    fs.appendFileSync(f, JSON.stringify({ t: new Date().toISOString(), project: 'jstack-browsers', agent: 'watch', ...entry }) + '\n')
+  } catch {}
+}
+
+function allProfiles(cfg) { return (cfg?.projects ?? []).flatMap(p => p.browsers?.profiles ?? []) }
+
+function keepBrowser(args) {
+  const ri = args.indexOf('--reason')
+  const reason = ri >= 0 ? args[ri + 1] : undefined
+  const pids = args.filter((a, i) => /^\d+$/.test(a) && (ri < 0 || i !== ri + 1)).map(Number)
+  const cfg = loadConfig()
+  let targets = pids
+  if (!targets.length) {
+    const procs = listProcesses()
+    const mine = calls.claudePidOf(process.pid, procs) ?? Number(process.env.CLAUDE_PID || 0)
+    targets = browsers.findBrowsers(procs, allProfiles(cfg)).filter(b => mine && b.claudePid === mine).map(b => b.pid)
   }
-  try { fs.unlinkSync(f) } catch {}
-  return { killed }
+  if (args.includes('--off')) {
+    browsers.dropKeep(targets)
+    console.log(`keep marker removed: ${targets.join(' ') || 'none'}`)
+    return
+  }
+  if (!targets.length) { console.log('No automation browser found in this session. Pass the browser or launcher pid.'); return }
+  browsers.writeKeep(targets, reason)
+  for (const pid of targets) globalLog(cfg, { type: 'browser-keep', pid, reason })
+  console.log(`kept open for ${Math.round(browsers.KEEP_MS / 60000)} min: ${targets.join(' ')} (markers in ${path.join(calls.jstackHome(), 'keep-browser')})`)
+}
+
+function installWatcher(args) {
+  if (!WIN) { console.log('--install is Windows-only (Startup folder). Elsewhere run `node jstack-guards.mjs browser-watch` from your login items.'); return }
+  const self = fileURLToPath(import.meta.url)
+  const vbs = path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'JstackBrowserWatch.vbs')
+  const cmd = [`"${process.execPath}"`, `"${self}"`, 'browser-watch', ...args.filter(a => a !== '--install')].join(' ')
+  fs.writeFileSync(vbs, `' Starts the jstack browser watcher hidden at logon. Single instance.\r\nCreateObject("WScript.Shell").Run "${cmd.replace(/"/g, '""')}", 0, False\r\n`)
+  spawnSync('wscript.exe', [vbs], { stdio: 'ignore' })
+  console.log(`watcher launcher: ${vbs} (started now, and at every logon)`)
+}
+
+function browserWatch(args) {
+  const num = (n, d) => { const i = args.indexOf(n); return i >= 0 ? Number(args[i + 1]) : d }
+  if (args.includes('--install')) return installWatcher(args)
+  const once = args.includes('--once')
+  const home = calls.jstackHome()
+  fs.mkdirSync(home, { recursive: true })
+  const seenFile = path.join(home, 'browser-watch.json')
+  const lockFile = path.join(home, 'browser-watch.pid')
+  if (!once) {
+    try {
+      const other = Number(fs.readFileSync(lockFile, 'utf8'))
+      if (other && other !== process.pid) { process.kill(other, 0); return }
+    } catch {}
+    fs.writeFileSync(lockFile, String(process.pid))
+  }
+  const tick = () => {
+    const cfg = loadConfig()
+    const conf = cfg?.browsers ?? {}
+    if (conf.watch !== true && !args.includes('--force')) return { due: [], waiting: [], off: true }
+    let seen = {}
+    try { seen = JSON.parse(fs.readFileSync(seenFile, 'utf8')) } catch {}
+    const now = Date.now()
+    const res = browsers.sweep({
+      procs: listProcesses(), records: calls.readAllRecords(undefined, now),
+      kept: browsers.keptPids(undefined, now, (conf.keepMinutes ?? 60) * 60_000), seen, now,
+      graceMs: num('--grace', (conf.graceMinutes ?? 10) * 60) * 1000, profiles: allProfiles(cfg),
+    })
+    if (res.due.length) {
+      const how = browsers.closeBrowsers(res.due.map(b => ({ pid: b.pid, cmd: b.cmd, profile: b.profile })))
+      for (const b of res.due) {
+        globalLog(cfg, { type: 'browser-close', reason: `watch:${b.why}`, pid: b.pid, name: b.name, profile: b.profile, how: how.get(b.pid), agent: b.agent ?? 'watch', session: b.session })
+        delete seen[`${b.pid}:${b.t}`]
+      }
+    }
+    try { fs.writeFileSync(seenFile, JSON.stringify(seen)) } catch {}
+    return res
+  }
+  if (once) {
+    const r = tick()
+    console.log(r.off ? 'browser watch is off: set "browsers": { "watch": true } at the top of guards.json (or pass --force)' : `closed ${r.due.length}, waiting out the grace ${r.waiting.length}`)
+    return
+  }
+  const loop = () => { try { tick() } catch (e) { globalLog(loadConfig(), { type: 'browser-watch-error', error: String(e?.message ?? e) }) } }
+  loop()
+  setInterval(loop, num('--every', 60) * 1000)
 }
 
 async function readStdin() {
@@ -461,23 +604,37 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-async function main() {
-  const mode = process.argv[2]
+function crashLog(mode, e) {
+  try {
+    let cfgLog
+    try { cfgLog = JSON.parse(fs.readFileSync(configPath(), 'utf8')).log } catch {}
+    const f = cfgLog || process.env.JSTACK_GUARDS_LOG || path.join(os.homedir(), '.jstack', 'guard-log.jsonl')
+    fs.mkdirSync(path.dirname(f), { recursive: true })
+    fs.appendFileSync(f, JSON.stringify({ t: new Date().toISOString(), type: 'hook-crash', mode, error: String(e?.stack ?? e).slice(0, 2000) }) + '\n')
+  } catch {}
+}
+
+// One hook invocation: reads the payload from stdin, writes a decision when there is one. Never throws.
+async function runHook(mode) {
   let payload
-  try { payload = JSON.parse(await readStdin()) } catch { process.exit(0) }
+  try { payload = JSON.parse(await readStdin()) } catch { return }
   try {
     if (mode === 'pre') {
       const out = pre(payload)
       if (out) process.stdout.write(JSON.stringify(out))
-    } else if (mode === 'cleanup') {
-      cleanup(payload)
-    }
-  } catch (e) {
-    process.stderr.write(`jstack guards: ${e?.message ?? e}\n`)
-  }
+    } else if (mode === 'post') post(payload)
+    else if (mode === 'cleanup') cleanup(payload)
+  } catch (e) { crashLog(mode, e) }
+}
+
+async function main() {
+  const mode = process.argv[2]
+  if (mode === 'keep-browser') return keepBrowser(process.argv.slice(3))
+  if (mode === 'browser-watch') return browserWatch(process.argv.slice(3))
+  await runHook(mode)
   process.exit(0)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
 
-export { norm, segments, tokens, head, heavyCheck, scanCheck, pre, cleanup, pickVictims, loadProject, linkedWorktreesIn, gitTop }
+export { norm, segments, tokens, head, heavyCheck, scanCheck, pre, post, cleanup, listProcesses, pickOwned, runHook, crashLog, loadProject, linkedWorktreesIn, gitTop }
