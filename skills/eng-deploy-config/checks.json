@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/.env*", "**/env.*", "**/*config*", "**/vercel.json", "**/next.config.*", "**/*flag*", "**/*toggle*", "**/Dockerfile*", "**/*.toml", "**/deploy/**", "**/cron*"],
     "diffTokens": ["process.env", "dotenvx", "flag", "feature", "cron", "schedule", "redirect", "NEXT_PUBLIC_"],
-    "taskWords": ["deploy", "release", "env", "environment", "variable", "variables", "flag", "flags", "feature flag", "toggle", "config", "staging", "stage", "production", "prod", "rollout", "domain", "redirect", "schedule", "cron", "remove", "retire"]
+    "taskWords": ["deploy", "release", "env", "environment", "variable", "variables", "flag", "flags", "feature flag", "toggle", "config", "staging", "stage", "production", "prod", "rollout", "domain", "redirect", "schedule", "cron", "remove", "retire", "default", "by default", "enabled", "disabled", "legacy", "routes", "route", "404", "dotenvx", "tunnel", "localhost", "generated", "crashloop", "client", "clients", "oauth client", "shipping", "reverted"]
   },
   "questions": [
     { "id": "deploy.q.flags", "tier": "S", "text": "Which flags does this add, what type is each (release, ops, experiment, permission), what is its default, and when is it removed? Without anyone setting a variable, what does a user see after the merge?", "produces": "table", "prevents": ["shipped-off"] },

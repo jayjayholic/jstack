@@ -5,7 +5,7 @@
   "triggers": {
     "paths": [".github/**", "**/*.yml", "**/*.yaml", "**/Dockerfile*", "**/package.json", "**/tsconfig*.json", "**/turbo.json", "scripts/**", "tools/**", ".husky/**", ".githooks/**"],
     "diffTokens": ["export ", "<<<<<<<", "-X ", "--no-verify", "workflow", "runs-on"],
-    "taskWords": ["ci", "build", "pipeline", "workflow", "merge", "rebase", "conflict", "branch", "worktree", "train", "typecheck", "lint", "prettier", "release", "cache", "oom", "refactor", "rename", "signature", "export"]
+    "taskWords": ["ci", "build", "pipeline", "workflow", "merge", "rebase", "conflict", "branch", "worktree", "train", "typecheck", "lint", "prettier", "release", "cache", "oom", "refactor", "rename", "signature", "export", "push", "hook", "hooks", "--no-verify", "--admin", "github actions", "pr", "commit", "commits", "tsbuildinfo", "stale cache", "install location", "slash command", "baseline", "baselines"]
   },
   "questions": [
     { "id": "ci.q.ci-command", "tier": "S", "text": "What exact command does CI run, and can I run it locally on the merged tree (base + my branch)?", "produces": "text", "prevents": ["self-certified-ready"] },

@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/tests/**", "**/test/**", "**/evals/**", "**/eval/**", "**/__snapshots__/**", "**/benchmarks/**"],
     "diffTokens": ["expect(", "assert", ".only", ".skip", "toBeTruthy", "waitForTimeout", "mock", "snapshot"],
-    "taskWords": ["test", "tests", "testing", "eval", "evals", "benchmark", "a/b", "ab test", "verify", "prove", "proof", "flaky", "regression", "judge", "fixture", "coverage", "ready"]
+    "taskWords": ["test", "tests", "testing", "eval", "evals", "benchmark", "a/b", "ab test", "verify", "prove", "proof", "flaky", "regression", "judge", "fixture", "coverage", "ready", "reproduce", "reproduced", "repro", "baseline", "mock", "mocks", "stub", "stubbed", "lane", "quality", "assert", "assertion", "self-test", "self-audit", "speculative"]
   },
   "questions": [
     { "id": "test.q.oracle", "tier": "S", "text": "What is the oracle: which command, test, rubric or labelled set says this is correct, and does it exist before my change?", "produces": "text", "prevents": ["self-certification"] },

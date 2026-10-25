@@ -34,3 +34,15 @@ test('irreversible or security words never tier S', () => {
   assert.notEqual(r.tierHint.tier, 'S')
   assert.ok(names(r).includes('data-privacy'))
 })
+
+test('a bug report in symptom words reaches its pack, with agent-discipline as a companion', () => {
+  const r = classify({ task: 'The context menu opens far from the pointer once the sidebar scrolls' })
+  assert.ok(names(r).includes('interaction'))
+  assert.ok(names(r).includes('agent-discipline'))
+  assert.match(r.domains.find(d => d.domain === 'agent-discipline').reasons.join(' '), /quoted ask/)
+})
+
+test('negative: companions are not added when no pack is chosen', () => {
+  const r = classify({ task: 'bump the version number' })
+  assert.deepEqual(names(r), [])
+})

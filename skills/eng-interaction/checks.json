@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/components/**", "**/*.css", "**/*.scss", "**/hooks/**", "**/app/**/*.tsx", "**/*.vue", "**/*.svelte"],
     "diffTokens": ["scrollIntoView", "scrollTop", "overflow", "z-index", "z-[", "100vh", "h-screen", "Escape", "onClick", "useSearchParams", "matchMedia", "localStorage"],
-    "taskWords": ["scroll", "mobile", "phone", "keyboard", "modal", "dialog", "overlay", "menu", "dropdown", "click", "tap", "layout", "shift", "hydration", "responsive", "viewport", "esc", "focus"]
+    "taskWords": ["scroll", "mobile", "phone", "keyboard", "modal", "dialog", "overlay", "menu", "dropdown", "click", "tap", "layout", "shift", "hydration", "responsive", "viewport", "esc", "focus", "cursor", "pointer", "drag", "context menu", "popover", "deep link", "deep links", "url", "reload", "refresh", "bounce", "bounces", "timer", "sidebar", "overflow", "button", "preview", "previews", "cancel", "opens", "reopens", "scrollbar", "scrollbars"]
   },
   "questions": [
     { "id": "ix.q.one-scroller", "tier": "S", "text": "Which single element scrolls in this view, and on which axis? What happens at its edge?", "produces": "text", "prevents": ["nested-scroll"] },

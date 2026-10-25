@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/app/**/page.*", "**/app/**/layout.*", "**/pages/**", "**/routes/**", "**/*.css", "**/components/**", "**/loaders/**"],
     "diffTokens": ["Suspense", "useEffect", "findMany", "transition", "Promise.all", "await fetch", "tool_choice", "console.log"],
-    "taskWords": ["slow", "fast", "faster", "speed", "latency", "lag", "laggy", "performance", "perf", "load", "loading", "waterfall", "bundle", "LCP", "INP", "TTFB", "freeze", "skeleton", "spinner", "cache"]
+    "taskWords": ["slow", "fast", "faster", "speed", "latency", "lag", "laggy", "performance", "perf", "load", "loading", "waterfall", "bundle", "LCP", "INP", "TTFB", "freeze", "skeleton", "spinner", "cache", "slower", "seconds", "minutes", "takes", "waiting", "stuck", "hang", "hangs", "timeout", "logs", "logging", "feedback", "pending", "cold start", "first load", "jank", "throughput", "serialised", "serialized", "compile"]
   },
   "questions": [
     { "id": "perf.q.budget", "tier": "S", "text": "What is the budget? One number per surface or interaction (LCP, INP, p95 API time, first audio, throughput), and which human limit (0.1 / 1 / 10 s) it serves.", "produces": "number", "prevents": ["no-budget"] },

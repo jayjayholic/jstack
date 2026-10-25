@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/ai/**", "**/llm/**", "**/*metered*", "**/*billing*", "**/*quota*", "**/*usage*", "**/*spend*", "**/*budget*", "**/ingest*/**"],
     "diffTokens": ["new Anthropic", "new OpenAI", "@anthropic-ai/sdk", "openai", "cache_control", "usage", "input_tokens", "quota", "model:"],
-    "taskWords": ["cost", "costs", "spend", "billing", "meter", "metering", "usage", "tokens", "quota", "limit", "cache", "caching", "model", "provider", "api key", "byok", "experiment", "benchmark", "upload", "zip"]
+    "taskWords": ["cost", "costs", "spend", "billing", "meter", "metering", "usage", "tokens", "quota", "limit", "cache", "caching", "model", "provider", "api key", "byok", "experiment", "benchmark", "upload", "zip", "credits", "allowance", "budget", "invoice", "gateway", "key", "keys", "refetch", "re-fetch", "bots", "overspend", "paid"]
   },
   "questions": [
     { "id": "cost.q.choke-point", "tier": "S", "text": "Through which single client does this paid call go, and does it emit one raw-unit usage event per attempt?", "produces": "text", "prevents": ["unmetered-calls"] },

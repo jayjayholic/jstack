@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/queue*/**", "**/jobs/**", "**/workers/**", "**/webhook*/**", "**/cron/**", "**/*retry*", "**/*worker*", "**/*scheduler*"],
     "diffTokens": ["retry", "attempt", "webhook", "enqueue", "RUNNING", "PROCESSING", "lock", "idempot", "heartbeat", "lease"],
-    "taskWords": ["queue", "background", "job", "webhook", "retry", "retries", "schedule", "cron", "sync", "duplicate", "duplicates", "concurrent", "parallel", "lock", "worker", "approval"]
+    "taskWords": ["queue", "background", "job", "webhook", "retry", "retries", "schedule", "cron", "sync", "duplicate", "duplicates", "concurrent", "parallel", "lock", "worker", "approval", "twice", "forever", "running forever", "race", "fire-and-forget", "lost", "queued", "heartbeat", "reaper", "replaced", "stash", "timeouts", "idempotency", "amplification", "at most once", "repeated"]
   },
   "questions": [
     { "id": "conc.q.commit-point", "tier": "S", "text": "What is the commit point? Name the line after which the work is durable. Is any done/seen/200 written before it?", "produces": "text", "prevents": ["silent-loss"] },

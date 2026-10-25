@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/agents/**", "**/agent/**", "**/prompts/**", "**/*prompt*", "**/tools/**", "**/llm/**", "**/ai/**", "**/harness/**"],
     "diffTokens": ["system:", "tool_choice", "messages", "judge", "classifier", "compact", "contextWindow", "slice(0,", "untrusted"],
-    "taskWords": ["agent", "llm", "prompt", "model", "tool", "tools", "judge", "classifier", "classify", "compaction", "context", "approval", "consent", "voice", "injection", "chat", "assistant"]
+    "taskWords": ["agent", "llm", "prompt", "model", "tool", "tools", "judge", "classifier", "classify", "compaction", "context", "approval", "consent", "voice", "injection", "chat", "assistant", "guard", "guards", "layer", "layers", "truncation", "truncated", "cap", "caps", "compacting", "summarising", "summarizing", "delegate", "delegates", "reply", "replies", "instructions", "fallback", "empty replies", "claims", "promise", "components"]
   },
   "questions": [
     { "id": "llm.q.root-cause", "tier": "S", "text": "What is the root cause (5 whys)? Can the loop fix it with a tool or a context fact instead of a new guard, judge, retry or wait layer?", "produces": "text", "prevents": ["layer-creep"] },

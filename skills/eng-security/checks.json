@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/auth/**", "**/*auth*", "**/*session*", "**/*permission*", "**/*role*", "**/middleware*", "**/routers/**", "**/api/**", "**/*oauth*", "**/*webhook*", "**/docker-compose*.yml", "**/.env*"],
     "diffTokens": ["where: { id", "redirect(", "new RegExp", "console.error(err", "token", "secret", "password", "isAdmin", "role ===", "ports:"],
-    "taskWords": ["auth", "login", "oauth", "token", "session", "permission", "permissions", "role", "roles", "admin", "secret", "secrets", "password", "redirect", "tenant", "security", "webhook", "scope", "regex", "expose"]
+    "taskWords": ["auth", "login", "oauth", "token", "session", "permission", "permissions", "role", "roles", "admin", "secret", "secrets", "password", "redirect", "tenant", "security", "webhook", "scope", "regex", "expose", "leak", "exposed", "public", "metrics", "endpoint", "rebinding", "signature", "starttls", "presign", "cross-tenant", "unauthenticated", "redos", "credential", "credentials", "interfaces", "keys"]
   },
   "questions": [
     { "id": "sec.q.ownership", "tier": "S", "text": "Which objects does this change read or write, and which line proves the caller's tenant/owner matches?", "produces": "table", "prevents": ["bola"] },

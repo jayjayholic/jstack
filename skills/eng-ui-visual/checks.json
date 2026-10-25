@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/*.css", "**/*.scss", "**/components/**", "**/app/**/*.tsx", "**/pages/**/*.tsx", "**/*.vue", "**/*.svelte", "**/theme*/**", "**/tokens/**", "**/public/brand/**"],
     "diffTokens": ["className", "style=", "color:", "background", "#fff", "rgb(", "theme", "dark:"],
-    "taskWords": ["ui", "design", "redesign", "restyle", "screen", "page", "modal", "card", "theme", "dark", "light", "color", "colour", "logo", "brand", "layout", "style", "visual", "docx", "image", "icon"]
+    "taskWords": ["ui", "design", "redesign", "restyle", "screen", "page", "modal", "card", "theme", "dark", "light", "color", "colour", "logo", "brand", "layout", "style", "visual", "docx", "image", "icon", "ugly", "off-brand", "screenshot", "screenshots", "before/after", "gallery", "component", "components", "table", "tables", "chart", "charts", "diagram", "portrait", "avatar", "font", "fonts", "dark mode", "density", "spacing", "corners"]
   },
   "questions": [
     { "id": "ui.q.reference", "tier": "S", "text": "Which existing screen is the visual reference, and which kit components will I reuse? If there is no agreed image of good, render 2-3 options first.", "produces": "file", "prevents": ["off-brand", "no-reference"] },

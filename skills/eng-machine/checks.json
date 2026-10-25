@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["scripts/**", "tools/**", "**/*.sh", "**/*.ps1", "**/playwright*.{ts,js,mjs}", "**/.mcp.json", "**/docker-compose*.yml"],
     "diffTokens": ["spawn", "exec", "taskkill", "pkill", "sleep", "launch(", "launchPersistentContext", "Promise.all", "--max-old-space-size"],
-    "taskWords": ["ram", "memory", "oom", "crash", "freeze", "process", "processes", "orphan", "browser", "playwright", "server", "dev server", "install", "parallel", "agents", "subagent", "mcp", "sleep", "poll", "wait"]
+    "taskWords": ["ram", "memory", "oom", "crash", "freeze", "process", "processes", "orphan", "browser", "playwright", "server", "dev server", "install", "parallel", "agents", "subagent", "mcp", "sleep", "poll", "wait", "cpu", "swap", "swapping", "kill", "grep", "greps", "tsc", "watchdog", "fan-out", "chromium", "busy-polling", "polling", "too many agents"]
   },
   "questions": [
     { "id": "mach.q.peak", "tier": "S", "text": "What is the measured peak RAM of one instance of each heavy job I will run, and how many run machine-wide right now?", "produces": "number", "prevents": ["uncapped-parallel"] },

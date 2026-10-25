@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/messages/**", "**/locales/**", "**/i18n/**", "**/copy/**", "**/*.po", "**/emails/**"],
     "diffTokens": ["title", "subtitle", "description", "label", "placeholder", "agree", "terms"],
-    "taskWords": ["copy", "text", "wording", "label", "heading", "title", "message", "notification", "email", "onboarding", "consent", "terms", "name", "naming", "card", "cta", "tooltip"]
+    "taskWords": ["copy", "text", "wording", "label", "heading", "title", "message", "notification", "email", "onboarding", "consent", "terms", "name", "naming", "card", "cta", "tooltip", "words", "filler", "subtitle", "subtitles", "headline", "headings", "announcement", "changelog", "release notes", "default name", "explanatory", "optional", "jargon", "framing"]
   },
   "questions": [
     { "id": "copy.q.show-not-say", "tier": "S", "text": "What can the UI show instead of saying it (state, preview, default, example, disabled reason)? What is the word budget, and which one sentence must survive?", "produces": "number", "prevents": ["text-walls"] },

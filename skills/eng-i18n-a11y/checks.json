@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/messages/**", "**/locales/**", "**/i18n/**", "**/lang/**", "**/*prompt*", "**/*.po"],
     "diffTokens": ["t(", "locale", "language", "toLocaleString", "timeZone", "Intl.", "Date(", "aria-", "contrast"],
-    "taskWords": ["translate", "translation", "i18n", "locale", "language", "portuguese", "english", "spanish", "timezone", "time zone", "date", "dates", "accessibility", "a11y", "contrast", "screen reader", "error message"]
+    "taskWords": ["translate", "translation", "i18n", "locale", "language", "portuguese", "english", "spanish", "timezone", "time zone", "date", "dates", "accessibility", "a11y", "contrast", "screen reader", "error message", "transcription", "transcribe", "transcribed", "speech", "speech-to-text", "utc", "times", "raw code", "raw codes", "error code", "error codes", "locale-aware", "catalog", "catalogs", "keys"]
   },
   "questions": [
     { "id": "i18n.q.language-source", "tier": "S", "text": "Which language does each input and output of this change have, and which field is its source (user setting, then org default, then Accept-Language, then product default)?", "produces": "table", "prevents": ["guessed-language"] },

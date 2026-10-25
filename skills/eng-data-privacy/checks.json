@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/migrations/**", "**/schema/**", "**/*.prisma", "**/*.sql", "**/models/**", "**/*erasure*", "**/*deletion*", "**/*privacy*", "**/*acl*", "**/*tenant*"],
     "diffTokens": ["CREATE TABLE", "ADD COLUMN", "user_id", "email", "acl", "is_public", "tenant", "org_id", "owner"],
-    "taskWords": ["migration", "migrations", "schema", "table", "column", "database", "db", "personal data", "pii", "gdpr", "lgpd", "erasure", "delete account", "privacy", "tenant", "acl", "merge", "undo", "provenance", "ingest"]
+    "taskWords": ["migration", "migrations", "schema", "table", "column", "database", "db", "personal data", "pii", "gdpr", "lgpd", "erasure", "delete account", "privacy", "tenant", "acl", "merge", "undo", "provenance", "ingest", "leak", "leaks", "private", "group chat", "personal", "signup", "sign-up", "opt-out", "stored", "saved", "visibility", "unmerge", "domainless"]
   },
   "questions": [
     { "id": "data.q.new-migration", "tier": "S", "text": "Is this a new migration with a unique stamp later than the base branch's newest, touching no applied migration? Is every statement re-runnable?", "produces": "text", "prevents": ["edited-migration", "stamp-collision"] },

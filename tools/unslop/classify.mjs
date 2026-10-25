@@ -10,7 +10,11 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { loadPacks, matchAny, loadProjectConfig, ignoreGlobs } from './rules.mjs'
 
-const COMPANIONS = ['eval-testing']
+const COMPANIONS = ['eval-testing', 'agent-discipline']
+const COMPANION_WHY = {
+  'eval-testing': 'companion: every change needs its oracle (a check written before the code)',
+  'agent-discipline': 'companion: every task needs the quoted ask, the scope fence and self-verification',
+}
 const RISK_WORDS = {
   irreversibility: ['migration', 'migrate', 'delete', 'drop', 'deploy', 'release', 'send', 'email', 'publish', 'production', 'prod', 'remove', 'erase'],
   security: ['auth', 'login', 'permission', 'role', 'token', 'secret', 'password', 'tenant', 'oauth', 'session', 'acl'],
@@ -92,7 +96,7 @@ function classify({ task = '', paths = [], repo = null, base = null, packs = loa
     for (const c of COMPANIONS) {
       if (chosen.some(r => r.domain === c)) continue
       const pack = packs.find(p => p.domain === c)
-      if (pack && (!enabled || enabled.has(c))) chosen.push({ domain: c, skill: pack.skill, score: 0, reasons: ['companion: every change needs its oracle (a check written before the code)'] })
+      if (pack && (!enabled || enabled.has(c))) chosen.push({ domain: c, skill: pack.skill, score: 0, reasons: [COMPANION_WHY[c]] })
     }
   }
   const risk = {}

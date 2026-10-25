@@ -5,7 +5,7 @@
   "triggers": {
     "paths": ["**/ingest*/**", "**/pipeline*/**", "**/etl/**", "**/extract*/**", "**/import*/**", "**/connectors/**", "**/embed*", "**/upload*/**", "**/jobs/**"],
     "diffTokens": ["extract(", "embed(", "status: 'complete'", "await fetch(", "LIMIT", "threshold", "upload"],
-    "taskWords": ["ingest", "ingestion", "pipeline", "etl", "extract", "extraction", "embed", "embedding", "upload", "import", "connector", "sync", "dedupe", "junk", "quality", "threshold", "nightly", "batch"]
+    "taskWords": ["ingest", "ingestion", "pipeline", "etl", "extract", "extraction", "embed", "embedding", "upload", "import", "connector", "sync", "dedupe", "junk", "quality", "threshold", "nightly", "batch", "spam", "graph", "entity", "entities", "diarization", "transcript", "transcripts", "indexed", "index", "crawl", "404", "lesson", "stale report", "yield", "knowledge", "irrelevant", "merges", "removal queue"]
   },
   "questions": [
     { "id": "dq.q.postconditions", "tier": "S", "text": "What is each stage's postcondition, and where is it checked? Can a stage report complete while part of its input failed?", "produces": "table", "prevents": ["false-complete"] },

@@ -5,7 +5,7 @@
   "triggers": {
     "paths": [".agent/**", "**/CLAUDE.md", "**/AGENTS.md", ".claude/**", "**/*report*.md", "**/pr-body*.md"],
     "diffTokens": ["git stash", "should work", "probably", "TODO"],
-    "taskWords": ["agent", "agents", "subagent", "orchestrator", "brief", "handoff", "report", "docs", "documentation", "claude.md", "resume", "checkpoint", "eta", "worktree"]
+    "taskWords": ["agent", "agents", "subagent", "orchestrator", "brief", "handoff", "report", "docs", "documentation", "claude.md", "resume", "checkpoint", "eta", "worktree", "asked", "not asked", "unrequested", "forbidden", "removed", "removing", "claims", "sources", "forgot", "forgetting", "pause", "pausing", "naming", "verify", "agreeing", "blaming", "hallucinating", "switcher", "long-running"]
   },
   "questions": [
     { "id": "agent.q.quote-ask", "tier": "S", "text": "What exactly did the user say? Quote it and mark each item QUESTION, DIRECTIVE or INFO. A question never becomes a state change.", "produces": "table", "prevents": ["misread-intent"] },
