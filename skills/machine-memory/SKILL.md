@@ -1,6 +1,6 @@
 ---
 name: machine-memory
-description: "Use when the dev machine's RAM runs high (80%+ used, swapping, OOM, a frozen PC), before a train build or on each watch tick, or when someone asks who or what is eating memory. Maps memory with mem-map (private bytes, per-agent attribution, WSL/Docker, orphans, lock slots), names the leak pattern, frees memory safely and reports the cause."
+description: "Use when the dev machine's RAM runs high (80%+ used, swapping, OOM, a frozen PC), before a train build or on each watch tick, or when someone asks who or what is eating memory or CPU, why the machine was slow at some time, or to keep optimizing what runs on it. Maps memory with mem-map (private bytes, per-agent attribution, WSL/Docker, orphans, lock slots), names the leak pattern, frees memory safely and reports the cause; reads the continuous performance log (CPU and RAM by process name and agent, spikes, waste patterns, a static panel) and runs the optimize loop (alternatives benchmarked interleaved, adopted only when faster and lighter, recorded in a ledger)."
 ---
 
 # Machine memory
@@ -131,3 +131,15 @@ Done when new worktrees show `node_modules: shared` in `worktree-deps.mjs status
 - **Daily:** `node {{JSTACK_TOOLS}}/hook-report.mjs --days 1`. A day's cleanup line (processes the stop hook killed) says which agents keep leaving servers behind; tell them.
 
 Done when each watch tick has a map, and every tick at 80%+ ended with a cause and a suggestion sent to the human.
+
+## 6. CPU over time and the optimize loop
+
+`mem_map` is a snapshot. For "what was slow at 14:05", "who burned the CPU today" and "is there a cheaper way to run this", use the performance log: a collector that writes one line a minute (CPU % per process name and agent, memory, disk, lock holders), costing about 0.1% of one core and under 20 MB private. Install, queries, the watch routine and the optimize loop are in [PERF.md](PERF.md).
+
+```bash
+node {{JSTACK_TOOLS}}/perf/perf.mjs top --since 60m      # CPU by process name, mean and max (100% = one core)
+node {{JSTACK_TOOLS}}/perf/perf.mjs at "<time>"          # what ran during a freeze
+node {{JSTACK_TOOLS}}/perf/perf.mjs panel --open         # the panel
+```
+
+Done when a slow moment has a named cause from the log, and each day's top consumers have a ledger line.
