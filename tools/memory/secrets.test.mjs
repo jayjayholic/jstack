@@ -51,3 +51,27 @@ test('scanFields names the field, not the value', () => {
   const hits = scanFields({ title: 'ok', anchors: [{ path: 'src/a.ts' }], body: 'leaked ' + CANARIES['github-token'].text })
   assert.deepEqual(hits, [{ field: 'body', detector: 'github-token' }])
 })
+
+// gitleaks reports each secret once; the value can appear many times. Rows are injected so the test runs without it.
+const opaque = () => 'zq' + rnd(30, 'abcdefghijklmnopqrstuvwxyz')
+
+test('gitleaks rows: every occurrence of the reported secret is redacted, not only the first', () => {
+  const v = opaque()
+  const text = `first ${v} then again ${v} and once more:${v}`
+  const r = redact(text, { gitleaksRows: [{ RuleID: 'generic-api-key', Secret: v }] })
+  assert.equal(r.count, 3)
+  assert.ok(!r.text.includes(v))
+  assert.equal(r.text.split('[REDACTED:gitleaks:generic-api-key]').length, 4)
+})
+
+test('negative: a gitleaks row whose secret is not in the text, or is empty, adds no hit', () => {
+  assert.deepEqual(scan('nothing to see here', { gitleaksRows: [{ RuleID: 'x', Secret: opaque() }] }), [])
+  assert.deepEqual(scan('nothing to see here', { gitleaksRows: [{ RuleID: 'x', Secret: '' }, { RuleID: 'y' }, null] }), [])
+})
+
+test('negative: two rows reporting the same secret do not double-count overlapping hits', () => {
+  const v = opaque()
+  const r = redact(`${v} ${v}`, { gitleaksRows: [{ RuleID: 'a', Secret: v }, { RuleID: 'b', Secret: v }] })
+  assert.equal(r.count, 2)
+  assert.ok(!r.text.includes(v))
+})

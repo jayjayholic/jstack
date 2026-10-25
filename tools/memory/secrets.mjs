@@ -42,16 +42,28 @@ function gitleaksHits(text) {
     const out = path.join(dir, 'report.json')
     fs.writeFileSync(src, text)
     spawnSync('gitleaks', ['detect', '--no-git', '--source', src, '--report-format', 'json', '--report-path', out, '--no-banner'], { encoding: 'utf8' })
-    const rows = JSON.parse(fs.readFileSync(out, 'utf8') || '[]')
-    return rows.map(r => {
-      const idx = r.Secret ? text.indexOf(r.Secret) : -1
-      return idx < 0 ? null : { detector: `gitleaks:${r.RuleID}`, index: idx, length: r.Secret.length }
-    }).filter(Boolean)
+    return hitsFromGitleaksRows(text, JSON.parse(fs.readFileSync(out, 'utf8') || '[]'))
   } catch { return [] } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
+// gitleaks reports a secret once per finding, but the same value can sit in the text many times (a token pasted
+// twice, a log line repeated). Every occurrence becomes a hit, or redact() would leave the copies in clear text.
+function hitsFromGitleaksRows(text, rows) {
+  const hits = []
+  const seen = new Set()
+  for (const r of rows ?? []) {
+    const secret = typeof r?.Secret === 'string' ? r.Secret : ''
+    if (!secret || seen.has(secret)) continue
+    seen.add(secret)
+    for (let idx = text.indexOf(secret); idx >= 0; idx = text.indexOf(secret, idx + secret.length)) {
+      hits.push({ detector: `gitleaks:${r.RuleID ?? 'unknown'}`, index: idx, length: secret.length })
+    }
+  }
+  return hits
+}
+
 // Every hit as { detector, index, length }; overlapping hits are merged (first detector wins).
-function scan(text, { gitleaks = false } = {}) {
+function scan(text, { gitleaks = false, gitleaksRows = null } = {}) {
   if (typeof text !== 'string' || !text) return []
   const hits = []
   for (const d of DETECTORS) {
@@ -67,7 +79,8 @@ function scan(text, { gitleaks = false } = {}) {
       if (m[0].length === 0) d.re.lastIndex++
     }
   }
-  if (gitleaks) hits.push(...gitleaksHits(text))
+  if (gitleaksRows) hits.push(...hitsFromGitleaksRows(text, gitleaksRows))
+  else if (gitleaks) hits.push(...gitleaksHits(text))
   hits.sort((a, b) => a.index - b.index || b.length - a.length)
   const merged = []
   for (const h of hits) {
@@ -103,4 +116,4 @@ function scanFields(obj, prefix = '') {
   return found
 }
 
-export { scan, redact, scanFields, shannon, DETECTORS }
+export { scan, redact, scanFields, shannon, hitsFromGitleaksRows, DETECTORS }
