@@ -111,6 +111,16 @@
         "docs/guide.md": "# Guide\n\n[site](https://example.com) and [top](#guide)\n\n```md\n[x](missing.md)\n```\n"
       },
       "expect": []
+    },
+    {
+      "id": "link-syntax-in-inline-code",
+      "rule": "agent.md-dead-link",
+      "note": "a regex shown in inline code looks like a link but is not one",
+      "files": {
+        "docs/scan.md": "Run `rg -n \"from ['\\\"](@scope/sdk|openai)\"` over the repo.\n"
+      },
+      "kind": "near-miss",
+      "expect": []
     }
   ]
 }

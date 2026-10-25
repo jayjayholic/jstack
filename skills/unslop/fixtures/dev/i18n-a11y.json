@@ -194,6 +194,16 @@
           "line": 1
         }
       ]
+    },
+    {
+      "id": "code-language-label",
+      "rule": "i18n.hardcoded-locale-param",
+      "note": "a programming-language label, not a human language",
+      "files": {
+        "src/symbols.ts": "const out = { name, start, lang: 'py' }\nexport { out }\n"
+      },
+      "kind": "near-miss",
+      "expect": []
     }
   ]
 }

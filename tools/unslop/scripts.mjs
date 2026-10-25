@@ -109,7 +109,7 @@ const SCRIPTS = {
       f.text.split('\n').forEach((l, i) => {
         if (/^\s*(?:```|~~~)/.test(l)) { fenced = !fenced; return }
         if (fenced || (f.added && !f.added.has(i + 1))) return
-        for (const m of l.matchAll(LINK)) {
+        for (const m of l.replace(/`[^`]*`/g, '').matchAll(LINK)) {
           const raw = m[1]
           if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('#') || raw.startsWith('/') || raw.includes('{{')) continue
           let target = raw.split('#')[0].split('?')[0]

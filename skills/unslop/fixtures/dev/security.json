@@ -176,6 +176,16 @@
         "src/api/math.ts": "const area = (a, b) => (a + b) * 2\nexport { area }\n"
       },
       "expect": []
+    },
+    {
+      "id": "literal-terminated-group",
+      "rule": "sec.nested-quantifier",
+      "note": "each repetition ends with a literal the inner class cannot match, so there is one way to split",
+      "files": {
+        "src/secrets.ts": "const RE = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/g\nexport { RE }\n"
+      },
+      "kind": "near-miss",
+      "expect": []
     }
   ]
 }
