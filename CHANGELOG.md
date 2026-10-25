@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25: worktrees share their dependencies, and removing one no longer eats the store
+
+**What:**
+- `tools/worktree-deps.mjs`: `new-worktree.sh --install` now links `node_modules` (root and every workspace's) to a shared store, one per set of dependency inputs (dependency fields of every `package.json`, lockfiles, `bunfig.toml`, `.npmrc`, `patches/`), built once under a lock. Workspace packages always link to the worktree's own sources. A branch that changed a library gets its own install; generated code (`JSTACK_CODEGEN_REUSE_PATHS`) is shared the same way, keyed by the git trees of `JSTACK_CODEGEN_INPUTS`. Commands: `deps`, `generated`, `status`, `plan`, `detach`, `prune`, `remove`. Settings `JSTACK_SHARED_DEPS` (1) and `JSTACK_STORE_INSTALL_CMD`.
+- `remove` unlinks every junction before `git worktree remove`; `clean-worktrees.sh` uses it. The guard hook now denies a bare `git worktree remove` and `robocopy ... /MIR` and points to it, and the install denial points to `worktree-deps.mjs deps`.
+- `machine-memory` gets step 3c (share, don't copy: the rule, how it stays correct, a measured table of what each worktree holds and what to share or keep); the train skill and worker clause carry the hard rules.
+
+**Why:** with about ten agents, every new worktree ran its own install: 167,019 files, 10 to 12 minutes, 4.6 to 5.7 GB more file cache each, and the cache sat at 10 to 16 GB. Linked, a new worktree takes 13 to 20 seconds and 27 MB of cache. Then the first cleanup test with `git worktree remove` (Git for Windows 2.40) walked straight through a junction and emptied part of the shared store; `robocopy /MIR` did the same in a test. `rd /s /q`, `rm -rf` and Node's `rmSync` don't. So removal has a helper and a hook now. Unverified: npm and pnpm layouts (only Bun's hoisted one ran), and Linux/macOS, where the junctions become plain symlinks. The 32 GB laptop says it hasn't felt this light since the day it was unboxed.
+
 ## 2026-10-25: guard hooks, a READY gate, and a report on whether either hurts
 
 **What:**

@@ -166,7 +166,10 @@ tools/
   run-capped.ps1         Windows Job Object: the whole build process tree gets a RAM ceiling, past it the build dies, not the PC
   coordinator-build.sh   one build at a time, waits for free RAM
   train.sh               assemble / build / ship a train, merges only when every check is green
-  new-worktree.sh        one worktree per agent, like a fresh clone (copies local env files, reuses generated code from a sibling)
+  new-worktree.sh        one worktree per agent, like a fresh clone (copies local env files, links shared dependencies)
+  worktree-deps.mjs      worktrees share node_modules and generated code through junctions into one store per lockfile;
+                         an own install only when a branch changed a library; `remove` deletes a worktree without
+                         following the junctions (tests: node --test tools/worktree-deps.test.mjs)
   clean-worktrees.sh     removes finished worktrees safely (merged, clean, idle, nothing running inside); --dry-run first
   mem-map.ps1            the detective: where the RAM went, by PRIVATE bytes, per agent (worktree > branch > .agent),
                          plus WSL/Docker, orphans, dev ports, lock slots; -Watch samples to a CSV, -Kill orphans cleans up

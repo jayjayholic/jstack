@@ -33,7 +33,7 @@ Done when you can name the top three holders of memory, each with its agent and 
 | Test servers (2 GB+ each, several at once) | `next-server`, ports 3000-3200 | One at a time after `server_wait`, stopped by whoever started it. |
 | WSL VM keeps memory after containers stop | `vmmemWSL` much bigger than the containers | Stop the stack, then drop caches in the VM; set `autoMemoryReclaim=dropCache` and a `memory=` cap in `.wslconfig` (https://learn.microsoft.com/en-us/windows/wsl/wsl-config). |
 | Orphans (we found 131 greps, `tail -f`, "stopped" A/B loops) | orphan candidates | `mem_map -Kill orphans -DryRun`, then without `-DryRun`. |
-| File cache resident during installs, scans or worktree deletion | `!! system file cache`, processes small | One install at a time (`mem_guard` first), prune dead worktrees in small batches; when it won't trim, empty it (step 3b). |
+| File cache resident during installs, scans or worktree deletion | `!! system file cache`, processes small | Shared dependencies instead of an install per worktree (step 3c), one install at a time (`mem_guard` first), prune dead worktrees in small batches; when it won't trim, empty it (step 3b). |
 | Nonpaged pool above 1.5 GB | `!! nonpaged pool` | A driver leak, so report it to the human: PoolMon sorted by bytes names the tag (https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/using-poolmon-to-find-a-kernel-mode-memory-leak). |
 
 Done when every top holder from step 1 has a pattern and a fix, or is the human's own app.
@@ -54,10 +54,41 @@ The system file cache is supposed to sit in standby and give memory back under p
 - **Getting RAMMap:** download it from `https://live.sysinternals.com/RAMMap64.exe` into the tools folder (for example `tools/rammap/`), then check its Authenticode signature is valid and signed by Microsoft before the first run (`Get-AuthenticodeSignature <exe>`: `Status` must be `Valid` and the signer `Microsoft Corporation`). Keep it there; don't re-download every time.
 - **Run it** from PowerShell: `Start-Process <tools>/rammap/RAMMap64.exe -ArgumentList '-accepteula','-Ew' -Verb RunAs`, then `mem_map` again to confirm the cache line dropped.
 - **Mass worktree removal refills the cache.** Deleting hundreds of worktrees reads and touches every file in them, and the cache fills right back up. Remove them in small batches (say 20 at a time), check `mem_map` between batches, and empty the cache again if it climbs.
-- **Long paths:** on Windows `git worktree remove` can fail with "Filename too long" in deep `node_modules`. Turn on `git config --global core.longpaths true` (or pass `-c core.longpaths=true`), or delete the folder with `robocopy <empty dir> <worktree> /MIR` and then `rmdir`, followed by `git worktree prune`.
-- **Prevention:** remove each worktree when its branch merges (the train's hygiene step), run one install at a time, and, if the human agrees, add a Defender exclusion for the dev folder so fresh installs aren't scanned file by file. The exclusion is the human's call: it trades some protection for RAM and speed.
+- **Remove worktrees only with `node {{JSTACK_TOOLS}}/worktree-deps.mjs remove <path> [--delete-branch]`.** It unlinks every junction, then runs `git worktree remove` with `core.longpaths`, and falls back to a plain delete. Never a bare `git worktree remove` or `robocopy <empty> <wt> /MIR`: both followed NTFS junctions and deleted the shared stores (step 3c). `rd /s /q` and `rm -rf` don't follow them.
+- **Prevention:** worktrees share dependencies (step 3c), remove each worktree when its branch merges (the train's hygiene step), and, if the human agrees, add a Defender exclusion for the dev folder so fresh files aren't scanned one by one. The exclusion is the human's call: it trades some protection for RAM and speed.
 
 Done when the cache line in `mem_map` is back down, or the human has said no to the UAC prompt.
+
+## 3c. Share, don't copy (worktrees)
+
+The cache kept refilling because every worktree made its own copy of what it could have shared. One `bun install` wrote 167,019 files (2.69 GB apparent, hardlinked from the bun cache), took 10-12 minutes and added 4.6-5.7 GB of file cache, with about 10 agents doing it in turn.
+
+**Hard rule: agents never run a plain install in a worktree.** `new-worktree.sh --install` (or `node {{JSTACK_TOOLS}}/worktree-deps.mjs deps` in an existing one) decides: shared by default, an own install only when the branch adds, removes or updates a library (a dependency field of any `package.json`, the lockfile, `bunfig.toml`, `.npmrc`, `patches/`, compared with the branch's merge-base). Generated code works the same way: `worktree-deps.mjs generated` links it unless the codegen inputs (`JSTACK_CODEGEN_INPUTS`) have uncommitted edits. The guard hook denies a bare install and points to the helper.
+
+How it stays correct:
+- A linked `node_modules` is a real folder of directory junctions (no admin, no Developer Mode; real symlinks failed with EPERM), one per entry, into a store keyed by the dependency inputs. Workspace packages always point to the worktree's OWN sources, so editing a package in worktree A never reaches worktree B (checked by resolving it from both).
+- Node, TypeScript and Bun resolve the real path, so dependencies resolve inside the store and stay single copies. The typecheck passed in a linked worktree.
+- Writable caches (`.cache`, `.vite`) stay per worktree; codegen detaches the shared folder before writing.
+- Turbopack resolves nothing outside its root, so a Next.js app widens `turbopack.root` to the folder holding both the worktree and the store when `node_modules/next` resolves outside the project.
+- A plain `bun install` over a linked folder with an unchanged lockfile is a no-op; with a changed dependency bun replaced that one junction with a real folder and left the store alone (Bun 1.4.3). Still, use the helper.
+
+Measured (Windows 11, 32 GB, other agents running):
+
+| Item, per worktree | Before | After | Decision and why |
+|---|---|---|---|
+| `node_modules` | 167k files, 10-12 min, +4.6-5.7 GB cache, -0.56 GB disk | ~1,100 junctions, 13-20 s, +27 MB cache, -0.03 GB disk | **Share** by dependency hash; own install only when the branch changed a dependency |
+| Workspace `node_modules` | none on a hoisted lockfile | linked with the root | **Share**, same key |
+| Generated ORM client (`.generated`) | 68 MB, 1,067 files; regenerating needs the DB | one junction | **Share** by git tree of the codegen inputs (schema + lockfile, which pins the generator version); own when they're edited |
+| `.next` | 2.0 GB, 29k files | unchanged | **Keep per worktree**: that branch's build output, cache keyed by project path; delete it with the worktree |
+| `tsconfig.tsbuildinfo` | 5.8 MB | unchanged | **Keep**: incremental state of that branch's sources |
+| Generated docs site | 15 MB, 121 files, only where built | unchanged | **Keep**: generated from that branch, built on demand |
+| Env files, `.vercel` | 5 KB, 10 KB | copied | **Keep copying**: a tool that edits one (e.g. `dotenvx set`) must not rewrite every worktree's file, and they're tiny |
+| Playwright browsers | 708 MB once in `%LOCALAPPDATA%\ms-playwright` | | Already shared (global) |
+| bun / npm caches | global (`~/.bun/install/cache`, 16,947 entries) | | Already shared; stores hardlink from it |
+| Python venvs | none in worktrees (services run in Docker) | | n/a |
+| Turning an existing own install into a link | | 26 min, deleting 167k files | Don't convert old worktrees; remove them |
+
+Done when new worktrees show `node_modules: shared` in `worktree-deps.mjs status` and installs in `mem_map` happen only for branches that changed a dependency.
 
 ## 4. Rules for every agent
 
@@ -66,6 +97,7 @@ Done when the cache line in `mem_map` is back down, or the human has said no to 
 - Run one server at a time, after `server_wait {{MIN_FREE_GB}}`, and stop it after the test.
 - Kill everything you start (servers, `tail -f`, loops, browsers) before you report. Your agent row in `mem_map` should be empty.
 - Before any other heavy step (an install, a big script), run `mem_guard [gb]`.
+- Never a plain install in a worktree, and never a bare `git worktree remove`: use `worktree-deps.mjs` (`deps`, `generated`, `remove`), step 3c.
 - Search with the Grep and Glob tools, `git grep` or LSP. Never run a recursive grep/find/du over the repo root, the worktrees folder or `node_modules`.
 - Where the jstack guard hooks are on (`~/.jstack/guards.json`), the typecheck, build, install and scan rules above are enforced: the denial says how to retry. When a subagent stops, the hook kills the processes it left in its worktree (only ones started after its first command, never the main checkout). That's a seatbelt, not permission to leave things running.
 
