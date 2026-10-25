@@ -14,7 +14,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-const SHORT_TOOLS = new Set(['grep', 'rg', 'find', 'tail', 'sleep', 'tsc', 'tsgo', 'esbuild'])
+const SHORT_TOOLS = new Set(['grep', 'rg', 'find', 'xargs', 'tail', 'sleep', 'tsc', 'tsgo', 'esbuild'])
 const SERVER_TOOLS = new Set(['node', 'bun'])
 const BROWSERS = new Set(['chrome-headless-shell', 'chrome', 'msedge', 'chromium'])
 const PROTECT_RE = /claude|@anthropic|anthropic-ai|[\\/]mcp|mcp-server|modelcontextprotocol|\bmcp\b|docker|vmmem|wsl|harness-eval|eval-env|mem-map|idle-reaper|node-memory-watch|ram-clean|heavy-lock|run-capped|collect\.mjs|perf\.mjs|jstack-|vscode|code\.exe|cursor|windsurf|language-?server|tsserver|typingsInstaller/i

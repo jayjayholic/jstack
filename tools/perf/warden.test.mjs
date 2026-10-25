@@ -27,6 +27,13 @@ test('kills an orphaned grep past the short limit, even while it burns CPU', () 
   assert.deepEqual(pids(decide([proc(10, 'grep.exe', { cpuNow: 98, ageMin: 70, wt: 'app:grep' })])), [10])
 })
 
+test('kills an orphaned xargs so it stops launching the next grep batch', () => {
+  // Git Bash children report a fork stub as parent, so xargs and its grep both look orphaned while xargs keeps spawning
+  assert.deepEqual(pids(decide([proc(14, 'xargs.exe', { ageMin: 160, cmd: 'xargs grep -hoiE x' })])), [14])
+  assert.deepEqual(decide([proc(15, 'xargs.exe', { ageMin: 9 })]), [], 'younger than 10 min')
+  assert.deepEqual(decide([proc(16, 'xargs.exe', { ppid: 0 })]), [], 'no parent id at all')
+})
+
 test('leaves processes whose parent is alive, and young orphans', () => {
   const parent = { pid: 5, ppid: 0, create: '1', name: 'bash.exe', kind: 'bash', wt: WT, cmd: 'bash', ageMin: 200, cpuNow: 0, priv: 0 }
   const child = proc(11, 'grep.exe', { ppid: 5, create: '2' })
