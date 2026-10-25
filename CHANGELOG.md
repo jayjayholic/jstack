@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25 (late): a completeness pass over the packs
+
+**What:**
+- 8 more pre-flight questions and 27 more red flags, each with a confirm recipe. 7 are static with golden fixtures (dev + holdout): raw palette classes, a literal language passed to a call, checks that can't fail the job (`continue-on-error`, `|| true`), tests on a fixed localhost port, nested regex quantifiers, Markdown links to missing repo paths (new `md-dead-link` script check). `ci.skip-hooks` now also catches `gh pr merge --admin`, and the prompt-language rule catches "in Brazilian Portuguese" and "in pt-BR".
+- `classify.mjs`: each pack learns the words people use when they report the failure ("slow", "stuck", "cursor", "deep link", "leak", "twice", "credits"), and agent-discipline joins eval-testing as a companion.
+- The sources the port dropped from the research tables are back (viewport units, dialog Esc order, CLS, hydration, merge strategies, hook bypass, `dotenvx --strict`, fail-open).
+- `worktree-deps.mjs`: no product-specific codegen folders by default. Packs say "user", not "member".
+
+**Why:** I checked the 221 mined failures one by one. Each one should get a pre-flight question that would have caught it and a red flag that `/unslop` can prove. 174 had both. 12 are process failures, like a commit made before approval, that no diff can show, so a question is the right check for them. The other 35 had no question, no provable flag, or neither. Now they have both. On those same failure texts, the classifier picked the right pack for 55 of 221. Now it picks it for 114 and lists it as a weak hit for 90 more. Those numbers come from the cases the words were tuned on, so treat them as an upper bound.
+
 ## 2026-10-25 (night): think before, prove after: /preflight, /unslop, 16 domain packs and project memory
 
 **What:**
