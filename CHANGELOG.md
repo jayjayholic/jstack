@@ -2,6 +2,24 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26: six security fixes, a front desk for /unslop, and the pages that explain and measure it
+
+**What:**
+- Security, each with regression tests:
+  - `memory/anchors.mjs`: an anchor's commit must be 7-40 hex characters that name a real commit (`rev-parse --verify --end-of-options <c>^{commit}`), every git call puts `--end-of-options` before revisions, and anchor paths that are absolute, contain `..` or start with `-` are refused by `validate()`, `makeAnchor()` and `resolveAnchor()`.
+  - `memory/secrets.mjs`: every occurrence of a gitleaks-reported secret is redacted, not only the first.
+  - `unslop/scan.mjs`: memory waivers expire like `unslop.json` ones, and a waiver on a high-severity rule needs an expiry. In diff mode config and memory suppressions come from the merge-base; what the branch adds is reported as `unslop.config-changed` / `unslop.new-waiver` (high) and `unslop.new-suppression` (at the hidden rule's severity).
+  - `unslop/gate.mjs`: mode and thresholds come from the base's config, "off" in a config reads as warn, only `--mode off` / `JSTACK_READY_UNSLOP=off` turns it off, and a config change in the diff blocks until `--accept-config-change` (or `JSTACK_UNSLOP_ACCEPT_CONFIG=1`).
+  - `unslop/ledger.mjs`: static proof needs a rerun by a different agent and is decided on the latest one, like every other evidence kind.
+- `/unslop` front desk (`desk.mjs`): suggests the scope (open PR, else this branch, else recent commits; full project listed, never default) with static hits, domains and estimated agent runs, runs up to the report, shows it, and asks before fixing; fixes go confirm, test red, fix, re-test.
+- `metrics.mjs`: every run leaves a before/after record in `.jstack/metrics/runs/<run>.json` (report.mjs writes it): counts per domain and rule, fingerprints, time to fix, verdicts, budgets met, and which pre-flight questions would have caught each finding and whether they were asked. `metrify.mjs` draws the trend: per domain, top recurring slop, each rule's effect and false-positive rate, the questions to start asking.
+- `explain.mjs`: a static page per run (blame, scenario, technique, cited pack sources, before/after evidence, research notes). `feedback` records verdicts (they move rule thresholds); `prefer` writes a new `preference` memory kind (short/full, mute) that later pages follow.
+- `mine.mjs` (`/unslop:retro`): fix commits plus complaint-like messages from transcripts, clustered by domain, with late-fix ratio, escapes per domain, median days to fix, and draft questions and eyes rules for uncovered clusters.
+- `adapters.mjs`: rules with `"engine": "semgrep"` or `"ast-grep"` run when the tool is installed (no shell, paths after `--`, hits cut to added lines); missing tool means "not checked" or the rule's fallback.
+- New plugin `plugins/unslop` so the side commands type as `/unslop:explain`, `/unslop:metrify`, `/unslop:retro`.
+
+**Why:** the commit-time review of the last drop flagged that the tools trusted the very branch they judge. An anchor commit like `--output=pwned.txt` made `git diff` write a file (reproduced before the fix); a branch could waive its own slop, switch rules off or set its own gate to off; expired waivers kept hiding hits; a prosecutor could rerun its own static proof and call it confirmed; and a token pasted twice was redacted once. Then the owner asked for the Claude Security plugin's front desk: suggest what fits before anything costly, report first, fix only after a yes. And for the two pages that close the loop: one that explains each finding so a human learns something, and one that shows over time whether the same slop stops coming back. Tests: 279 (251 unslop + memory, 28 hooks + worktree-deps), self-test 164 dev and 36 holdout cases at 100%, packs check green. Unverified: real semgrep and ast-grep runs (neither is installed here, the tests fake them), and the retro drafts are keyword-level, so a human edits them. Still not built: the seeded agentic eval, canary injection, the hook that denies hand edits of `.jstack/memory`. The 32 GB laptop rendered two dashboards today and asked if that counts as a build. It does not.
+
 ## 2026-10-25 (late): a completeness pass over the packs
 
 **What:**

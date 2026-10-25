@@ -1,6 +1,6 @@
 ---
 name: unslop
-description: "Use before READY on any branch (/unslop opens a menu: this PR or branch recommended, recent commits, or the full project), on a legacy folder (--full <path>), on a merged train (--train), or to learn from a confirmed finding (learn) and from recent fixes (retro). Scans, confirms each red flag with evidence a second agent reproduces, shows the report, then asks before it tests, fixes and re-tests. /unslop:explain and /unslop:metrify explain a run and chart the trend."
+description: "Use before READY on any branch (/unslop: a menu suggests this PR or branch, recent commits or the full project), on a folder (--full <path>), on a merged train (--train), or to learn from findings (learn, retro). Confirms each red flag with evidence a second agent reproduces, shows the report, then asks before it tests, fixes and re-tests."
 ---
 
 # /unslop: find the slop, prove it, fix it, remember it

@@ -115,11 +115,11 @@ Run each check and fix what fails.
 
 ## Extra: pre-flight, /unslop and project memory
 
-`skills/preflight`, `skills/unslop` and the `skills/eng-*` packs use only `{{JSTACK_TOOLS}}` and `{{INTEGRATION_BRANCH}}`. To switch them on for a project:
+`skills/preflight`, `skills/unslop`, the `skills/eng-*` packs and `plugins/unslop/skills/*` (`/unslop:explain`, `:metrify`, `:retro`) use only `{{JSTACK_TOOLS}}` and `{{INTEGRATION_BRANCH}}`. To switch them on for a project:
 
 1. `node {{JSTACK_TOOLS}}/memory/memory.mjs init` in the repo: creates `.jstack/unslop.json` (project tuning), `.jstack/budgets.json`, `.jstack/memory/entries/` and a `.jstack/.gitignore` for the local and run folders. Commit `.jstack/` except what that gitignore lists.
 2. Put the project's numbers in `.jstack/budgets.json` (each with how it's measured) and its house words in `.jstack/unslop.json` under `houseRules.bannedWords` / `jargon`. Ignore generated or vendored folders under `paths.ignore`.
-3. Run `node {{JSTACK_TOOLS}}/unslop/gate.mjs --base origin/{{INTEGRATION_BRANCH}}` once on a recent branch and read every hit. Waive the false positives with a reason (`unslop-ignore: <rule> <reason>` on the line, or a `waivers` entry with an expiry), and tell the human the hit count and how many were real.
+3. Run `node {{JSTACK_TOOLS}}/unslop/gate.mjs --base origin/{{INTEGRATION_BRANCH}}` once on a recent branch and read every hit. Waive the false positives with a reason (`unslop-ignore: <rule> <reason>` on the line, or a `waivers` entry with an expiry; high-severity waivers need one), and tell the human the hit count and how many were real. Land config and waivers in their own small PR: on a branch the scan reads them from the base, and a config change there blocks the gate until a human passes `--accept-config-change`. Commit `.jstack/metrics/runs/` with the branches that produce it (one file per run).
 4. Leave `JSTACK_READY_PREFLIGHT` and `JSTACK_READY_UNSLOP` at `warn` for at least a week of trains. Rules earn `block` from field feedback (`.jstack/local/feedback.jsonl`), not from a guess.
 
 Without `.jstack/` the skills still run, in "no project memory" mode, and ready-gate check 9 is skipped.
