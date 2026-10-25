@@ -1,0 +1,25 @@
+{
+  "projects": [
+    {
+      "name": "my-app",
+      "roots": ["C:/code/my-app"],
+      "heavyLock": {
+        "lockScript": "~/jstack-tools/heavy-lock.sh",
+        "wrappers": ["tc_run", "heavy_capped", "heavy_acquire"],
+        "suggest": {
+          "typecheck": "source ~/jstack-tools/heavy-lock.sh && tc_run \"{cmd}\"",
+          "build": "source ~/jstack-tools/heavy-lock.sh && heavy_acquire build && heavy_capped \"{cmd}\"; heavy_release",
+          "install": "source ~/jstack-tools/heavy-lock.sh && heavy_capped \"{cmd}\""
+        },
+        "extraPatterns": [{ "kind": "build", "re": "^bun\\s+run\\s+bundle(?:\\s|$)" }],
+        "note": "Optional extra line shown with every heavy-lock denial."
+      },
+      "scans": { "enabled": true, "extraRoots": [] },
+      "cleanup": {
+        "enabled": true,
+        "onStop": false,
+        "processNames": ["node", "bun", "bash", "sh", "tail", "cmd", "powershell", "pwsh"]
+      }
+    }
+  ]
+}
