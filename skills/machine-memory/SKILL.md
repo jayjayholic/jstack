@@ -33,7 +33,7 @@ Done when you can name the top three holders of memory, each with its agent and 
 | Test servers (2 GB+ each, several at once) | `next-server`, ports 3000-3200 | One at a time after `server_wait`, stopped by whoever started it. |
 | WSL VM keeps memory after containers stop | `vmmemWSL` much bigger than the containers | Stop the stack, then drop caches in the VM; set `autoMemoryReclaim=dropCache` and a `memory=` cap in `.wslconfig` (https://learn.microsoft.com/en-us/windows/wsl/wsl-config). |
 | Orphans (we found 131 greps, `tail -f`, "stopped" A/B loops) | orphan candidates | `mem_map -Kill orphans -DryRun`, then without `-DryRun`. |
-| File cache resident during installs, scans or worktree deletion | `!! system file cache`, processes small | Shared dependencies instead of an install per worktree (step 3c), one install at a time (`mem_guard` first), prune dead worktrees in small batches; when it won't trim, empty it (step 3b). |
+| File cache resident during installs, builds or worktree deletion | `!! system file cache`, processes small | Shared dependencies instead of an install per worktree (step 3c), one install at a time (`mem_guard` first), prune dead worktrees in small batches; the RAM clean empties it on its own (step 3b). Measured over one night: of 21 climbs to 14+ GB of cache, 16 had an install running, 4 only a build or typecheck, 1 only a worktree deletion, 0 a scan. Recursive scans cost about 1.2 GB plus the orphans they leave, so the scan guard is about orphans; installs are the cache problem. |
 | Nonpaged pool above 1.5 GB | `!! nonpaged pool` | A driver leak, so report it to the human: PoolMon sorted by bytes names the tag (https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/using-poolmon-to-find-a-kernel-mode-memory-leak). |
 
 Done when every top holder from step 1 has a pattern and a fix, or is the human's own app.
@@ -50,9 +50,16 @@ Done when free memory is back above what the next job needs, or what's left is t
 
 The system file cache is supposed to sit in standby and give memory back under pressure. Sometimes it stays **resident** (counted as in use) and doesn't trim, even with RAM nearly gone. We saw 16.8 GB of it after a round of `bun install`s, Defender scanning the fresh files, and deleting worktrees out of a repo that had about 368 of them. Killing agents freed nothing, because no agent was holding it.
 
-- **The fix that worked:** Sysinternals RAMMap, `RAMMap64.exe -Ew` (Empty System Working Set). It freed about 14 GB in seconds, twice. It needs admin, so it runs elevated and shows a UAC prompt; **only run it with the human there to click it**. Never try to get around UAC.
-- **Getting RAMMap:** download it from `https://live.sysinternals.com/RAMMap64.exe` into the tools folder (for example `tools/rammap/`), then check its Authenticode signature is valid and signed by Microsoft before the first run (`Get-AuthenticodeSignature <exe>`: `Status` must be `Valid` and the signer `Microsoft Corporation`). Keep it there; don't re-download every time.
-- **Run it** from PowerShell: `Start-Process <tools>/rammap/RAMMap64.exe -ArgumentList '-accepteula','-Ew' -Verb RunAs`, then `mem_map` again to confirm the cache line dropped.
+- **The fix that works:** Sysinternals RAMMap `-Ew` (empty working sets, which also trims the system cache's working set into standby). Measured: system cache 14.3 GB to 1.1 GB and available RAM 2.7 GB to 16.8 GB within 5 seconds. It refills (about 10 GB available a minute later, installs running), so it buys room for the next job; step 3c fixes the cause.
+- **Set it up once, then it's automatic:** RAMMap needs admin, so `{{JSTACK_TOOLS}}/setup-ram-clean.ps1` registers it ONCE as an on-demand scheduled task with highest privileges (the human clicks UAC that one time). After that `schtasks /Run /TN JstackRamClean` (`JSTACK_RAM_CLEAN_TASK`) runs it from any normal shell or agent, no prompt. Never try to get around UAC any other way.
+  - Download RAMMap yourself from `https://learn.microsoft.com/sysinternals/downloads/rammap` (or `https://live.sysinternals.com/RAMMap64.exe`) into a tools folder. The setup refuses a binary whose Authenticode signature isn't valid and Microsoft's.
+  - Run `powershell -ExecutionPolicy Bypass -File {{JSTACK_TOOLS}}/setup-ram-clean.ps1 -RamMap <path>\RAMMap64.exe -Watch` from an elevated PowerShell. It turns off "don't start on batteries" (an unplugged laptop otherwise never runs it). `-Watch` also adds the watcher (below) to the Startup folder.
+- **Who fires it** (all through `{{JSTACK_TOOLS}}/ram-clean.ps1`, one shared cooldown, `JSTACK_RAM_CLEAN_COOLDOWN_S`, default 300 s, so triggers never stack; every run logs before/after to `~/.jstack/ram-clean.log`):
+  - `mem_guard` (so `heavy_acquire` and `tc_run`): ONCE per call when RAM is short, then rechecks. Never in a loop.
+  - In the background after `heavy_release`, after `tc_run`, after every install `worktree-deps.mjs` runs, and after `worktree-deps.mjs remove`: the moments the cache fills. Skipped while available RAM is above `JSTACK_RAM_CLEAN_SKIP_ABOVE_PCT` (40%).
+  - The watcher, `ram-clean.ps1 -Watch`: every 60 s, only while (available is under 12% OR the resident system cache is over 10 GB) AND real work runs (3+ node/bun process trees or a held lock). An idle machine never triggers it.
+  - No task, not Windows, or `JSTACK_RAM_CLEAN_TASK=` empty: every trigger is a silent no-op.
+- **Measure "available", not the free list.** The free list sits near 0 under load and `-Ew` never raises it (trimmed pages go to modified, then standby). Available (free + standby) is what the guards read and what the clean moves.
 - **Mass worktree removal refills the cache.** Deleting hundreds of worktrees reads and touches every file in them, and the cache fills right back up. Remove them in small batches (say 20 at a time), check `mem_map` between batches, and empty the cache again if it climbs.
 - **Remove worktrees only with `node {{JSTACK_TOOLS}}/worktree-deps.mjs remove <path> [--delete-branch]`.** It unlinks every junction, then runs `git worktree remove` with `core.longpaths`, and falls back to a plain delete. Never a bare `git worktree remove` or `robocopy <empty> <wt> /MIR`: both followed NTFS junctions and deleted the shared stores (step 3c). `rd /s /q` and `rm -rf` don't follow them.
 - **Prevention:** worktrees share dependencies (step 3c), remove each worktree when its branch merges (the train's hygiene step), and, if the human agrees, add a Defender exclusion for the dev folder so fresh files aren't scanned one by one. The exclusion is the human's call: it trades some protection for RAM and speed.
@@ -63,13 +70,16 @@ Done when the cache line in `mem_map` is back down, or the human has said no to 
 
 The cache kept refilling because every worktree made its own copy of what it could have shared. One `bun install` wrote 167,019 files (2.69 GB apparent, hardlinked from the bun cache), took 10-12 minutes and added 4.6-5.7 GB of file cache, with about 10 agents doing it in turn.
 
-**Hard rule: agents never run a plain install in a worktree.** `new-worktree.sh --install` (or `node {{JSTACK_TOOLS}}/worktree-deps.mjs deps` in an existing one) decides: shared by default, an own install only when the branch adds, removes or updates a library (a dependency field of any `package.json`, the lockfile, `bunfig.toml`, `.npmrc`, `patches/`, compared with the branch's merge-base). Generated code works the same way: `worktree-deps.mjs generated` links it unless the codegen inputs (`JSTACK_CODEGEN_INPUTS`) have uncommitted edits. The guard hook denies a bare install and points to the helper.
+**Share by default; each agent decides when it needs its own.** Nothing forces a private copy. An agent that needs one (it changed the schema and wants its own generated code, it's testing a dependency upgrade) says so with one command, and the tooling keeps it safe: `node {{JSTACK_TOOLS}}/worktree-deps.mjs own deps` or `own generated` installs or copies into the worktree, only ever READS the shared store, and every later `deps`/`generated` run keeps the choice until `share deps` or `share generated`. `status` prints what the worktree owns by choice. Build output (`.next`, `tsbuildinfo`) is the branch's own by nature, not a copy, so there is nothing to opt out of.
+
+**Agents never run a plain install in a worktree.** `new-worktree.sh --install` (or `node {{JSTACK_TOOLS}}/worktree-deps.mjs deps` in an existing one) decides: shared by default, an own install when the agent chose `own deps` or the branch adds, removes or updates a library (a dependency field of any `package.json`, the lockfile, `bunfig.toml`, `.npmrc`, `patches/`, compared with the branch's merge-base). Generated code works the same way: `worktree-deps.mjs generated` links it unless the codegen inputs (`JSTACK_CODEGEN_INPUTS`) have uncommitted edits. The guard hook denies a bare install and points to the helper.
 
 How it stays correct:
 - A linked `node_modules` is a real folder of directory junctions (no admin, no Developer Mode; real symlinks failed with EPERM), one per entry, into a store keyed by the dependency inputs. Workspace packages always point to the worktree's OWN sources, so editing a package in worktree A never reaches worktree B (checked by resolving it from both).
 - Node, TypeScript and Bun resolve the real path, so dependencies resolve inside the store and stay single copies. The typecheck passed in a linked worktree.
 - Writable caches (`.cache`, `.vite`) stay per worktree; codegen detaches the shared folder before writing.
 - Turbopack resolves nothing outside its root, so a Next.js app widens `turbopack.root` to the folder holding both the worktree and the store when `node_modules/next` resolves outside the project.
+- A linked generated folder may not load in a production build even when the typecheck and tests pass with it. Before a build, check it loads; if it doesn't, `worktree-deps.mjs own generated` gives that worktree a real copy.
 - A plain `bun install` over a linked folder with an unchanged lockfile is a no-op; with a changed dependency bun replaced that one junction with a real folder and left the store alone (Bun 1.4.3). Still, use the helper.
 
 Measured (Windows 11, 32 GB, other agents running):
@@ -82,8 +92,11 @@ Measured (Windows 11, 32 GB, other agents running):
 | `.next` | 2.0 GB, 29k files | unchanged | **Keep per worktree**: that branch's build output, cache keyed by project path; delete it with the worktree |
 | `tsconfig.tsbuildinfo` | 5.8 MB | unchanged | **Keep**: incremental state of that branch's sources |
 | Generated docs site | 15 MB, 121 files, only where built | unchanged | **Keep**: generated from that branch, built on demand |
-| Env files, `.vercel` | 5 KB, 10 KB | copied | **Keep copying**: a tool that edits one (e.g. `dotenvx set`) must not rewrite every worktree's file, and they're tiny |
-| Playwright browsers | 708 MB once in `%LOCALAPPDATA%\ms-playwright` | | Already shared (global) |
+| Env files, `.vercel` | 5 KB, 10 KB | copied | **Copy**: nothing to gain (kilobytes, no cache), file symlinks need admin or Developer Mode on Windows, and a hardlink silently splits when a tool rewrites the file. A copy that drifts is at least visible |
+| Playwright browsers | 708 MB once in `%LOCALAPPDATA%\ms-playwright` | | Already shared (global). Never set `PLAYWRIGHT_BROWSERS_PATH=0`: that puts a copy inside each `node_modules` |
+| ORM engines (Prisma and friends) | inside `node_modules` | | Shared with the store; a JS-only engine has no binary at all |
+| Test database | one container for the machine | | **Share the container**, give each agent its own database or schema in it (a suite that truncates tables must not hit another agent's run). A container per agent costs 0.3 to 1 GB each for nothing |
+| Turbo or task-runner cache | none found in 70 worktrees | | When used: one cache dir for all (`TURBO_CACHE_DIR`), it's keyed by content hash. UNVERIFIED with concurrent writers |
 | bun / npm caches | global (`~/.bun/install/cache`, 16,947 entries) | | Already shared; stores hardlink from it |
 | Python venvs | none in worktrees (services run in Docker) | | n/a |
 | Turning an existing own install into a link | | 26 min, deleting 167k files | Don't convert old worktrees; remove them |
@@ -104,6 +117,8 @@ Done when new worktrees show `node_modules: shared` in `worktree-deps.mjs status
 ## 5. Orchestrator duty
 
 - **Before each build and on every watch tick:** run `mem_map`. At 80% used or more, diagnose with steps 1-2 without waiting to be asked, and tell the human the cause and a suggestion in one or two lines.
+- **Cache resident on a watch tick? Free it, don't ask:** run `powershell -File {{JSTACK_TOOLS}}/ram-clean.ps1 -Reason watch` (the scheduled task, no UAC) and report its before/after line. Waiting for a human to click something at 3 a.m. is how the machine sat at 2% free.
+- **No optional stacks during a train build:** don't start an eval or demo container stack while a build holds the slot; start it after `heavy_release`.
 - **For the whole train:** keep one sampler running, `mem_map -Watch -Every 30`, started detached (`Start-Process powershell -WindowStyle Hidden ...`). It logs one CSV row per process per tick, plus `_machine` (used MB, commit MB, used %), `_syscache` and the WSL VM. After a spike, `mem_map -Summary` says which agent peaked and when.
 - **Lock knobs:**
   - `JSTACK_HEAVY_MIN_AVAIL_GB` (12): free RAM a build waits for once it holds the slot.

@@ -96,6 +96,8 @@ What it caught in one day:
 - 131 orphaned `grep`s;
 - the Windows file cache holding 15.8 GB resident during two `bun install`s, while every agent process together held under 2 GB.
 
+That last one kept coming back, and the fix (RAMMap) needed me to click a UAC prompt. Now `setup-ram-clean.ps1` registers it once as a scheduled task, and the guards fire it themselves: once when a build or typecheck is waiting for RAM, after every build, typecheck, install and worktree removal, and from a watcher when the cache gets huge while agents work. One run took the cache from 14.3 GB to 1.1 GB and free RAM from 2.7 to 16.8 GB in five seconds. The laptop made a noise I can only describe as a sigh.
+
 Now builds and typecheck lanes wait for free RAM (12 and 10 GB by default) before they start, and give up after 15 minutes so nothing hangs forever. The orchestrator also keeps a sampler running (`mem_map -Watch`), so after a spike `mem_map -Summary` tells you whose fault it was. The laptop still has fewer friends than the build has workers, but at least now it knows their names.
 
 ## How a train works
@@ -168,8 +170,12 @@ tools/
   train.sh               assemble / build / ship a train, merges only when every check is green
   new-worktree.sh        one worktree per agent, like a fresh clone (copies local env files, links shared dependencies)
   worktree-deps.mjs      worktrees share node_modules and generated code through junctions into one store per lockfile;
-                         an own install only when a branch changed a library; `remove` deletes a worktree without
-                         following the junctions (tests: node --test tools/worktree-deps.test.mjs)
+                         an own install when a branch changed a library or the agent asked for it (`own deps|generated`,
+                         back with `share`); `remove` deletes a worktree without following the junctions
+                         (tests: node --test tools/worktree-deps.test.mjs)
+  ram-clean.ps1          empties the Windows working sets through a scheduled task: once per guard wait, after builds,
+                         typechecks, installs and worktree removals, and from a 60 s watcher; one shared 5 min cooldown
+  setup-ram-clean.ps1    one-time, elevated: registers that task (RAMMap from Sysinternals, signature checked)
   clean-worktrees.sh     removes finished worktrees safely (merged, clean, idle, nothing running inside); --dry-run first
   mem-map.ps1            the detective: where the RAM went, by PRIVATE bytes, per agent (worktree > branch > .agent),
                          plus WSL/Docker, orphans, dev ports, lock slots; -Watch samples to a CSV, -Kill orphans cleans up
