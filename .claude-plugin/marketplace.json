@@ -30,6 +30,17 @@
         "usage",
         "auto-switch"
       ]
+    },
+    {
+      "name": "unslop",
+      "source": "./plugins/unslop",
+      "description": "/unslop:explain (why each finding matters, with sources and before/after evidence), /unslop:metrify (does the slop stop recurring?), /unslop:retro (what escaped and which question would have caught it). Uses the jstack tools.",
+      "category": "development-workflow",
+      "tags": [
+        "code-quality",
+        "metrics",
+        "review"
+      ]
     }
   ]
 }

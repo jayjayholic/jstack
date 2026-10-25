@@ -1,6 +1,6 @@
 ---
 name: unslop
-description: "Use before READY on any branch (/unslop), on a legacy folder (/unslop --full <path>), on a merged train (--train), or to learn from a confirmed finding (learn) and from recent fixes (retro). Scans the diff against the domain packs, confirms each red flag with evidence a second agent reproduces, then tests, fixes, re-tests and records it."
+description: "Use before READY on any branch (/unslop opens a menu: this PR or branch recommended, recent commits, or the full project), on a legacy folder (--full <path>), on a merged train (--train), or to learn from a confirmed finding (learn) and from recent fixes (retro). Scans, confirms each red flag with evidence a second agent reproduces, shows the report, then asks before it tests, fixes and re-tests. /unslop:explain and /unslop:metrify explain a run and chart the trend."
 ---
 
 # /unslop: find the slop, prove it, fix it, remember it
@@ -9,17 +9,31 @@ A red flag is a hypothesis. Only a reproduced failure becomes a finding: a faili
 
 You are the **orchestrator**. You never judge a candidate yourself: eyes agents find, prosecutors build evidence, skeptics try to knock it down. Tools live in `{{JSTACK_TOOLS}}/unslop/` and `{{JSTACK_TOOLS}}/memory/`.
 
+## Front desk (bare `/unslop`)
+
+With no arguments, ask before spending anything:
+
+1. `node {{JSTACK_TOOLS}}/unslop/desk.mjs --base origin/{{INTEGRATION_BRANCH}}` lists the scopes with what each would scan (commits, files, static hits, domains, estimated agent runs) and the recommended one: **this PR** when one is open, else **this branch** (its commits plus uncommitted work), else **the last N commits**. **Full project** is always listed with its file count and never the default.
+2. Show it as one menu (AskUserQuestion when the harness has it, else a numbered list): the recommended scope first and labeled "(recommended)", then the others, then "Explain the last run" (`/unslop:explain`) and "Show the trend" (`/unslop:metrify`). One question, no follow-ups unless the answer is ambiguous.
+3. Run the pipeline below on the chosen scope **up to the report**: scan, confirm, `report.mjs`. Show the report (open it, never only a path) with the one-line counts.
+4. Then ask once: fix the confirmed findings (all, pick some, or none)? Only on a yes, for each one: **confirm** it is still red on HEAD, **test** red (step 4), **fix** (steps 5-6), **re-test** (step 7), record (step 8). A fix that needs the owner (UI design, outward actions, data deletion) stops at propose either way.
+
+Explicit flags skip the menu: `/unslop --base <ref>` (or `--full <path>`, `--domain`, `--train`) runs that scope straight away, and `--fix` means the human already said yes to fixing.
+
 ## Modes
 
 | Invocation | What it does |
 |---|---|
-| `/unslop` | the branch's diff vs its base: scan, confirm, report. No code change. |
+| `/unslop` | the front desk above: suggest a scope, scan, report, then ask before fixing |
+| `/unslop --base <ref>` | the diff vs that ref: scan, confirm, report. No code change. |
 | `/unslop --fix` | as above, then test-red, propose, fix, re-test, record for each confirmed finding. UI design, outward and data-destructive fixes stop at propose until the human approves. |
 | `/unslop --full <path>` | a whole folder (legacy audit), rules at repo scope |
 | `/unslop --domain a,b` | only these packs |
 | `/unslop --train <branch>` | merged-tree rules on a train branch: conflict markers, catalog keys lost against a parent, duplicate migration stamps |
 | `/unslop learn <finding>` | turn a confirmed finding into a fixture, plus a rule or a pre-flight question proposal |
-| `/unslop retro [--since 14d]` | mine recent fix commits and agent reports for recurring escapes; propose questions and rules for the top clusters |
+| `/unslop retro [--since 14d]` (`/unslop:retro`) | `mine.mjs`: recent fix commits and transcripts, clustered, with escape metrics and draft questions and rules |
+| `/unslop:explain` | a local site explaining what the last run found and fixed and why, with sources; learns from your verdicts |
+| `/unslop:metrify` | a local dashboard of every recorded run: does the slop stop coming back? |
 
 ## Pipeline
 
@@ -33,7 +47,7 @@ You are the **orchestrator**. You never judge a candidate yourself: eyes agents 
 7. **Re-test.** The step-4 test now passes (`evidence.mjs run` again, exit 0), the pack's verify steps are green, budgets hold, and a re-scan of the fix diff adds no new candidates in the touched lines. `ledger.mjs move ... FIXED`, then `VERIFIED --evidence <passing run>` (refused unless it passes).
 8. **Record.** `node memory/memory.mjs add --kind known-slop --status fixed --title "..." --domain <d> --anchor <path#symbol> --guard <test path> --body "<lesson, one or two lines>"`; `ledger.mjs move ... RECORDED`. When a pre-flight question or a rule would have caught it earlier, say which (or draft it with `learn`).
 
-Then `node unslop/report.mjs <run>` writes `<run>/report.md` from CONFIRMED-or-later rows only, re-checking each sidecar. Open it for the human (never hand over only a path) and give the counts in one line: confirmed, dismissed, unproven, not examined, cost and time.
+Then `node unslop/report.mjs <run> --scope <pr|branch|recent|full>` writes `<run>/report.md` from CONFIRMED-or-later rows only, re-checking each sidecar, and leaves the run's before/after record in `.jstack/metrics/runs/<run>.json` (commit it with the branch; `/unslop:metrify` reads them). Open the report for the human (never hand over only a path) and give the counts in one line: confirmed, dismissed, unproven, not examined, cost and time. When the human says a finding is right or wrong, record it with `node unslop/explain.mjs feedback <run> <finding> --verdict accepted|rejected --why "..."`.
 
 ## Orchestration rules
 
@@ -45,7 +59,11 @@ Then `node unslop/report.mjs <run>` writes `<run>/report.md` from CONFIRMED-or-l
 ## learn and retro
 
 - `learn <finding>`: write a fixture case (1 slop + 2 near-misses) into the pack's fixture file, run `node unslop/selftest.mjs --rule <id>`, and propose either a regex rule for the pack (generic) or an `extraRules` / `extraQuestions` entry in `.jstack/unslop.json` (project-only). Generic proposals go upstream to jstack as a PR with their fixtures.
-- `retro`: read `git log --since=<date> --grep "^fix\|^perf\|^revert" --name-only`, the train's bounce messages and recent agent reports (redacted with `memory/secrets.mjs`, 200-character gists only), cluster them by domain with `classify.mjs`, and for each cluster with 3 or more escapes and no matching question or rule, propose one. Print the late-fix ratio (fix commits over feature commits) and escapes per domain. No model calls unless asked, and then with an estimate first.
+- `retro`: `node unslop/mine.mjs --since 14.days [--transcripts <session.jsonl or folder>]...` reads fix/perf/revert commits and the human's bug-report-like messages in agent transcripts (200-character redacted gists), clusters them by domain with `classify.mjs`, prints the late-fix ratio, escapes per domain and the median days from a change to its fix, and drafts a question and an eyes rule for every cluster with 3 or more escapes that memory doesn't cover (`.jstack/local/retro/<date>.json`). Read the drafts with the human; the accepted ones go to `extraQuestions` / `extraRules` in a reviewed PR (a branch's own config change is a gate hit) or upstream with fixtures. No model calls unless asked, and then with an estimate first.
+
+## Gate trust
+
+In diff mode the scan and the gate read `.jstack/unslop.json` and the memory suppressions from the merge-base, never from the branch under review. A branch that edits the config, adds a waiver or false positive, or writes a new inline `unslop-ignore` gets that as its own hit (`unslop.config-changed`, `unslop.new-waiver`, `unslop.new-suppression`); the config change blocks the gate until a human passes `--accept-config-change`. Waivers count only before their `expires`, and a waiver on a high-severity rule needs one. Only the operator (`--mode off` or `JSTACK_READY_UNSLOP=off`) turns the gate off.
 
 ## Fast gate
 
