@@ -246,7 +246,7 @@ function Get-AgentLabel($r) { if ($r.Kind -eq 'claude') { 'claude.exe (sessions 
 if ($Agents) {
 	$locks = @(Get-LockList); $queue = @(Get-QueueLines)
 	$out = @(foreach ($wt in ($Agents -split ';' | Where-Object { $_ })) {
-		$w = ($wt -replace '/', '').TrimEnd('')
+		$w = ($wt -replace '/', '\').TrimEnd('\')
 		$b = Get-Branch $w
 		[pscustomobject]@{ worktree = $w; branch = $b; agent = (Get-Agent $w $b $locks $queue) }
 	})
