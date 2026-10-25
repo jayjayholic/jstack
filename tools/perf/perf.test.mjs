@@ -197,6 +197,8 @@ test('redactCmd keeps ordinary command lines readable', () => {
     'chrome-headless-shell.exe --type=renderer --lang=en-US --max-old-space-size=4096',
     'git -C C:/dev/app status --porcelain',
     'bun test src/lib/task-sheets/mcp-sign-in-service.test.ts',
+    'powershell -Command "$s = $env:CLAUDE_CODE_SHELL_LAUNCHER_SCRIPT; Invoke-Expression $s"',
+    'node x.js --name=really_long_but_plain_identifier_words_here',
   ]
   for (const cmd of keep) assert.equal(redactCmd(cmd), cmd.replace(/\s+/g, ' '))
 })

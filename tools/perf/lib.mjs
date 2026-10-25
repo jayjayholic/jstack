@@ -208,7 +208,8 @@ function redactCmd(cmd, max = 300) {
   s = s.replace(SCHEME_RE, (m, scheme) => `${scheme} [REDACTED]`)
   s = s.replace(URL_CRED_RE, '$1[REDACTED]@')
   s = s.replace(QUERY_RE, '$1[REDACTED]')
-  s = s.replace(BLOB_RE, m => (shannon(m) >= 3.5 ? '[REDACTED]' : m))
+  // Long random-looking strings carry digits and letters; CONSTANT_NAMES and plain words are left alone.
+  s = s.replace(BLOB_RE, m => (/\d/.test(m) && /[a-z]/i.test(m) && !/^[A-Z][A-Z0-9_]*$/.test(m) && shannon(m) >= 3.5 ? '[REDACTED]' : m))
   s = s.replace(/\s+/g, ' ').trim()
   return s.length > max ? `${s.slice(0, max)}...` : s
 }
