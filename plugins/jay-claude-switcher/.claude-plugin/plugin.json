@@ -1,7 +1,7 @@
 {
   "name": "jay-claude-switcher",
-  "version": "0.7.0",
-  "description": "A Claude Code side panel with every stored Claude account's 5-hour and weekly usage, and an auto-switch to the least-used account at 99%, plus the switch.py account router.",
+  "version": "0.8.0",
+  "description": "A Claude Code side panel with every stored Claude account's 5-hour and weekly usage, and a load balancer that spends accounts with no weekly limit and smaller plans first, switching at 99% or when a better account frees up, plus the switch.py account router.",
   "author": { "name": "João Lima", "url": "https://github.com/jayjayholic" },
   "homepage": "https://github.com/jayjayholic/jstack/tree/main/plugins/jay-claude-switcher",
   "repository": "https://github.com/jayjayholic/jstack",

@@ -18,19 +18,20 @@ const usage = (fiveHour: number, week: number) => ({
   ],
 })
 
-const stored = (email: string, org: string, token: string) => ({
+const stored = (email: string, org: string, token: string, rateLimitTier?: string) => ({
   key: `${email}#${org}`,
   email,
   savedAt: 's',
   oauthAccount: { emailAddress: email, organizationUuid: org },
-  claudeAiOauth: { accessToken: token, refreshToken: `${token}-r`, expiresAt: NOW + 3_600_000 },
+  claudeAiOauth: { accessToken: token, refreshToken: `${token}-r`, expiresAt: NOW + 3_600_000, ...(rateLimitTier ? { rateLimitTier } : {}) },
 })
 
 // The files, the network and the session's own numbers beneath the plugin, all in memory.
-function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number) {
+function world(on: On, replies: Record<string, Reply>, sessionFiveHour: number, tiers: Record<string, string> = {}) {
   const files = new Map<string, string>()
-  files.set(STORE, JSON.stringify({ accounts: [stored('a@example.com', 'o1', 'a-live'), stored('b@example.com', 'o2', 'b-tok'), stored('c@example.com', 'o3', 'c-tok')] }))
-  files.set(CRED, JSON.stringify({ mcpOAuth: { keep: true }, claudeAiOauth: stored('a@example.com', 'o1', 'a-live').claudeAiOauth }))
+  const a = stored('a@example.com', 'o1', 'a-live', tiers['a-live'])
+  files.set(STORE, JSON.stringify({ accounts: [a, stored('b@example.com', 'o2', 'b-tok', tiers['b-tok']), stored('c@example.com', 'o3', 'c-tok', tiers['c-tok'])] }))
+  files.set(CRED, JSON.stringify({ mcpOAuth: { keep: true }, claudeAiOauth: a.claudeAiOauth }))
   files.set(CLAUDE_JSON, JSON.stringify({ oauthAccount: { emailAddress: 'a@example.com', organizationUuid: 'o1' } }))
   const clock = mock.clock(on, { now: NOW })
   mock.store(on)
@@ -244,6 +245,56 @@ test("after a switch the old account's last 99% reading is not laid over the new
   await clock.advance(1_000)
   expect(activeToken()).toBe('b-tok')
   await clock.advance(120_000)
+  expect(activeToken()).toBe('b-tok')
+  await ui.unmount()
+})
+
+const fiveHourOnly = (percent: number, resetsAt: string) => ({ limits: [{ kind: 'session', percent, resets_at: resetsAt, scope: null }] })
+const TIERS = { 'a-live': 'default_claude_max_20x', 'b-tok': 'default_claude_max_5x', 'c-tok': 'default_claude_max_5x' }
+const IN_A_MINUTE = new Date(NOW + 60_000).toISOString()
+const start = async ($: { session: { start: (e: never) => Promise<unknown> } }) => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true } as never)
+
+test('on the 20x weekly account, an account with no weekly limit that frees up at its 5-hour reset is switched to at once', async ($, on) => {
+  const replies: Record<string, Reply> = { 'a-live': { status: 200, body: usage(30, 40) }, 'b-tok': { status: 200, body: fiveHourOnly(100, IN_A_MINUTE) }, 'c-tok': { status: 200, body: usage(10, 100) } }
+  const { clock, activeToken, files, setLive } = world(on, replies, 30, TIERS)
+  setLive(30)
+  await start($)
+  const ui = await $.ui.mount(PANE)
+  await clock.advance(2_000)
+  expect(activeToken()).toBe('a-live')
+  expect(await ui.find({ type: 'Text', text: /no weekly limit/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Next wake-up: .*b@example.com 5h/ })).toBeDefined()
+  replies['b-tok'] = { status: 200, body: fiveHourOnly(0, LATER) }
+  await clock.advance(61_000)
+  expect(activeToken()).toBe('b-tok')
+  expect(traceOf(files)).toMatch(/switch trigger=freed from=a@example.com to=b@example.com .*no weekly limit, 5x plan.*switched=true/)
+  expect(await ui.find({ type: 'Text', text: /no weekly limit, 5x plan/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('with every 5x out (5-hour at 98% or more, or the week exhausted) it stays on the 20x, and nothing else moves it', async ($, on) => {
+  const replies: Record<string, Reply> = { 'a-live': { status: 200, body: usage(30, 40) }, 'b-tok': { status: 200, body: fiveHourOnly(98, LATER) }, 'c-tok': { status: 200, body: usage(10, 100) } }
+  const { clock, activeToken, files, setLive } = world(on, replies, 30, TIERS)
+  await start($)
+  const ui = await $.ui.mount(PANE)
+  for (const live of [40, 60, 80, 97, 98]) {
+    setLive(live)
+    await clock.advance(10_000)
+  }
+  expect(activeToken()).toBe('a-live')
+  expect(traceOf(files)).not.toMatch(/switch trigger/)
+  await ui.unmount()
+})
+
+test('running out on a 5x with no weekly limit goes to the 20x with no weekly limit, not to a weekly 5x with more room', async ($, on) => {
+  const replies: Record<string, Reply> = { 'a-live': { status: 200, body: fiveHourOnly(30, LATER) }, 'b-tok': { status: 200, body: fiveHourOnly(60, LATER) }, 'c-tok': { status: 200, body: usage(0, 0) } }
+  const { clock, activeToken, setLive } = world(on, replies, 30, { 'a-live': 'default_claude_max_5x', 'b-tok': 'default_claude_max_20x', 'c-tok': 'default_claude_max_5x' })
+  await start($)
+  const ui = await $.ui.mount(PANE)
+  await clock.advance(2_000)
+  expect(activeToken()).toBe('a-live')
+  setLive(99)
+  await clock.advance(1_000)
   expect(activeToken()).toBe('b-tok')
   await ui.unmount()
 })

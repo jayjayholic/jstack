@@ -2,7 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 import type { AccountView, ReadSchedule, ReadWhich, SessionWindow, SessionsView } from '../types'
 import { ACTIVE_READ_MS, CANDIDATE_READ_MS, SWITCH_AT, isNearLimit, isSwitchDue, isWatched, leastUsed, markLimitHit, noTargetReason, peakOf, switchTarget, withSessionLimits } from './accounts'
-import { importAccount, ioOf, readAccounts, switchAccount, writeTrace } from './account-io'
+import { importAccount, ioOf, readAccounts, readPriority, switchAccount, writeTrace } from './account-io'
+import { balanceTarget, wokenUp, type Pick } from './balance'
 
 const AUTO_KEY = 'auto-switch'
 const SWITCH_COOLDOWN_MS = 90_000
@@ -22,7 +23,15 @@ const CANDIDATE_WAIT_MS = 4_000
 // After a switch, readings that still carry the old account's windows (requests sent before it) are not the new one's.
 const OLD_READING_MS = 10 * 60_000
 const TRACE_LINES = 400
+// A freed swap waits this long after any switch, so readings settle first.
+const FREED_GRACE_MS = 15_000
+// A freed account whose reading is older than this is read once before the swap.
+const FREED_CONFIRM_MS = 60_000
+// Every other account is read this often in the background (every 5 minutes from 95% on the current one).
+const OTHERS_READ_MS = 10 * 60_000
 let busySince: number | null = null
+// The owner's override of the balancer's order (priority.json), read with every account read.
+let priority: string[] = []
 let inFlight: Promise<void> | null = null
 // The last rate-limit reading the session reported for the current account.
 let sessionLimits: SessionWindow[] = []
@@ -87,6 +96,7 @@ async function readOnce($: EngineInterface, which: ReadWhich): Promise<void> {
     const started = await $.clock.now()
     const previous = (await read($, sessions)).accounts
     const autoSwitch = await $.store.get(AUTO_KEY).catch(() => undefined)
+    priority = await readPriority(ioOf($)).catch(() => priority)
     const { accounts, active } = await readAccounts(ioOf($), previous, schedule, which)
     const at = await $.clock.now()
     await update($, sessions, v => {
@@ -115,7 +125,7 @@ async function switchTo($: EngineInterface, key: string, label: string, reason: 
   }
   oldReading = { windows: new Set(windowIds(sessionLimits)), until: at + OLD_READING_MS }
   sessionLimits = []
-  await update($, sessions, v => ({ ...v, active: key, lastSwitch: { from, to: key, at, reason }, notice: `Now using ${label}. ${RESTART_NOTE}` }))
+  await update($, sessions, v => ({ ...v, active: key, lastSwitch: { from, to: key, at, reason }, chosen: reason, notice: `Now using ${label}. ${RESTART_NOTE}` }))
   $.ui.toast(`Now using ${label}`)
   return true
 }
@@ -125,9 +135,11 @@ async function importFrom($: EngineInterface, folder?: string): Promise<void> {
   await update($, sessions, v => ({ ...v, notice: `Imported ${label}.` }))
 }
 
-function staleCandidates(view: SessionsView, now: number): string[] {
+// Other accounts due a read: older than `everyMs`, or whose window reset since their last read (the wake-up), and
+// not backing off after a failure.
+function staleCandidates(view: SessionsView, now: number, everyMs: number): string[] {
   return view.accounts
-    .filter(a => a.key !== view.active && now - (schedule.readAt.get(a.key) ?? 0) >= CANDIDATE_READ_MS && now >= (schedule.backoff.get(a.key)?.until ?? 0))
+    .filter(a => a.key !== view.active && now >= (schedule.backoff.get(a.key)?.until ?? 0) && (wokenUp(a, now) || now - (schedule.readAt.get(a.key) ?? 0) >= everyMs))
     .map(a => a.key)
 }
 
@@ -139,8 +151,11 @@ async function decided($: EngineInterface, current: AccountView | undefined, now
   await traced($, 'decide', line)
 }
 
-// Decides on the readings in hand and never waits for a usage read, so the switch lands within the 1 s check of the
-// reading that made it due. Only with no account read below 99% does it ask the candidates, for a few seconds at most.
+// The balancer swaps for exactly two reasons (balance.ts): the current account ran out in its window (`due`: the 99%
+// check or a limit error), or a free account of a strictly better priority class exists (`freed`). A due swap goes
+// out on the readings in hand, never waiting for a usage read, so it lands within the 1 s check of the reading that
+// made it due; only with no account read below 99% does it ask the candidates, for a few seconds at most. A freed
+// swap is not urgent: the freed account is read once first to confirm it.
 // `limitHit`: the session itself was refused for its limit, so the usual 90 s pause after a switch shrinks to 15 s.
 async function autoSwitchTick($: EngineInterface, limitHit = false): Promise<void> {
   const view = await read($, sessions)
@@ -148,38 +163,55 @@ async function autoSwitchTick($: EngineInterface, limitHit = false): Promise<voi
   if (!view.autoSwitch || isBusy(now)) return
   const current = view.accounts.find(a => a.key === view.active)
   const due = isSwitchDue(current, now)
-  const pause = limitHit ? LIMIT_HIT_GRACE_MS : SWITCH_COOLDOWN_MS
-  const cooling = view.lastSwitch !== null && now - view.lastSwitch.at < pause
-  await decided($, current, now, due, `${limitHit ? 'limit-hit ' : ''}${due && cooling ? 'cooldown' : ''}`.trim())
-  if (!due || cooling) return void (await flushTrace($))
+  const freed = due ? null : balanceTarget(view.accounts, view.active, now, priority, false)
+  const sinceSwitch = view.lastSwitch ? now - view.lastSwitch.at : Number.POSITIVE_INFINITY
+  const cooling = sinceSwitch < (due ? (limitHit ? LIMIT_HIT_GRACE_MS : SWITCH_COOLDOWN_MS) : FREED_GRACE_MS)
+  const note = [limitHit && 'limit-hit', freed && `freed=${emailOf(freed.to)}`, (due || freed) && cooling && 'cooldown'].filter(Boolean).join(' ')
+  await decided($, current, now, due, note)
+  if ((!due && !freed) || cooling) return void (await flushTrace($))
   busySince = now
+  let moved: string | null = null
   try {
-    // A target in hand is one with a reading below 99%; an account never read is only tried after the reads below.
-    const cached = leastUsed(view.accounts, view.active, now)
-    let target = cached ? switchTarget(view.accounts, view.active, now) : null
-    if (!target) {
-      const stale = staleCandidates(view, now)
-      await traced($, 'candidates', `no cached target, reading ${stale.length}`)
-      if (stale.length) await withinMs($, refreshSessions($, stale).catch(() => undefined), CANDIDATE_WAIT_MS)
-      const fresh = await read($, sessions)
-      const at = await $.clock.now()
-      target = switchTarget(fresh.accounts, fresh.active, at)
+    let target: Pick | { to: string; label: string; reason: string } | null = null
+    if (due) {
+      target = balanceTarget(view.accounts, view.active, now, priority, true) ?? (leastUsed(view.accounts, view.active, now) ? switchTarget(view.accounts, view.active, now) : null)
       if (!target) {
-        const notice = noTargetReason(fresh.accounts, fresh.active, at)
-        await traced($, 'no-target', notice)
-        if (fresh.notice !== notice) await update($, sessions, v => ({ ...v, notice }))
+        const stale = staleCandidates(view, now, CANDIDATE_READ_MS)
+        await traced($, 'candidates', `no cached target, reading ${stale.length}`)
+        if (stale.length) await withinMs($, refreshSessions($, stale).catch(() => undefined), CANDIDATE_WAIT_MS)
+        const fresh = await read($, sessions)
+        const at = await $.clock.now()
+        target = balanceTarget(fresh.accounts, fresh.active, at, priority, true) ?? switchTarget(fresh.accounts, fresh.active, at)
+        if (!target) {
+          const notice = noTargetReason(fresh.accounts, fresh.active, at)
+          await traced($, 'no-target', notice)
+          if (fresh.notice !== notice) await update($, sessions, v => ({ ...v, notice }))
+          return
+        }
+      }
+    } else if (freed) {
+      const known = view.accounts.find(a => a.key === freed.to)
+      if (!known?.fetchedAt || now - known.fetchedAt > FREED_CONFIRM_MS) await withinMs($, refreshSessions($, [freed.to]).catch(() => undefined), CANDIDATE_WAIT_MS)
+      const fresh = await read($, sessions)
+      target = balanceTarget(fresh.accounts, fresh.active, await $.clock.now(), priority, false)
+      if (!target) {
+        await traced($, 'freed-gone', `${emailOf(freed.to)} is not free after a fresh read`)
         return
       }
     }
-    const ok = await switchTo($, target.to, target.label, `auto: ${target.reason}`, view.active)
-    await traced($, 'switch', `from=${emailOf(view.active)} to=${emailOf(target.to)} reason="${target.reason}" switched=${ok} took=${(await $.clock.now()) - now}ms`)
+    if (!target) return
+    const kind = due ? 'out' : 'freed'
+    const ok = await switchTo($, target.to, target.label, `auto (${kind}): ${target.reason}`, view.active)
+    if (ok) moved = target.to
+    await traced($, 'switch', `trigger=${kind} from=${emailOf(view.active)} to=${emailOf(target.to)} reason="${target.reason}" switched=${ok} took=${(await $.clock.now()) - now}ms`)
   } catch (err) {
     await traced($, 'switch-failed', (err instanceof Error ? err.message : 'failed').slice(0, 120))
   } finally {
     busySince = null
     await flushTrace($)
   }
-  void refreshSessions($, 'none').catch(() => undefined)
+  // After a switch the new account is read at once, so the next decision stands on its own numbers.
+  void refreshSessions($, moved ? [moved] : 'none').catch(() => undefined)
 }
 
 // The first draw of the tab, and a reload, find nothing read yet: read once, without forcing.
@@ -210,10 +242,11 @@ async function backgroundRefresh($: EngineInterface): Promise<void> {
   const view = await read($, sessions)
   const now = await $.clock.now()
   if (!view.autoSwitch || view.loadedAt == null || !view.active || isBusy(now) || inFlight) return
-  if (!isWatched(view.accounts.find(a => a.key === view.active), now)) return
-  // From 95% the candidates are read ahead too (once per 5 minutes), so the switch at 99% has its target in hand.
-  const activeDue = now - (schedule.readAt.get(view.active) ?? 0) >= ACTIVE_READ_MS && now >= (schedule.backoff.get(view.active)?.until ?? 0)
-  const keys = [...(activeDue ? [view.active] : []), ...staleCandidates(view, now)]
+  // The others every 10 minutes, and at once after one of their windows reset; from 95% on the current account they
+  // are read every 5 minutes and the current one every 5 s, so the switch at 99% has its target in hand.
+  const watched = isWatched(view.accounts.find(a => a.key === view.active), now)
+  const activeDue = watched && now - (schedule.readAt.get(view.active) ?? 0) >= ACTIVE_READ_MS && now >= (schedule.backoff.get(view.active)?.until ?? 0)
+  const keys = [...(activeDue ? [view.active] : []), ...staleCandidates(view, now, watched ? CANDIDATE_READ_MS : OTHERS_READ_MS)]
   if (keys.length) await refreshSessions($, keys)
 }
 
@@ -293,4 +326,8 @@ async function loadAutoSwitch($: EngineInterface): Promise<void> {
   await update($, sessions, v => ({ ...v, autoSwitch: on }))
 }
 
-export { autoSwitchTick, switchPoll, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, activeLabel, setNotice, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }
+function priorityOrder(): readonly string[] {
+  return priority
+}
+
+export { autoSwitchTick, priorityOrder, switchPoll, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, activeLabel, setNotice, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }

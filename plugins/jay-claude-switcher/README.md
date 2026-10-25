@@ -44,7 +44,9 @@ Every write is a temp file plus a rename, so nothing ever reads half a file.
 
 The usage endpoint answers 429 if you poke it too often, so the plugin barely pokes it:
 
-- **Below 95%: zero calls.** The current account's bars come from the rate-limit numbers Claude Code already gets with every response (main loop, subagents, workflow agents), read again every second. Free.
+- **At session start:** every account once, so the balancer knows each one's windows and whether a weekly limit applies.
+- **The current account:** the rate-limit numbers Claude Code already gets with every response (main loop, subagents, workflow agents), read again every second. Free.
+- **The others:** every 10 minutes, and at once after one of their windows resets (the wake-up).
 - **From 95%:** the current account's usage is also read every 5 seconds, and the other accounts once per 5 minutes, so the switch target is already known when 99% arrives.
 - **A usage answer never lowers the session's own number** for the same window. Usage within a window only goes up, and the endpoint's answer can lag the live headers; the higher one wins.
 - **At 99%, switch due:** the switch goes out on the readings in hand. It does not wait for any read. Only when no account has a reading below 99% are the others read, for 4 seconds at most.
@@ -65,12 +67,41 @@ Every reading, decision and switch is one timestamped line in `switch-trace.log`
 
 Emails, percents and reasons only, never a token. When a session still hits the wall, the trace says whether 99% was ever read, when, and what the switch did about it.
 
+### Load balancer: which account, and when to swap
+
+The switcher spends the cheap accounts first and keeps the big ones for when nothing else is left.
+
+**What it knows about each account.** When the session starts it reads the usage of every stored account once (skipping any that is backing off after a failure): the 5-hour %, its reset, the weekly %, its reset, and whether a weekly limit applies at all. The usage endpoint lists only the meters that apply to the account (`limits[]`; Claude Code's own schema describes it as "which meters apply ... are the server's"). So an answer with **no `weekly_all` row** (or, in the older shape, `seven_day: null`) means **no weekly limit**. A `weekly_all` row at 0% is a weekly limit with all its room left. The session's rate-limit headers never decide this: only a usage answer does. The plan size comes from the stored credentials' `rateLimitTier` (`default_claude_max_5x` is 5, `default_claude_max_20x` is 20, a Pro tier counts as 1).
+
+**Priority, best first:**
+
+1. Accounts with no weekly limit, smallest plan first.
+2. Weekly-limited accounts, smallest plan first (a 5x before a 20x).
+3. Inside one class: for weekly-limited accounts, the most weekly headroom wins, then the soonest weekly reset; otherwise the lowest 5-hour %, then the soonest 5-hour reset; then the store's order.
+
+An account never read counts as weekly-limited until a read says otherwise. An account is **free** while its 5-hour window is under 98% and its weekly window under 99% (a window whose reset time has passed counts as empty).
+
+**Override.** `priority.json` next to the store (`~/.claude/logins/priority.json`): `{ "order": ["email", "email#organizationUuid", ...] }`, best first. Listed accounts outrank every unlisted one, in the listed order; the rest follow the rule above.
+
+**When it swaps. Exactly two triggers, nothing else:**
+
+- **(a) A better account frees up.** A free account in a strictly better class than the current one: swap to it at once, even mid-use (on a 20x and a 5x frees up; on a weekly 5x and one with no weekly limit frees up). If its reading is older than a minute it is read once first to confirm. Not within 15 s of another switch.
+- **(b) The current account runs out.** Its 5-hour or weekly bar shows 99% (the 1 s check on the session's own numbers), or a request is refused for the limit (429): swap to the best free account by the priority above. With none free, it falls back to the account with the lowest reading below 99%, and failing that one never read.
+
+There is no rebalancing. It never swaps because another account in the same class has more room, nor to a bigger plan while the current one is fine.
+
+**Wake-ups.** Each account's 5-hour and weekly reset is a wake-up. At the reset its window counts as empty from the cached reading, so trigger (a) fires on the next 1 s check, and the account is read again to confirm. The panel shows the next wake-up (the soonest reset of an account that is not free) and, under the list, why the current account is the one in use.
+
+**Reads.** The current account follows the session's own numbers every second (free, no request). The others are read every 10 minutes, every 5 minutes once the current one passes 95%, at once after one of their windows resets, and the new account is read right after each switch. Every failed read still backs off (Retry-After, else 5 to 30 minutes).
+
+Every decision goes to `switch-trace.log`: `switch trigger=freed|out from=... to=... reason="..."`, `freed-gone` when the confirming read says otherwise. Never a token.
+
 ### How it picks the target
 
 - Only the **binding** windows count: the 5-hour window and the all-models weekly window (`session` and `weekly_all` in the API). Those are the ones that stop you.
 - **Scoped weekly windows** (one model only, like weekly Opus) are ignored. They limit one model, not the account.
 - **Accounts with no weekly limit** (some team organizations) are judged on the 5-hour window alone.
-- **The rule is the number on screen.** The moment a binding bar of the current account shows 99% (98.5% and up, rounded), the next 1-second check switches. No waiting for another read, nor for one already running. It goes to the account with the lowest peak below 99% (tie: lowest 5-hour). It checks at once on every new reading, not only on the 1-second tick.
+- **The rule is the number on screen.** The moment a binding bar of the current account shows 99% (98.5% and up, rounded), the next 1-second check switches. No waiting for another read, nor for one already running. It goes to the best free account by the load balancer's priority (above); with none free, to the lowest peak below 99% (tie: lowest 5-hour). It checks at once on every new reading, not only on the 1-second tick.
 - **It also fires on the limit error itself.** When a request comes back refused for the limit (Claude Code's `StopFailure` with `rate_limit`), the current account is marked full on the spot (the weekly window if the error says weekly, else the 5-hour one) and the switch runs, no reading needed. A turn, main or agent, that ends on an API error while the account already shows 98% or more counts too. After a limit error the pause between switches drops from 90 s to 15 s.
 - **A candidate the usage endpoint answered with 429 still counts**, on its last reading. Only a logged-out account (its refresh token refused) is ruled out. With no reading below 99% anywhere, an account never read gets a blind try: a guess beats a session stuck on a full account.
 - **Nowhere to go?** It stays put, doesn't thrash, and the tab says why in one line: how many accounts are full and how many are logged out.

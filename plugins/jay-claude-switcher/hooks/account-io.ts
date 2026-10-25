@@ -1,5 +1,6 @@
 import type { EngineInterface } from 'claude-code'
 import type { AccountIo, AccountStore, AccountView, CurrentLogin, OAuthTokens, ReadSchedule, ReadWhich, SessionWindow } from '../types'
+import { planMultiple } from './balance'
 import { applyRefresh, backoffAfter, keyOf, needsRefresh, orgOf, parseUsage, savedCurrent, storedKey, tierOf, windowsFromRateLimits, withTokens } from './accounts'
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
@@ -7,7 +8,7 @@ const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const OAUTH_BETA = 'oauth-2025-04-20'
 // The token endpoint's firewall refuses some runtimes' default agent (Cloudflare 1010): name ourselves.
-const USER_AGENT = 'jay-claude-switcher/0.7'
+const USER_AGENT = 'jay-claude-switcher/0.8'
 const RENAME = 'require("fs").renameSync(process.argv[1], process.argv[2])'
 
 type Paths = { home: string; credentials: string; claudeJson: string; store: string; backups: string }
@@ -127,7 +128,7 @@ async function fetchUsage(io: AccountIo, token: string) {
   const r = await io.fetch(USAGE_URL, {
     headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': OAUTH_BETA, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
   })
-  return { status: r.status, retryAfter: r.retryAfter, windows: r.ok ? parseUsage(JSON.parse(r.text)) : [] }
+  return { status: r.status, retryAfter: r.retryAfter, windows: r.ok ? parseUsage(JSON.parse(r.text)) : [], fromEndpoint: true }
 }
 
 class ReadError extends Error {
@@ -161,7 +162,7 @@ async function readActive(io: AccountIo, login: CurrentLogin, now: number) {
     const usage = await fetchUsage(io, login.oauth.accessToken)
     if (usage.status === 200 || usage.status === 429) return usage
   }
-  return { status: 200, retryAfter: undefined, windows: windowsFromRateLimits(await io.sessionLimits()) }
+  return { status: 200, retryAfter: undefined, windows: windowsFromRateLimits(await io.sessionLimits()), fromEndpoint: false }
 }
 
 function describeStatus(status: number): string {
@@ -193,12 +194,13 @@ async function readAccounts(
     const isActive = key === login.key
     const tier = tierOf(isActive && login.oauth ? login.oauth : a.claudeAiOauth)
     const org = orgOf(isActive ? login.oauthAccount : a.oauthAccount)
-    const kept = { key, email: a.email, org, tier, windows: old?.windows ?? [], fetchedAt: old?.fetchedAt ?? null }
+    const multiple = planMultiple((isActive && login.oauth ? login.oauth : a.claudeAiOauth)?.rateLimitTier)
+    const kept = { key, email: a.email, org, tier, multiple, hasWeekly: old?.hasWeekly ?? null, windows: old?.windows ?? [], fetchedAt: old?.fetchedAt ?? null }
     const wanted = which === 'all' || (which !== 'none' && which.includes(key))
     const waiting = now < (schedule.backoff.get(key)?.until ?? 0)
     if (!wanted || waiting) {
       const offline = isActive && !kept.windows.length ? windowsFromRateLimits(await io.sessionLimits()) : kept.windows
-      views.push(old ? { ...old, tier, org, windows: offline } : { ...kept, windows: offline, error: null })
+      views.push(old ? { ...old, tier, org, multiple, windows: offline } : { ...kept, windows: offline, error: null })
       continue
     }
     schedule.readAt.set(key, now)
@@ -206,7 +208,9 @@ async function readAccounts(
       const usage = isActive ? await readActive(io, login, now) : await readStored(io, p, key, a.claudeAiOauth, now)
       if (usage.status === 200) {
         schedule.backoff.delete(key)
-        views.push({ ...kept, windows: usage.windows, fetchedAt: now, error: null })
+        // Only a usage answer says whether a weekly limit applies: the session's own headers never do.
+        const hasWeekly = usage.fromEndpoint ? usage.windows.some(w => w.label === 'week') : kept.hasWeekly
+        views.push({ ...kept, hasWeekly, windows: usage.windows, fetchedAt: now, error: null })
       } else {
         schedule.backoff.set(key, backoffAfter(schedule.backoff.get(key), usage.retryAfter, now))
         views.push({ ...kept, error: describeStatus(usage.status) })
@@ -256,4 +260,13 @@ async function writeTrace(io: AccountIo, text: string): Promise<void> {
   await io.write(p.store.replace(/accounts\.json$/, 'switch-trace.log'), text)
 }
 
-export { importAccount, ioOf, readAccounts, switchAccount, writeTrace }
+// The owner's override of the balancer's order, `priority.json` next to the store: `{ "order": ["email" or
+// "email#organizationUuid", ...] }`, best first. Missing or unreadable: no override.
+async function readPriority(io: AccountIo): Promise<string[]> {
+  const p = await paths(io)
+  const file = p.store.replace(/accounts\.json$/, 'priority.json')
+  const json = await readJson<{ order?: unknown }>(io, file, {}).catch(() => ({ order: [] }))
+  return Array.isArray(json.order) ? json.order.filter((x): x is string => typeof x === 'string') : []
+}
+
+export { importAccount, ioOf, readAccounts, readPriority, switchAccount, writeTrace }

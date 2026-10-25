@@ -59,6 +59,10 @@ export type AccountView = {
   windows: UsageWindow[]
   fetchedAt: number | null
   error: string | null
+  // From the last usage read: whether a weekly limit applies at all (null: not read yet).
+  hasWeekly?: boolean | null
+  // The plan's size from rateLimitTier (5 for 5x, 20 for 20x; null: unknown).
+  multiple?: number | null
 }
 
 export type SwitchRecord = { from: string | null; to: string; at: number; reason: string }
@@ -73,6 +77,9 @@ export type SessionsView = {
   // Why the last read of the store failed, shown in place of the list.
   error: string | null
   loadedAt: number | null
+  // The balancer: the soonest reset of an account that is not free, and why the current account is the one in use.
+  nextWake?: { at: number; key: string; window: string } | null
+  chosen?: string | null
 }
 
 export type OAuthTokens = {

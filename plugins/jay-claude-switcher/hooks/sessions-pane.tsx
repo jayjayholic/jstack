@@ -2,7 +2,8 @@ import { atom, read } from 'claude-code'
 import type { EngineInterface, RenderInput } from 'claude-code'
 import type { AccountView, SessionsView, UsageWindow } from '../types'
 import { SWITCH_AT, byNearestReset, effectivePercent, labelOf } from './accounts'
-import { ensureLoaded, refreshSessions, setAutoSwitch, switchTo } from './sessions'
+import { describeClass, hasWeeklyLimit, nextWake } from './balance'
+import { ensureLoaded, priorityOrder, refreshSessions, setAutoSwitch, switchTo } from './sessions'
 
 const EMPTY: SessionsView = { accounts: [], active: null, autoSwitch: true, refreshing: false, lastSwitch: null, notice: null, error: null, loadedAt: null }
 const sessions = atom({ plugin: 'jay-claude-switcher', key: 'sessions' } as const, EMPTY)
@@ -53,6 +54,8 @@ async function renderSessions($: EngineInterface, e: RenderInput<'Pane'>) {
     )
   }
 
+  const current = view.accounts.find(a => a.key === view.active)
+  const wake = nextWake(view.accounts, view.active, now)
   const orgsPerEmail = new Map<string, number>()
   for (const a of view.accounts) orgsPerEmail.set(a.email, (orgsPerEmail.get(a.email) ?? 0) + 1)
 
@@ -82,6 +85,7 @@ async function renderSessions($: EngineInterface, e: RenderInput<'Pane'>) {
           )}
         </Box>
         {a.windows.map(w => meter(a.key, w))}
+        {hasWeeklyLimit(a) === false && <Text dimColor>{clip(`  ${'week'.padEnd(LABEL_WIDTH)}no weekly limit`)}</Text>}
         {a.error && <Text color="error">{clip(`  ${a.error}`)}</Text>}
       </Box>
     )
@@ -106,6 +110,17 @@ async function renderSessions($: EngineInterface, e: RenderInput<'Pane'>) {
       {view.notice && (
         <Text key="notice" color={view.notice.startsWith('Auto-switch: no') ? 'warning' : undefined} wrap="wrap">
           {view.notice}
+        </Text>
+      )}
+      {current && (
+        <Text key="chosen" wrap="wrap">
+          <Text bold>{'Why this one: '}</Text>
+          <Text dimColor>{view.chosen ?? `${describeClass(current, priorityOrder())} (not switched by the balancer yet)`}</Text>
+        </Text>
+      )}
+      {wake && (
+        <Text key="wake" dimColor>
+          {clip(`Next wake-up: ${resetLabel(new Date(wake.at).toISOString(), now)} ${wake.key.split('#')[0]} ${wake.window}`)}
         </Text>
       )}
       {view.accounts.length === 0 && !view.error && <Text dimColor>{view.refreshing || view.loadedAt == null ? 'Reading accounts…' : 'No stored accounts.'}</Text>}

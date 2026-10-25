@@ -111,8 +111,11 @@ export const register: Register = on => {
     // Accounts: listed from the store with no network; from 95% the usage endpoint is asked for the current account
     // (every 5 s) and the others (once per 5 minutes). Every second the session's own figures are read and the switch
     // checked on them.
+    // Every stored account's usage is read once at the start (backoff respected), so the balancer knows each one's
+    // windows, resets and whether a weekly limit applies.
     void loadAutoSwitch($)
       .then(() => refreshSessions($, 'none'))
+      .then(() => refreshSessions($, 'all'))
       .then(() => $.session.usage())
       .then(u => noteSessionLimits($, u.rateLimits))
       .catch(() => undefined)
