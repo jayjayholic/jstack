@@ -8,6 +8,8 @@ export JSTACK_REPO_ROOT="$HOME/code/my-app"              # main checkout of the 
 export JSTACK_WORKTREES_DIR="$JSTACK_REPO_ROOT/.worktrees" # where agent worktrees and the train worktree go
 export JSTACK_INTEGRATION_BRANCH="stage"                 # branch trains merge into
 export JSTACK_INSTALL_CMD="bun install"
+export JSTACK_SHARED_DEPS=1                              # worktrees link node_modules + generated code to shared stores (worktree-deps.mjs); 0 = own install each
+export JSTACK_STORE_INSTALL_CMD="bun install --frozen-lockfile" # how a shared store is built (default derived from JSTACK_INSTALL_CMD)
 export JSTACK_CODEGEN_CMD="bun run db:generate"          # leave empty if your build needs no codegen
 export JSTACK_TYPECHECK_CMD="bun run typecheck"
 export JSTACK_BUILD_CMD="bunx next build --turbopack"

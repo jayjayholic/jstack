@@ -14,6 +14,14 @@ JSTACK_WORKTREES_DIR="${JSTACK_WORKTREES_DIR:-$JSTACK_REPO_ROOT/.worktrees}"
 JSTACK_TRAIN_DIR="${JSTACK_TRAIN_DIR:-$JSTACK_WORKTREES_DIR/train}"
 JSTACK_INTEGRATION_BRANCH="${JSTACK_INTEGRATION_BRANCH:-main}"
 JSTACK_INSTALL_CMD="${JSTACK_INSTALL_CMD:-npm install}"
+JSTACK_SHARED_DEPS="${JSTACK_SHARED_DEPS:-1}"
+case "$JSTACK_INSTALL_CMD" in
+	"bun install"*) _store_install="bun install --frozen-lockfile" ;;
+	"pnpm install"*) _store_install="pnpm install --frozen-lockfile" ;;
+	"npm install"*) _store_install="npm ci" ;;
+	*) _store_install="$JSTACK_INSTALL_CMD" ;;
+esac
+JSTACK_STORE_INSTALL_CMD="${JSTACK_STORE_INSTALL_CMD:-$_store_install}"
 JSTACK_CODEGEN_CMD="${JSTACK_CODEGEN_CMD:-}"
 JSTACK_TYPECHECK_CMD="${JSTACK_TYPECHECK_CMD:-npx tsc --noEmit}"
 JSTACK_BUILD_CMD="${JSTACK_BUILD_CMD:-npm run build}"

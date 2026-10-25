@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Creates a ready-to-run worktree, like a fresh clone: the branch checked out plus the local-only files git does not
-# carry (JSTACK_LOCAL_ENV_FILES, JSTACK_LOCAL_DIRS). Only dependencies and generated code are missing; --install
-# also runs JSTACK_INSTALL_CMD and JSTACK_CODEGEN_CMD. Codegen is skipped when a sibling worktree already has the
-# generated folders (JSTACK_CODEGEN_REUSE_PATHS) built from identical inputs (JSTACK_CODEGEN_INPUTS): it copies them.
+# carry (JSTACK_LOCAL_ENV_FILES, JSTACK_LOCAL_DIRS). Only dependencies and generated code are missing. With
+# JSTACK_SHARED_DEPS=1 (default) --install LINKS node_modules and the generated folder to shared stores
+# (worktree-deps.mjs): an own install only when the branch changed a dependency, own codegen only when its inputs
+# changed. With JSTACK_SHARED_DEPS=0 it runs JSTACK_INSTALL_CMD and JSTACK_CODEGEN_CMD, copying generated folders
+# (JSTACK_CODEGEN_REUSE_PATHS) from a sibling built from identical inputs (JSTACK_CODEGEN_INPUTS).
 #
 # Usage: bash new-worktree.sh <branch> [--base origin/<integration branch>] [--dir <path>] [--install]
 #   <branch>   new branch name (created from --base) or an existing local/remote branch (checked out as is)
@@ -91,8 +93,15 @@ reuse_generated() {
 	return 1
 }
 
+deps_env() {
+	JSTACK_INTEGRATION_BRANCH="$JSTACK_INTEGRATION_BRANCH" JSTACK_INSTALL_CMD="$JSTACK_INSTALL_CMD" 		WORKTREE_DEPS_STORE_INSTALL="$JSTACK_STORE_INSTALL_CMD" WORKTREE_DEPS_STORES="$JSTACK_WORKTREES_DIR" 		JSTACK_CODEGEN_CMD="$JSTACK_CODEGEN_CMD" JSTACK_CODEGEN_INPUTS="$JSTACK_CODEGEN_INPUTS" 		JSTACK_CODEGEN_REUSE_PATHS="$JSTACK_CODEGEN_REUSE_PATHS" JSTACK_CODEGEN_REQUIRED="$JSTACK_CODEGEN_REQUIRED" "$@"
+}
+
 setup="$JSTACK_INSTALL_CMD${JSTACK_CODEGEN_CMD:+ && $JSTACK_CODEGEN_CMD}"
-if [ "$install" = 1 ]; then
+if [ "$install" = 1 ] && [ "$JSTACK_SHARED_DEPS" = 1 ]; then
+	(cd "$dir" && deps_env node "$JSTACK_TOOLS/worktree-deps.mjs" deps --base "$base" && deps_env node "$JSTACK_TOOLS/worktree-deps.mjs" generated)
+	echo; echo "Worktree ready: $dir (branch $branch)"
+elif [ "$install" = 1 ]; then
 	(cd "$dir" && eval "$JSTACK_INSTALL_CMD") &&
 		{ reuse_generated || [ -z "$JSTACK_CODEGEN_CMD" ] || (cd "$dir" && eval "$JSTACK_CODEGEN_CMD"); } &&
 		write_stamp
@@ -101,4 +110,4 @@ else
 	echo; echo "Worktree ready: $dir (branch $branch)"
 	echo "Next: cd \"$dir\" && $setup"
 fi
-echo "Remove when done: git -C \"$REPO\" worktree remove \"$dir\""
+echo "Remove when done: node \"$JSTACK_TOOLS/worktree-deps.mjs\" remove \"$dir\" --delete-branch (a bare git worktree remove follows junctions into the shared stores)"

@@ -56,8 +56,9 @@ while read -r wt branch; do
 	fi
 	if [ -n "$why" ]; then echo "skip   $wt ($why)"; skipped=$((skipped + 1)); continue; fi
 	if [ "$dry" = 1 ]; then echo "would remove $wt"; removed=$((removed + 1)); continue; fi
-	# Untracked build output (node_modules, .next, generated code) is why a plain remove can refuse; status was clean.
-	git -C "$REPO" -c core.longpaths=true worktree remove "$wt" 2>/dev/null || git -C "$REPO" -c core.longpaths=true worktree remove --force "$wt"
+	# worktree-deps.mjs unlinks every junction first: a bare git worktree remove (Git for Windows 2.40) follows the
+	# shared node_modules/generated junctions and deletes the stores every other worktree links to.
+	node "$JSTACK_TOOLS/worktree-deps.mjs" remove "$wt"
 	echo "removed $wt"; removed=$((removed + 1))
 done < <(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} /^branch /{sub("refs/heads/","",$2); print w, $2; w=""} /^detached/{print w, ""; w=""}')
 
