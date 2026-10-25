@@ -338,3 +338,12 @@ test('task XML is battery-safe, least privilege, no admin', () => {
   assert.match(xml, /<Interval>PT5M</)
   assert.match(xml, /<MultipleInstancesPolicy>IgnoreNew</)
 })
+
+test('proc-table: perf-snap rows in the guard hooks shape, null when perf-snap is missing', async () => {
+  const { toRows, listProcessesFast } = await import('./proc-table.mjs')
+  const create = FT(Date.parse('2026-10-25T12:00:00Z'))
+  const rows = toRows(parseSnap(`P\t42\t7\t${create}\tnode.exe\t1\t2\t3\t4\t5\t6\t7\nD\t42\t${create}\tC:/x/\tnode a.js\nP\t9\t0\t0\tSystem\t1\t2\t3\t4\t5\t6\t7\n`))
+  assert.deepEqual(rows[0], { p: 42, pp: 7, n: 'node.exe', c: 'node a.js', t: Date.parse('2026-10-25T12:00:00Z') })
+  assert.deepEqual(rows[1], { p: 9, pp: 0, n: 'System', c: '', t: 0 })
+  assert.equal(listProcessesFast({ exe: path.join(os.tmpdir(), 'no-such-perf-snap.exe') }), null)
+})
