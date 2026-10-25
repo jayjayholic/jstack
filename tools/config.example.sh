@@ -36,4 +36,10 @@ export JSTACK_QUEUE_FILE="$HOME/.jstack/train-queue.md"  # the orchestrator's qu
 export JSTACK_LOCK_SCRIPT="$JSTACK_TOOLS/heavy-lock.sh"   # the lock ready-gate.sh sources for tc_run
 export JSTACK_UNIT_TEST_CMD="bunx vitest run"            # ready-gate.sh runs it with the touched test files; empty = skip
 export JSTACK_PRETTIER_CHECK_CMD="bunx prettier --check --ignore-unknown" # ready-gate.sh, on touched files
+export JSTACK_READY_PREFLIGHT="warn"                     # ready-gate check 7: .agent/preflight.md present (off|warn|block)
+export JSTACK_READY_UNSLOP="warn"                        # check 8: static red flags on added lines (off|warn|block)
+export JSTACK_READY_MEMORY="block"                       # check 9: memory anchors the branch moved (repos with .jstack/memory)
+export JSTACK_UNSLOP_MAX_AGENTS="4"                      # /unslop: agents in flight
+export JSTACK_UNSLOP_MAX_CANDIDATES="25"                 # /unslop: candidates confirmed per run (the rest are counted)
+export JSTACK_UNSLOP_GATE_SECONDS="60"                   # gate.mjs time budget
 export JSTACK_READY_EXTRA_CMD=""                         # optional extra gate check; touched files are in $READY_TOUCHED

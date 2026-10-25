@@ -9,6 +9,11 @@
 #   4. prettier --check on touched files ($JSTACK_PRETTIER_CHECK_CMD)
 #   5. the brief checklist is ticked: <worktree>/.agent/brief.md (or --brief) has no "- [ ]" and at least one "- [x]"
 #   6. optional $JSTACK_READY_EXTRA_CMD, run in the worktree with the touched files in $READY_TOUCHED (one per line)
+#   7. pre-flight present: .agent/preflight.md with the sections its tier needs ($JSTACK_READY_PREFLIGHT off|warn|block)
+#   8. unslop gate: static red flags on the lines this branch added ($JSTACK_READY_UNSLOP off|warn|block; block only
+#      stops on rules that earned it, see skills/unslop/SELF-EVAL.md); cached per commit SHA
+#   9. memory anchors: entries anchored in touched files are FRESH or re-anchored in this branch, only when the repo
+#      has .jstack/memory ($JSTACK_READY_MEMORY off|warn|block)
 # Exit 0 = READY accepted, 1 = refused (the output says which check), 2 = usage.
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/jstack-env.sh"
@@ -19,7 +24,7 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --brief) brief="$2"; shift 2 ;;
     --no-brief) use_brief=0; shift ;;
-    -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) wt="$1"; shift ;;
   esac
 done
@@ -105,6 +110,45 @@ fi
 if [ -n "$JSTACK_READY_EXTRA_CMD" ]; then
   if READY_TOUCHED="$(printf '%s\n' "${touched[@]+"${touched[@]}"}")" bash -c "$JSTACK_READY_EXTRA_CMD"; then pass "extra: $JSTACK_READY_EXTRA_CMD"
   else fail "extra: $JSTACK_READY_EXTRA_CMD"; fi
+fi
+
+# warn/block helper for the discipline checks: block counts as a failure, warn only prints
+soft() { if [ "$1" = block ]; then fail "$2"; else note "WARN $2"; fi; }
+
+# 7. pre-flight
+if [ "$JSTACK_READY_PREFLIGHT" != off ]; then
+  pf=".agent/preflight.md"
+  if [ ! -f "$pf" ]; then
+    soft "$JSTACK_READY_PREFLIGHT" "no pre-flight at $pf (run /preflight; tier S takes about 3 minutes)"
+  else
+    tier=$(head -1 "$pf" | sed -nE 's/.*tier: *([SML]).*/\1/p'); tier=${tier:-S}
+    need=("Ask" "Domains" "Answers" "Acceptance checks" "Scope fence")
+    [ "$tier" != S ] && need+=("Budgets" "Verification plan")
+    [ "$tier" = L ] && need+=("Pre-mortem")
+    missing=()
+    for s in "${need[@]}"; do grep -qE "^## $s" "$pf" || missing+=("$s"); done
+    if [ ${#missing[@]} -eq 0 ]; then pass "pre-flight (tier $tier)"
+    else soft "$JSTACK_READY_PREFLIGHT" "pre-flight tier $tier lacks: ${missing[*]}"; fi
+  fi
+fi
+
+# 8. unslop gate
+if [ "$JSTACK_READY_UNSLOP" != off ]; then
+  if [ -f "$stamps/$sha.unslop.ok" ]; then pass "unslop gate on ${sha:0:9} (cached)"
+  else
+    log="$stamps/$sha.unslop.log"
+    if node "$JSTACK_TOOLS/unslop/gate.mjs" --repo . --base "$base" --mode "$JSTACK_READY_UNSLOP" --no-memory >"$log" 2>&1; then
+      touch "$stamps/$sha.unslop.ok"; pass "unslop gate ($(tail -1 "$log" | sed 's/^unslop gate[^:]*: //'))"
+      grep -E '^warn ' "$log" | head -8 | sed 's/^/          /'
+    else fail "unslop gate blocked, see $log:"; grep -E '^(BLOCK|warn) ' "$log" | head -12 | sed 's/^/          /'; fi
+  fi
+fi
+
+# 9. memory anchors
+if [ "$JSTACK_READY_MEMORY" != off ] && [ -d .jstack/memory ]; then
+  log="$stamps/$sha.memory.log"
+  if node "$JSTACK_TOOLS/memory/memory.mjs" check --changed --base "$base" --repo . >"$log" 2>&1; then pass "memory anchors"
+  else soft "$JSTACK_READY_MEMORY" "memory anchors moved by this branch, re-anchor them (memory.mjs reanchor) or retire them:"; tail -12 "$log" | sed 's/^/          /'; fi
 fi
 
 if [ "$fails" -eq 0 ]; then

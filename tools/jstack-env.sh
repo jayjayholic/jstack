@@ -54,6 +54,15 @@ JSTACK_LOCK_SCRIPT="${JSTACK_LOCK_SCRIPT:-$JSTACK_TOOLS/heavy-lock.sh}"
 JSTACK_UNIT_TEST_CMD="${JSTACK_UNIT_TEST_CMD:-}"
 JSTACK_PRETTIER_CHECK_CMD="${JSTACK_PRETTIER_CHECK_CMD:-npx prettier --check --ignore-unknown}"
 JSTACK_READY_EXTRA_CMD="${JSTACK_READY_EXTRA_CMD:-}"
+# Discipline checks in ready-gate.sh (7-9): off | warn | block. Pre-flight and unslop start at warn; memory blocks
+# only in repos that opted in with .jstack/memory (memory.mjs init).
+JSTACK_READY_PREFLIGHT="${JSTACK_READY_PREFLIGHT:-warn}"
+JSTACK_READY_UNSLOP="${JSTACK_READY_UNSLOP:-warn}"
+JSTACK_READY_MEMORY="${JSTACK_READY_MEMORY:-block}"
+# /unslop: agents in flight, candidates confirmed per run, seconds the fast gate may take.
+JSTACK_UNSLOP_MAX_AGENTS="${JSTACK_UNSLOP_MAX_AGENTS:-4}"
+JSTACK_UNSLOP_MAX_CANDIDATES="${JSTACK_UNSLOP_MAX_CANDIDATES:-25}"
+JSTACK_UNSLOP_GATE_SECONDS="${JSTACK_UNSLOP_GATE_SECONDS:-60}"
 
 # Free physical RAM in whole GB. Linux reads /proc/meminfo (MemAvailable, or MemFree where that's missing, like
 # Git Bash on Windows), macOS vm_stat, Windows PowerShell. Set JSTACK_FREE_GB_CMD to any command that prints a
