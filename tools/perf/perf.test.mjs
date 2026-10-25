@@ -276,6 +276,9 @@ test('top, spikes and patterns over frames', () => {
   assert.ok(pats.includes('grep-storm'))
   assert.ok(pats.includes('duplicate-typecheck'))
   assert.deepEqual(top([], {}), [])
+  const busy = n => Array.from({ length: n }, (_, i) => ({ ...fr(i, 50, []), p: [[77, 'bun.exe', 'tests', 'w1', 98, 300, 5, 'bun test x.test.ts']] }))
+  assert.ok(patterns(busy(10)).some(p => p.pattern === 'stuck-busy-process' && /pid 77/.test(p.evidence)))
+  assert.ok(!patterns(busy(9)).some(p => p.pattern === 'stuck-busy-process'))
 })
 
 // ---------- retention ----------

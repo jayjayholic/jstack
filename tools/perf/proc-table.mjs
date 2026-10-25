@@ -1,5 +1,5 @@
 // The process table in the shape the guard hooks use ({ p, pp, n, c, t }), from perf-snap instead of PowerShell + CIM.
-// Measured on Windows 11 with ~470 processes, 5 interleaved runs: 709 -> 76 ms wall, 593 -> 78 ms CPU, 107 -> 19 MB
+// Measured on Windows 11 with ~470 processes, 5 interleaved runs: 682 -> 68 ms wall, 484 -> 62 ms CPU, 105 -> 19 MB
 // peak, and the same pid/ppid/name/command line for every process both saw (see the perf ledger). Returns null when
 // perf-snap isn't installed, so a caller keeps its PowerShell path as the fallback.
 import fs from 'node:fs'

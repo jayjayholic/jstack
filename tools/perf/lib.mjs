@@ -452,6 +452,14 @@ function patterns(frames, { labelOf = x => x } = {}) {
   const idleServers = new Map()
   for (const f of frames) for (const r of f.g) if (/next-(server|dev)/.test(r[1]) && r[3] < 0.5) idleServers.set(r[2], (idleServers.get(r[2]) ?? 0) + f.res)
   for (const [wt, sec] of idleServers) if (sec >= 3600) found.push({ pattern: 'idle-dev-server', ticks: Math.round(sec / 60), evidence: `${labelOf(wt)} kept an idle server for ${Math.round(sec / 60)} min`, fix: 'Stop servers after the test (server_wait, one at a time).' })
+  // One process pinned near a full core tick after tick: a hung test, a runaway regex, an orphan nobody waits on.
+  const pinned = new Map()
+  for (const f of frames) for (const p of f.p ?? []) if (p[4] >= 90 && !/^(System|Registry|Memory Compression|vmmem.*|Secure System)$/i.test(p[1])) {
+    const a = pinned.get(p[0]) ?? { pid: p[0], name: p[1], wt: p[3], ticks: 0, cmd: p[7] }
+    a.ticks++
+    pinned.set(p[0], a)
+  }
+  for (const a of pinned.values()) if (a.ticks >= 10) found.push({ pattern: 'stuck-busy-process', ticks: a.ticks, evidence: `pid ${a.pid} ${a.name} (${labelOf(a.wt)}) at 90%+ of a core for ${a.ticks} ticks: ${a.cmd.slice(0, 120)}`, fix: 'Ask its agent whether it is still wanted; a hung test or an orphan gets killed (mem-map -Kill orphans for orphans).' })
   const unacc = frames.reduce((s, f) => s + (f.m.unacc?.[0] ?? 0) * f.res, 0) / span
   if (unacc >= 50) found.push({ pattern: 'short-lived-process-churn', ticks: frames.length, evidence: `${r1(unacc)}% of a core on average went to processes that lived less than a tick (or interrupts)`, fix: 'Lower the interval for a while (perf.mjs install --interval 10) to catch them, then look for spawn loops (polling scripts, watch loops, hooks).' })
   return found
