@@ -68,10 +68,13 @@ function readEvidence(dir, rel) {
 // Does this sidecar prove the defect? The producer's run failed, and an independent rerun failed the same way.
 function reproduced(ev) {
   if (!ev) return { ok: false, why: 'evidence file missing or unreadable' }
-  if (ev.kind === 'static-proof') return ev.reruns?.some(r => r.reproduced) ? { ok: true } : { ok: false, why: 'static proof not re-checked by a second agent' }
-  if (ev.exit === 0 && ev.kind !== 'measurement') return { ok: false, why: 'the evidence command passed; nothing failed' }
-  if (ev.kind === 'measurement' && !(ev.overBudget === true)) return { ok: false, why: 'measurement is not over its budget' }
+  if (ev.kind !== 'static-proof') {
+    if (ev.exit === 0 && ev.kind !== 'measurement') return { ok: false, why: 'the evidence command passed; nothing failed' }
+    if (ev.kind === 'measurement' && !(ev.overBudget === true)) return { ok: false, why: 'measurement is not over its budget' }
+  }
+  // Every kind, static proof included: only a rerun by someone other than the producer counts, and the latest wins.
   const indep = (ev.reruns ?? []).filter(r => r.by && r.by !== ev.by)
+  if (!indep.length && ev.kind === 'static-proof') return { ok: false, why: 'static proof not re-checked by a second agent (no independent rerun)' }
   if (!indep.length) return { ok: false, why: 'no independent rerun (the skeptic must rerun it)' }
   const last = indep[indep.length - 1]
   return last.reproduced ? { ok: true } : { ok: false, why: `rerun by ${last.by} did not reproduce` }

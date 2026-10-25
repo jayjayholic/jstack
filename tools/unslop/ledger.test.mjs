@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { initRun, append, addCandidates, states, LedgerError } from './ledger.mjs'
+import { initRun, append, addCandidates, states, reproduced, LedgerError } from './ledger.mjs'
 import { runEvidence, rerunEvidence } from './evidence.mjs'
 import { buildReport } from './report.mjs'
 
@@ -109,4 +109,23 @@ test('negative: dismissing without a reason is refused', () => {
     append(s.dir, { finding: 'f-aa11', state: 'CONFIRMING', by: 'o' })
     assert.throws(() => append(s.dir, { finding: 'f-aa11', state: 'DISMISSED', by: 'k' }), /needs a reason/)
   } finally { s.done() }
+})
+
+// Static proof: no command failure to check, so the second pair of eyes is all there is.
+const staticProof = (reruns) => ({ id: 's1', kind: 'static-proof', by: 'prosecutor#1', exit: 0, reruns })
+
+test('static proof is confirmed by a rerun from a different agent', () => {
+  assert.deepEqual(reproduced(staticProof([{ by: 'skeptic#2', reproduced: true }])), { ok: true })
+})
+
+test('negative: static proof re-checked only by its own producer (or by nobody named) is refused', () => {
+  assert.match(reproduced(staticProof([{ by: 'prosecutor#1', reproduced: true }])).why, /independent rerun/)
+  assert.match(reproduced(staticProof([{ reproduced: true }])).why, /independent rerun/)
+  assert.match(reproduced(staticProof([])).why, /independent rerun/)
+})
+
+test('negative: static proof decides on the latest independent rerun, not on any earlier yes', () => {
+  const r = reproduced(staticProof([{ by: 'skeptic#2', reproduced: true }, { by: 'prosecutor#1', reproduced: true }, { by: 'skeptic#3', reproduced: false }]))
+  assert.equal(r.ok, false)
+  assert.match(r.why, /skeptic#3 did not reproduce/)
 })
