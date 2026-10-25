@@ -41,7 +41,7 @@ const CONFIG = {
 	codegen: env.JSTACK_CODEGEN_CMD ?? 'bun run db:generate',
 	codegenInputs: words(env.JSTACK_CODEGEN_INPUTS, ['schema', 'bun.lock']),
 	generatedDir: words(env.JSTACK_CODEGEN_REUSE_PATHS, ['.generated'])[0] ?? null,
-	required: words(env.JSTACK_CODEGEN_REQUIRED, ['.generated/zenstack', '.generated/prisma/sql.ts', '.generated/prisma/sql']),
+	required: words(env.JSTACK_CODEGEN_REQUIRED, []),
 }
 const DEP_FILES = ['bun.lock', 'bun.lockb', 'bunfig.toml', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', '.npmrc']
 const DEP_FIELDS = [
