@@ -8,7 +8,8 @@
 # the whole process tree as well.
 # Memory guards: heavy_acquire waits for JSTACK_HEAVY_MIN_AVAIL_GB free once it holds the slot; tc_run waits while a
 # build holds the slot and for JSTACK_TC_MIN_AVAIL_GB free. Each wait gives up after JSTACK_MEM_WAIT_MAX_MIN and runs
-# anyway (the hard cap still applies). MEM_GUARD=0 turns them off. mem_guard [gb] waits on its own; mem_map prints the
+# anyway (the hard cap still applies); before waiting, each guard fires the RAM clean once (see _ram_clean).
+# MEM_GUARD=0 turns them off. mem_guard [gb] waits on its own; mem_map prints the
 # memory map (Windows, tools/mem-map.ps1).
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/jstack-env.sh"
@@ -25,16 +26,35 @@ _stale() {
 # Owner line: "<name> <date> @ <cwd>". The first word stays the name (heavy_release matches it); mem-map reads the cwd.
 _owner_line() { echo "${1:-anon} $(date) @ $(pwd -W 2>/dev/null || pwd)"; }
 
+# RAM clean (Windows): tools/ram-clean.ps1 fires the scheduled task JSTACK_RAM_CLEAN_TASK (RAMMap -Ew under highest
+# privileges, created once by tools/setup-ram-clean.ps1), so no UAC prompt. At most one run per
+# JSTACK_RAM_CLEAN_COOLDOWN_S across every trigger on the machine; before/after numbers go to ~/.jstack/ram-clean.log.
+# Silent no-op when the task, schtasks or PowerShell is missing (macOS, Linux, a machine without the setup).
+# Triggers: mem_guard once per call when RAM is short (waits, then rechecks), and in the background after
+# heavy_release, tc_run, installs and worktree removal: on a 32 GB laptop with ~10 agents, 16 of 21 climbs to 14+ GB
+# of file cache had an install running, the rest a build, a typecheck or a worktree deletion.
+_ram_clean() {
+  [ -n "$JSTACK_RAM_CLEAN_TASK" ] && command -v schtasks.exe >/dev/null 2>&1 || return 1
+  JSTACK_RAM_CLEAN_TASK="$JSTACK_RAM_CLEAN_TASK" JSTACK_RAM_CLEAN_COOLDOWN_S="$JSTACK_RAM_CLEAN_COOLDOWN_S" \
+    powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$JSTACK_TOOLS/ram-clean.ps1")" -Reason "$1" \
+    -SkipAbovePct "${2:-0}" -SettleSec "$JSTACK_RAM_CLEAN_SETTLE_S" 2>/dev/null | tr -d '\r' | sed 's/^/ram_clean: /' >&2
+  return "${PIPESTATUS[0]}"
+}
+# Background clean after a cache-filling job ends; never blocks the caller, skipped while RAM is plentiful.
+ram_clean_after() { ( _ram_clean "$1" "$JSTACK_RAM_CLEAN_SKIP_ABOVE_PCT" & ) >/dev/null 2>&1; }
+
 # Waits until <gb> GB are free. Returns 0 when they are (or RAM can't be read), 1 after <max_min> minutes.
 # Usage: mem_guard [gb=JSTACK_TC_MIN_AVAIL_GB] [max_min=JSTACK_MEM_WAIT_MAX_MIN]
 mem_guard() {
-  local need="${1:-$JSTACK_TC_MIN_AVAIL_GB}" max="${2:-$JSTACK_MEM_WAIT_MAX_MIN}" start free said=0
+  local need="${1:-$JSTACK_TC_MIN_AVAIL_GB}" max="${2:-$JSTACK_MEM_WAIT_MAX_MIN}" start free said=0 cleaned=0
   [ "${MEM_GUARD:-1}" = 0 ] && return 0
   start=$(date +%s)
   while :; do
     free=$(jstack_free_gb)
     { [ -z "$free" ] || [ "$free" = 0 ]; } && return 0
     [ "$free" -ge "$need" ] && return 0
+    # One clean per call, never a loop: if it can't make room, the wait below decides.
+    if [ "$cleaned" = 0 ]; then cleaned=1; _ram_clean "mem_guard need ${need} GB" && continue; fi
     if [ $(( $(date +%s) - start )) -ge $(( max * 60 )) ]; then
       echo "mem_guard: ${free} GB free < ${need} GB after ${max} min, going ahead (run mem_map to see who holds it)" >&2
       return 1
@@ -72,6 +92,7 @@ heavy_acquire() {
   done
 }
 heavy_release() {
+  ram_clean_after "after heavy_release${1:+ $1}"
   if [ -n "${HEAVY_SLOT:-}" ]; then rm -rf "$HEAVY_SLOT"; unset HEAVY_SLOT; return 0; fi
   for slot in "${HEAVY_SLOTS[@]}"; do
     [ -n "${1:-}" ] && [ -f "$slot/owner" ] && [ "$(cut -d' ' -f1 "$slot/owner")" = "$1" ] && rm -rf "$slot"
@@ -169,5 +190,6 @@ tc_run() {
   fi
   JSTACK_CAP_GB="$JSTACK_TC_CAP_GB" heavy_capped "$cmd"; code=$?
   rm -rf "$slot"
+  ram_clean_after "after tc_run"
   return $code
 }

@@ -22,10 +22,11 @@
 // WORKTREE_DEPS_STORE_INSTALL (bun install --frozen-lockfile), JSTACK_CODEGEN_CMD (bun run db:generate),
 // JSTACK_CODEGEN_INPUTS (schema bun.lock: the generator version lives in the lockfile), JSTACK_CODEGEN_REUSE_PATHS (first entry: .generated), JSTACK_CODEGEN_REQUIRED,
 // WORKTREE_DEPS_STORES (<main checkout>/.worktrees).
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const env = process.env
 const words = (value, fallback) => (value === undefined ? fallback : value.trim() ? value.trim().split(/\s+/) : [])
@@ -169,6 +170,16 @@ const run = (command, cwd) => {
 	if (result.status !== 0) throw new Error(`${command} failed in ${cwd} (exit ${result.status})`)
 }
 
+// Installs and worktree removals are what refill the Windows file cache (an install writes ~170k files the antivirus
+// reads), so each one ends by firing ram-clean.ps1 beside this file in the background. It runs the RAM clean scheduled
+// task at most once per cooldown shared by every trigger, and does nothing when the task or the script is missing.
+const ramClean = (reason) => {
+	const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ram-clean.ps1')
+	if (process.platform !== 'win32' || env.JSTACK_RAM_CLEAN_TASK === '' || !fs.existsSync(script)) return
+	const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Reason', reason, '-SkipAbovePct', env.JSTACK_RAM_CLEAN_SKIP_ABOVE_PCT || '40']
+	spawn('powershell', args, { cwd: path.dirname(script), detached: true, stdio: 'ignore', windowsHide: true }).unref()
+}
+
 const workspaceDirs = (root) => expandWorkspaces(workspacePatterns(fs.readFileSync(path.join(root, 'package.json'), 'utf8')), workingTreeReader(root).list)
 
 const workspacePackages = (root) => {
@@ -228,6 +239,7 @@ const ensureDepsStore = (root, hash) => {
 		if (!adoptOwnInstall(root, store)) console.log(`worktree-deps: building shared store ${hash} (one install, reused by every worktree with these dependencies)`)
 		run(CONFIG.storeInstall, store)
 		fs.writeFileSync(complete, new Date().toISOString())
+		ramClean('after store install')
 		return store
 	})
 }
@@ -281,13 +293,15 @@ const deps = (base) => {
 	const root = worktreeRoot()
 	if (samePath(root, mainCheckout(root))) {
 		console.log('worktree-deps: the main checkout keeps its own install')
-		return run(CONFIG.install, root)
+		run(CONFIG.install, root)
+		return ramClean('after install')
 	}
 	const changed = changedDepFiles(root, base)
 	if (changed.length > 0) {
 		console.log(`worktree-deps: this branch changed its dependencies versus ${base} (${changed.join(', ')}): installing its own node_modules`)
 		for (const dir of nodeModulesDirs(root)) if (isLinkedNodeModules(path.join(root, dir))) removeLinkedTree(path.join(root, dir))
-		return run(CONFIG.install, root)
+		run(CONFIG.install, root)
+		return ramClean('after install')
 	}
 	const hash = hashOf(depInputs(workingTreeReader(root), root))
 	const store = ensureDepsStore(root, hash)
@@ -433,6 +447,7 @@ const remove = (target, deleteBranch) => {
 		spawnSync('git', ['-C', main, 'worktree', 'prune'], { stdio: 'inherit' })
 	}
 	if (deleteBranch && branch) spawnSync('git', ['-C', main, 'branch', '-D', branch], { stdio: 'inherit' })
+	ramClean('after worktree remove')
 	console.log(`worktree-deps: removed ${dir}${deleteBranch && branch ? ` and branch ${branch}` : ''} (links unlinked first, shared stores untouched)`)
 }
 

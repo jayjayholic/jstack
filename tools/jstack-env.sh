@@ -45,6 +45,11 @@ JSTACK_HEAVY_MIN_AVAIL_GB="${JSTACK_HEAVY_MIN_AVAIL_GB:-12}"
 JSTACK_TC_MIN_AVAIL_GB="${JSTACK_TC_MIN_AVAIL_GB:-10}"
 JSTACK_MEM_WAIT_MAX_MIN="${JSTACK_MEM_WAIT_MAX_MIN:-15}"
 JSTACK_QUEUE_FILE="${JSTACK_QUEUE_FILE:-}"
+# RAM clean (Windows): the scheduled task tools/setup-ram-clean.ps1 creates. Empty JSTACK_RAM_CLEAN_TASK turns it off.
+JSTACK_RAM_CLEAN_TASK="${JSTACK_RAM_CLEAN_TASK-JstackRamClean}"
+JSTACK_RAM_CLEAN_SETTLE_S="${JSTACK_RAM_CLEAN_SETTLE_S:-60}"
+JSTACK_RAM_CLEAN_SKIP_ABOVE_PCT="${JSTACK_RAM_CLEAN_SKIP_ABOVE_PCT:-40}"
+JSTACK_RAM_CLEAN_COOLDOWN_S="${JSTACK_RAM_CLEAN_COOLDOWN_S:-300}"
 JSTACK_LOCK_SCRIPT="${JSTACK_LOCK_SCRIPT:-$JSTACK_TOOLS/heavy-lock.sh}"
 JSTACK_UNIT_TEST_CMD="${JSTACK_UNIT_TEST_CMD:-}"
 JSTACK_PRETTIER_CHECK_CMD="${JSTACK_PRETTIER_CHECK_CMD:-npx prettier --check --ignore-unknown}"
@@ -53,6 +58,8 @@ JSTACK_READY_EXTRA_CMD="${JSTACK_READY_EXTRA_CMD:-}"
 # Free physical RAM in whole GB. Linux reads /proc/meminfo (MemAvailable, or MemFree where that's missing, like
 # Git Bash on Windows), macOS vm_stat, Windows PowerShell. Set JSTACK_FREE_GB_CMD to any command that prints a
 # number to override it. Prints 0 when nothing works, so the waits block instead of letting a build through blind.
+# On Windows this is "Available" (free + standby; Git Bash's MemFree matched it within 0.3 GB when measured), on purpose:
+# the true free list sits near 0 under load and RAMMap -Ew never raises it, so a free-list guard would never pass.
 jstack_free_gb() {
   local gb=""
   if [ -n "${JSTACK_FREE_GB_CMD:-}" ]; then

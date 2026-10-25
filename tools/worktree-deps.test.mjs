@@ -38,6 +38,7 @@ before(() => {
 	process.env.WORKTREE_DEPS_STORES = stores
 	process.env.WORKTREE_DEPS_STORE_INSTALL = FAKE_INSTALL
 	process.env.JSTACK_INSTALL_CMD = FAKE_INSTALL
+	process.env.JSTACK_RAM_CLEAN_TASK = ''
 })
 
 after(() => fs.rmSync(sandbox, { recursive: true, force: true }))
