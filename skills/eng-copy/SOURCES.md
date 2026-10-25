@@ -1,0 +1,54 @@
+# Sources: Product copy, text density, naming and consent
+
+Carried over from the research pass of 2026-10-25 (`02-research-product-copy.md`), product-specific lines removed. Each line keeps the tag it had there: **[V]** checked against the primary page in that pass; **[K]**, **[B]**, **[C]** or **[M]** a known citation (author, year, venue) not re-opened; **[U]** unverified, treat as a hypothesis. Lines without a tag were cited with their venue and date only.
+
+- Nielsen's 10 usability heuristics (1994), #8 "Aesthetic and minimalist design": every extra unit of information competes with the relevant units and lowers their visibility. #6 "Recognition rather than recall": the interface carries the meaning, not a paragraph. [C] Nielsen, J. (1994), *Enhancing the explanatory power of usability heuristics*, CHI '94; nngroup.com/articles/ten-usability-heuristics.
+- Nielsen (1997-10-01), "How Users Read on the Web" (Alertbox): 79% of test users always scanned a new page and 16% read word by word. [V]
+- Krug, S. (2000), *Don't Make Me Think*: "Get rid of half the words on each page, then get rid of half of what's left." [C]
+- Strunk & White (1959), *The Elements of Style*: "Omit needless words." [C]
+- ISO 24495-1:2023, *Plain language, Part 1: Governing principles*. Principle 1 is that readers get what they need (relevant). Principle 2 is that they find it easily (findable). [V, scope and TOC only]
+- WCAG 2.2 (W3C Rec, 2023): SC 2.4.6 Headings and Labels (AA), 3.3.2 Labels or Instructions (A), 3.1.5 Reading Level (AAA). [C]
+- Readability: Flesch Reading Ease (Flesch 1948, *J. Applied Psychology* 32(3)) and Flesch-Kincaid grade (Kincaid et al. 1975, US Navy report RBR 8-75) [C], computed on each new i18n string. Flag long sentences (> 20 words) and grade > 8. For pt-BR, use the Flesch adaptation by Martins, Ghiraldelo, Nunes & Oliveira Jr. (1996), "Readability formulas applied to textbooks in Brazilian Portuguese," ICMSC-USP [V, existence via USP repository; coefficients 248.835 − 1.015·(words/sentence) − 84.6·(syllables/word) as reported by NILC-Metrix (2022), full text not read].
+- The same idea in code review: checklists (Gawande, A. 2009, *The Checklist Manifesto*) [C], but automated so nobody has to remember.
+- Content-first design: Halvorson, K. (2009), *Content Strategy for the Web*. [C] The anti-placeholder line usually quoted is Zeldman's "Design in the absence of content is not design, it's decoration" [U, only secondary quotes found]. (An earlier draft attributed the anti-lorem-ipsum argument to McGrane (2012); no primary source was found, and the one secondhand quote of McGrane points the other way, so that attribution was removed.)
+- Information foraging and information scent: Pirolli, P. & Card, S. (1999), "Information foraging," *Psychological Review* 106(4):643-675. Labels and headings are proximal cues; a heading that says nothing gives no scent. [V]
+- Data-ink ratio and chartjunk: Tufte, E. (1983), *The Visual Display of Quantitative Information*. Ink that carries no data should go; identical cards are pure non-data ink. [C]
+- Nielsen (1998), "Microcontent: How to Write Headlines, Page Titles, and Subject Lines": a heading must make sense on its own. [C]
+- Comprehension testing: the cloze procedure, Taylor, W. L. (1953), *Journalism Quarterly* 30:415-433 [V, citation]; the content highlighter test (18F Methods, guides.18f.org) [V].
+- *Meyer v. Uber Technologies*, 868 F.3d 66 (2d Cir. 2017): notice was reasonably conspicuous because the screen was uncluttered, the "Terms of Service & Privacy Policy" text was a **hyperlink** (blue, underlined), it was visible without scrolling, and it was temporally coupled to the registration button. [V, via case summaries]
+- *Specht v. Netscape*, 306 F.3d 17 (2d Cir. 2002): terms that users could see only by scrolling below the download button were not binding. [C]
+- *Berkson v. Gogo*, 97 F. Supp. 3d 359 (E.D.N.Y. 2015): a taxonomy of clickwrap, browsewrap, scrollwrap and sign-in-wrap. [C]
+- Heuristic #3 "User control and freedom" and #8 minimalism (Nielsen 1994). [C]
+- Spec-first: write the behavior first, then the copy that describes it. ADRs (Nygard, M. 2011, "Documenting Architecture Decisions") record the *why* the copy may cite. [C]
+- Agent guidance: Anthropic, "Building effective agents" (2024-12-19): "it's crucial for the agents to gain 'ground truth' from the environment at each step… Agents can then pause for human feedback at checkpoints or when encountering blockers." [V]
+- Evans (2003), DDD ubiquitous language: one name per concept, and no name reused across concepts. [C]
+- Card sorting (Spencer, D. 2009, *Card Sorting: Designing Usable Categories*) and tree testing check whether users map names to the right concepts. [C]
+- Readability - `textstat` (Python) or `text-readability` (npm, a JS port of textstat: `fleschReadingEase`, `fleschKincaidGrade`) [V, npm page]; neither applies the pt-BR coefficients, so compute Martins et al. (1996) yourself
+- Comprehension - 18F content highlighter test [V]; cloze (Taylor 1953) [V]; LLM cold-read with a calibrated judge (Zheng et al. 2023) [C]
+- Nielsen, J. (1994). Enhancing the explanatory power of usability heuristics. CHI '94. https://www.nngroup.com/articles/ten-usability-heuristics/
+- Nielsen, J. (1997-10-01). How Users Read on the Web. https://www.nngroup.com/articles/how-users-read-on-the-web/
+- Krug, S. (2000). *Don't Make Me Think*. New Riders.
+- Strunk, W. & White, E. B. (1959). *The Elements of Style*.
+- ISO 24495-1:2023. Plain language, Part 1. https://www.iso.org/standard/78907.html
+- W3C (2023). WCAG 2.2. https://www.w3.org/TR/WCAG22/
+- Flesch, R. (1948). A new readability yardstick. *J. Applied Psychology* 32(3).
+- Kincaid, J. P. et al. (1975). Derivation of new readability formulas… Naval Technical Training Command, RBR 8-75.
+- Taylor, W. L. (1953). Cloze procedure. *Journalism Quarterly* 30:415-433.
+- Pirolli, P. & Card, S. (1999). Information foraging. *Psychological Review* 106(4):643-675.
+- Tufte, E. (1983). *The Visual Display of Quantitative Information*.
+- Halvorson, K. (2009). *Content Strategy for the Web*. New Riders.
+- Evans, E. (2003). *Domain-Driven Design*.
+- Spencer, D. (2009). *Card Sorting*.
+- Nygard, M. (2011). Documenting Architecture Decisions.
+- Gawande, A. (2009). *The Checklist Manifesto*.
+- GOV.UK Design System, Question pages. https://design-system.service.gov.uk/patterns/question-pages/
+- 18F Methods, Content highlighter testing. https://guides.18f.org/methods/validate/content-highlighter-testing/
+- Apple HIG, Managing notifications. https://developer.apple.com/design/human-interface-guidelines/managing-notifications
+- Apple HIG, Notifications. https://developer.apple.com/design/human-interface-guidelines/notifications
+- Martins, T. B. F., Ghiraldelo, C. M., Nunes, M. G. V. & Oliveira Jr., O. N. (1996). Readability formulas applied to textbooks in Brazilian Portuguese. ICMSC-USP. https://repositorio.usp.br/item/000906089
+- Vale docs, Styles. https://docs.vale.sh/topics/styles
+- *Meyer v. Uber Technologies*, 868 F.3d 66 (2d Cir. 2017). https://blog.ericgoldman.org/archives/2017/08/meyervuber.htm
+- *Specht v. Netscape*, 306 F.3d 17 (2d Cir. 2002).
+- *Berkson v. Gogo*, 97 F. Supp. 3d 359 (E.D.N.Y. 2015).
+- Zheng, L. et al. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. NeurIPS D&B.
+- Anthropic (2024-12-19). Building effective agents. https://www.anthropic.com/engineering/building-effective-agents

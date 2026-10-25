@@ -1,0 +1,42 @@
+{
+  "domain": "ui-visual",
+  "version": 1,
+  "title": "UI and visual design (house style, tokens, themes, generated artifacts)",
+  "triggers": {
+    "paths": ["**/*.css", "**/*.scss", "**/components/**", "**/app/**/*.tsx", "**/pages/**/*.tsx", "**/*.vue", "**/*.svelte", "**/theme*/**", "**/tokens/**", "**/public/brand/**"],
+    "diffTokens": ["className", "style=", "color:", "background", "#fff", "rgb(", "theme", "dark:"],
+    "taskWords": ["ui", "design", "redesign", "restyle", "screen", "page", "modal", "card", "theme", "dark", "light", "color", "colour", "logo", "brand", "layout", "style", "visual", "docx", "image", "icon"]
+  },
+  "questions": [
+    { "id": "ui.q.reference", "tier": "S", "text": "Which existing screen is the visual reference, and which kit components will I reuse? If there is no agreed image of good, render 2-3 options first.", "produces": "file", "prevents": ["off-brand", "no-reference"] },
+    { "id": "ui.q.scope", "tier": "S", "text": "Is this a restyle (no new elements) or a redesign (new elements)? Write the one-line scope.", "produces": "text", "prevents": ["scope-creep"] },
+    { "id": "ui.q.tokens", "tier": "M", "text": "Which tokens cover every colour, radius, spacing and font I need; which are missing and go into the token file first?", "produces": "list", "prevents": ["hardcoded-values"] },
+    { "id": "ui.q.states-themes", "tier": "M", "text": "Which states and themes exist: default, empty, loading, error, 404, permission-denied x light/dark x desktop/mobile?", "produces": "table", "prevents": ["one-theme-only"] },
+    { "id": "ui.q.brand-surfaces", "tier": "M", "text": "Which brand surfaces could this touch (logo, mascot, sign-in), and are they under screenshot baselines?", "produces": "list", "prevents": ["brand-regression"] },
+    { "id": "ui.q.artifact-template", "tier": "M", "text": "For generated artifacts (documents, images, chat answers): what is the template, and what do the first line and first page look like?", "produces": "file", "prevents": ["ugly-artifact"] },
+    { "id": "ui.q.invented-rules", "tier": "L", "text": "Which prompt or design restrictions come from the owner's words, and which did I invent?", "produces": "list", "prevents": ["invented-constraints"] },
+    { "id": "ui.q.density", "tier": "L", "text": "What density applies (compact for data tables; width follows content)?", "produces": "text", "prevents": ["poor-density"] },
+    { "id": "ui.q.premortem", "tier": "L", "text": "Pre-mortem: it shipped and got reverted. What was the reason?", "produces": "text", "prevents": ["reverted-redesign"] }
+  ],
+  "budgets": [
+    { "key": "a11y.contrast_text", "default": 4.5, "unit": "ratio", "measure": "axe color-contrast in light and dark, including opened modals", "source": "WCAG 2.2 SC 1.4.3" },
+    { "key": "a11y.contrast_ui", "default": 3, "unit": "ratio", "measure": "token pair ratio for borders, icons, focus rings", "source": "WCAG 2.2 SC 1.4.11" },
+    { "key": "ui.new_color_literals", "default": 0, "unit": "count", "measure": "ui.hardcoded-color hits on added lines", "source": "DTCG Design Tokens Format 2025.10" }
+  ],
+  "rules": [
+    { "id": "ui.hardcoded-color", "title": "Colour literal outside the token files", "engine": "regex", "pattern": "(?<![\\w&#])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b|\\brgba?\\(\\s*\\d|\\bhsla?\\(\\s*\\d|\\b(?:bg|text|border|fill|stroke|from|to|via|ring|outline|shadow)-\\[#", "unless": "^\\s*--[\\w-]+\\s*:|href=|\\bid=|url\\(#|\\$\\{", "languages": ["css", "scss", "less", "tsx", "jsx", "vue", "svelte", "html"], "excludePaths": ["**/tokens/**", "**/*token*.*", "**/theme/**", "**/*.svg"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "hardcoded-values", "why": "Bypasses the tokens, so it breaks in the other theme and drifts from the brand.", "confirm": "static-proof plus render: the element in dark mode fails contrast or differs from the token value", "fixHint": "use or add a token; never a literal in a feature file" },
+    { "id": "ui.raw-primitive", "title": "Raw <button>/<input>/<dialog> or third-party primitive in a feature file when the kit has one", "engine": "eyes", "severity": "medium", "failureClass": "off-brand", "why": "Screens built from raw primitives look and behave unlike the rest of the app.", "confirm": "render: side-by-side screenshot with the reference screen" },
+    { "id": "ui.restyle-adds-elements", "title": "New sections, heroes, decorative cards or filler text in a restyle", "engine": "eyes", "severity": "medium", "failureClass": "scope-creep", "why": "Nobody asked for them; the owner reverts them.", "confirm": "render: aria/heading outline diff vs base shows new landmarks" },
+    { "id": "ui.one-theme-only", "title": "Surface checked in one theme only; portal rendered outside the theme root", "engine": "eyes", "severity": "high", "failureClass": "one-theme-only", "why": "Invisible buttons and wrong-theme modals in the other theme.", "confirm": "render: axe color-contrast per emulated colorScheme with each modal open" },
+    { "id": "ui.artifact-chat-preface", "title": "Generated document opens with a chat preface or carries Markdown residue", "engine": "eyes", "severity": "medium", "failureClass": "ugly-artifact", "why": "The document reads like a chat reply, not a document.", "confirm": "static-proof on extracted text: first paragraph matches a preface pattern" },
+    { "id": "ui.stale-screenshot", "title": "Screenshot older than the last source change or without a commit stamp", "engine": "eyes", "severity": "medium", "failureClass": "stale-evidence", "why": "The image shows code that is no longer there.", "confirm": "static-proof: screenshot mtime < newest changed source file" }
+  ],
+  "verify": [
+    { "id": "ui.v.token-lint", "text": "token lint over every styling surface: no new colour literals on added lines", "kind": "test", "tool": "scan.mjs ui.hardcoded-color / stylelint declaration-strict-value" },
+    { "id": "ui.v.matrix", "text": "built app: screen inventory x {light, dark} x {desktop, 390 px mobile}", "kind": "render", "tool": "Playwright projects" },
+    { "id": "ui.v.contrast", "text": "axe color-contrast per theme with modals and menus open: 0 violations", "kind": "render", "tool": "@axe-core/playwright" },
+    { "id": "ui.v.structure", "text": "restyle: aria/heading outline unchanged vs base", "kind": "render", "tool": "toMatchAriaSnapshot" },
+    { "id": "ui.v.brand", "text": "toHaveScreenshot on brand surfaces in both themes; brand asset hashes match the manifest; img naturalWidth > 0", "kind": "render", "tool": "Playwright" },
+    { "id": "ui.v.sheet", "text": "before/after contact sheet stamped with HEAD, opened for the reviewer", "kind": "render", "tool": "Playwright + sheet script" }
+  ]
+}

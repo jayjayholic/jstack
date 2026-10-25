@@ -1,0 +1,84 @@
+# Sources: Performance and perceived latency
+
+Carried over from the research pass of 2026-10-25 (`02-research-performance.md`), product-specific lines removed. Each line keeps the tag it had there: **[V]** checked against the primary page in that pass; **[K]**, **[B]**, **[C]** or **[M]** a known citation (author, year, venue) not re-opened; **[U]** unverified, treat as a hypothesis. Lines without a tag were cited with their venue and date only.
+
+- Before - Performance budget (Kadlec 2013 [B]; Core Web Vitals [V]; RAIL [V]) - A number per surface, written down before code
+- Before - Human response-time limits (Miller 1968; Card et al. 1991; Nielsen 1993 [V]) - Which number: 0.1 s / 1 s / 10 s
+- Before - Pre-mortem (Klein 2007, HBR 85(9) [B]) - "It shipped and it's slow. Why?" asked up front
+- During - Critical-path analysis and Amdahl's law (1967 [U]) - Find the serial chain; parallelism only helps the parallel part
+- During - Tail latency (Dean & Barroso 2013, CACM 56(2) [V]); percentiles not means (Google SRE book 2016, ch. 6 [V]) - Budget the p75/p95/p99, not the average
+- After - Rigorous benchmarking (Georges et al. OOPSLA 2007 [B]; Mytkowicz et al. ASPLOS 2009 [B]; Kalibera & Jones ISMM 2013 [B]) - Repeated, interleaved runs with intervals, so a "regression" is not noise and is not explained away
+- Next.js docs, "Fetching Data": sequential vs parallel, `Promise.all`, preload, streaming, "meaningful loading states" (last updated 2026-09-01) [V].
+- Kadlec, "Setting a performance budget" (2013) and "Performance budgets that stick" (2019) [B].
+- Nielsen 1993, *Usability Engineering* ch. 5 (0.1 / 1 / 10 s limits) [V via NN/g].
+- Nielsen 1994, ten usability heuristics, #1 "visibility of system status" [U].
+- RFC 5861, *HTTP Cache-Control Extensions for Stale Content* (Nottingham, May 2010) [V].
+- Dean & Barroso, "The Tail at Scale", CACM 56(2):74-80, 2013 [V abstract]. The abstract covers tail latency at scale; the fan-out discussion is in the body [U].
+- web.dev "Virtualize large lists with react-window" (Miller & Djirdeh, 2019) [V].
+- web.dev "content-visibility" (Kravets, Wagner, Levin, 2020; reports 232 ms → 30 ms) [V].
+- web.dev "Optimize long tasks" (Wagner & Kenny, 2022, updated 2024; 50 ms long-task threshold) [V].
+- Barnes & Hut, *Nature* 324, 1986 [U].
+- Jacomy et al., "ForceAtlas2", *PLoS ONE* 2014 [U].
+- **Measure INP**, the field responsiveness metric (≤ 200 ms at p75). INP replaced FID as a Core Web Vital on 2024-03-12.
+- Paul Lewis, "Stick to compositor-only properties and manage layer count" (web.dev, 2015) [V].
+- web.dev "INP" (2022, updated 2025; thresholds 200 / 500 ms at p75) [V].
+- INP replacing FID on 2024-03-12: Google Search Central [B].
+- Anthropic, "Building effective agents" (Schluntz & Zhang, 2024-12-19): simplest solution first; agents trade latency and cost for performance [V].
+- Anthropic, "How we built our multi-agent research system" (2025-06-13) [V].
+- Dean & Barroso 2013 [V abstract]. Hedged and tied requests are from the paper body, which was not re-read in this pass [U].
+- Brooker, "Timeouts, retries and backoff with jitter", AWS Builders' Library (2019-12-05): timeouts from p99.9, retries are "selfish" [V].
+- RFC 9110 §8.4 Content-Encoding (2022) [U].
+- Progress indicators help: Myers (1985) reports, from experience and formal experiments, that percent-done indicators are an important and useful interface tool *(corrected: softened to what the paper claims)*.
+- Nielsen 1993 limits [V].
+- Myers, "The importance of percent-done progress indicators…", CHI '85 / SIGCHI Bulletin 16(4):11-17, 1985 [B].
+- Doherty & Thadani, "The Economic Value of Rapid Response Time", IBM 1982 (400 ms; the exact wording in the original was not verified) [B].
+- Brooker 2019, AWS Builders' Library: retry only idempotent operations, at one layer, with capped exponential backoff and jitter [V].
+- Google SRE book (2016) ch. 6: track error latency, "a slow error is even worse than a fast error" [V].
+- web.dev "Optimize long tasks" (2022, updated 2024) [V].
+- Little, "A proof for the queuing formula L = λW", *Operations Research* 9(3):383-387, 1961 [B].
+- Amdahl, AFIPS 1967 [U].
+- Gregg, USE method (2012) [B].
+- Gunther, *Guerrilla Capacity Planning* (Springer 2007), Universal Scalability Law, contention term [U].
+- Kleppmann, *Designing Data-Intensive Applications* (O'Reilly 2017), on idempotence and conflict-free writes [U].
+- ITU-T Rec. G.114 (05/2003), "One-way transmission time", in force [B]. The record page was fetched; the 150 ms / 400 ms figures were not re-read from the text in this pass [U].
+- Dean & Barroso 2013: the abstract supports tail latency mattering at scale [V abstract]; "tails compound across stages" is from the body, not re-read [U] *(corrected)*.
+- Mytkowicz, Diwan, Hauswirth & Sweeney, "Producing wrong data without doing anything obviously wrong!", ASPLOS 2009, pp. 265-276 [B].
+- Georges, Buytaert & Eeckhout, "Statistically rigorous Java performance evaluation", OOPSLA 2007, pp. 57-76 [B].
+- Kalibera & Jones, "Rigorous benchmarking in reasonable time", ISMM 2013 [B].
+- Hodges & Lehmann, *Ann. Math. Statist.* 1963 [U].
+- Cliff, *Psychological Bulletin* 1993 [U].
+- Kohavi, Tang & Xu, *Trustworthy Online Controlled Experiments* (Cambridge UP 2020) [U].
+- Nosek et al., "The preregistration revolution", *PNAS* 2018 [U].
+- Feynman, "Cargo Cult Science", Caltech commencement 1974 [U].
+- Nielsen, J. "Response Times: The 3 Important Limits" (excerpt of *Usability Engineering*, 1993; cites Miller 1968, Card et al. 1991). https://www.nngroup.com/articles/response-times-3-important-limits/ [V]
+- Google, "Measure performance with the RAIL model", web.dev (updated 2020-06-10). https://web.dev/articles/rail [V]
+- Google, "Web Vitals", web.dev. https://web.dev/articles/vitals [V]
+- Wagner, J. & Pollard, B. "Interaction to Next Paint (INP)", web.dev (2022-05-06, updated 2025-09-02). https://web.dev/articles/inp [V]
+- Google Search Central blog, "Introducing INP to Core Web Vitals" (2023-05-10; replacement effective 2024-03-12). https://developers.google.com/search/blog/2023/05/introducing-inp [B]
+- Kadlec, T. "Setting a performance budget" (2013-01) [B]; "Performance budgets that stick" (2019-03). https://timkadlec.com/remembers/2019-03-07-performance-budgets-that-stick [B]
+- Lighthouse CI configuration. https://github.com/GoogleChrome/lighthouse-ci/blob/main/docs/configuration.md [V]
+- Next.js docs, "Fetching Data" (updated 2026-09-01). https://nextjs.org/docs/app/getting-started/fetching-data [V]
+- React docs: `useOptimistic`, `useDeferredValue`. https://react.dev/reference/react/useOptimistic, https://react.dev/reference/react/useDeferredValue [V]
+- Lewis, P. "Stick to compositor-only properties and manage layer count", web.dev (2015). https://web.dev/articles/stick-to-compositor-only-properties-and-manage-layer-count [V]
+- Wagner, J. & Kenny, B. "Optimize long tasks", web.dev (2022-09-30, updated 2024-12-19). https://web.dev/articles/optimize-long-tasks [V]
+- Kravets, U., Wagner, J. & Levin, V. "content-visibility", web.dev (2020-08-05, updated 2025-09-23). https://web.dev/articles/content-visibility [V]
+- Miller, J. & Djirdeh, H. "Virtualize large lists with react-window", web.dev (last updated 2019-04-29). https://web.dev/articles/virtualize-long-lists-react-window [V]
+- Dean, J. & Barroso, L. A. "The Tail at Scale", *CACM* 56(2):74-80, 2013. https://research.google/pubs/the-tail-at-scale/ [V abstract]
+- Beyer, B. et al. (eds.) *Site Reliability Engineering*, O'Reilly 2016, ch. 6 "Monitoring Distributed Systems". https://sre.google/sre-book/monitoring-distributed-systems/ [V]
+- Brooker, M. "Timeouts, retries, and backoff with jitter", AWS Builders' Library (2019-12-05). https://builder.aws.com/content/3EumjoZascWd1oZiEgL8ORlv3qE/timeouts-retries-and-backoff-with-jitter [V]
+- Nottingham, M. RFC 5861 (2010-05). https://www.rfc-editor.org/rfc/rfc5861 [V]
+- Little, J. D. C. *Operations Research* 9(3):383-387, 1961. doi:10.1287/opre.9.3.383 [B]
+- Gregg, B. "The USE Method" (2012). https://www.brendangregg.com/usemethod.html [B]
+- ITU-T Rec. G.114 (05/2003), "One-way transmission time" [B]
+- Myers, B. A. "The importance of percent-done progress indicators for computer-human interfaces", CHI '85 / *SIGCHI Bulletin* 16(4):11-17. doi:10.1145/317456.317459 (proceedings) and doi:10.1145/1165385.317459 (Bulletin); both resolve. Author PDF: https://www.cs.cmu.edu/~bam/papers/percentdoneCHI85.pdf [B]
+- Doherty, W. J. & Thadani, A. J. "The Economic Value of Rapid Response Time", IBM, 1982 [B]
+- Klein, G. "Performing a Project Premortem", *HBR* 85(9):18-19, 2007 [B]
+- Anthropic, "Building effective agents" (2024-12-19). https://www.anthropic.com/engineering/building-effective-agents [V]
+- Anthropic, "How we built our multi-agent research system" (2025-06-13). https://www.anthropic.com/engineering/multi-agent-research-system [V]
+- Anthropic, Claude docs, tool use: "Forcing tool use" / `tool_choice`. https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools [V]
+- Mytkowicz, T., Diwan, A., Hauswirth, M. & Sweeney, P. F. ASPLOS 2009, pp. 265-276 [B]
+- Georges, A., Buytaert, D. & Eeckhout, L. OOPSLA 2007, pp. 57-76 [B]
+- Kalibera, T. & Jones, R. "Rigorous benchmarking in reasonable time", ISMM 2013, pp. 63-74, doi:10.1145/2464157.2464160 (DOI resolves; https://kar.kent.ac.uk/33611/) [B]
+- OWASP Logging Cheat Sheet. https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html [V]
+- OpenTelemetry specification, "Attribute limits". https://opentelemetry.io/docs/specs/otel/common/#attribute-limits [V]
+- Not re-checked in this pass [U]: Amdahl (AFIPS 1967); Gunther (2007); Kleppmann (2017); Barnes & Hut (*Nature* 1986); Jacomy et al. (*PLoS ONE* 2014); Hodges & Lehmann (1963); Cliff (1993); Kohavi, Tang & Xu (2020); Nosek et al. (*PNAS* 2018); Feynman (1974); Nielsen heuristics (1994); RFC 9110 (2022); Kubernetes probe docs; Winand (keyset pagination); measurement tools listed in 2.4.

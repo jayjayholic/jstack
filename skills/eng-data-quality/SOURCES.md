@@ -1,0 +1,74 @@
+# Sources: Ingestion, pipelines and data quality
+
+Carried over from the research pass of 2026-10-25 (`02-research-kg-quality.md`), product-specific lines removed. Each line keeps the tag it had there: **[V]** checked against the primary page in that pass; **[K]**, **[B]**, **[C]** or **[M]** a known citation (author, year, venue) not re-opened; **[U]** unverified, treat as a hypothesis. Lines without a tag were cited with their venue and date only.
+
+- Data validation against a schema, as part of the pipeline - Infer a schema from the stable properties of the data, validate each new batch against it, and report anomalies instead of silently ingesting them. - Breck, Polyzotis, Roy, Whang, Zinkevich, "Data Validation for Machine Learning", SysML 2019 [V]; TFDV launch post, 2018 [V]
+- Unit tests for data - Declarative constraints for completeness, uniqueness, value ranges and size, run as queries. Includes anomaly detection on time series of quality metrics. - Schelter et al., "Automating Large-Scale Data Quality Verification", PVLDB 11(12):1781-1794, 2018 (Deequ) [V]
+- ML production rubric - 28 tests and monitors for data, model, infrastructure and monitoring. Examples: feature expectations captured in a schema, and silent failures monitored. - Breck, Cai, Nielsen, Salib, Sculley, "The ML Test Score", IEEE Big Data 2017 [V]
+- Data cascades - Data problems that are invisible upstream compound into downstream failures that show up late. - Sambasivan et al., "Everyone wants to do the model work, not the data work", CHI 2021, Best Paper Award (listed on the CHI 2021 awards page), doi 10.1145/3411764.3445518 [V]
+- Hidden technical debt in ML - Covers undeclared consumers, feedback loops, data dependencies that cost more than code dependencies, and pipeline jungles. - Sculley et al., NeurIPS 2015 [K]
+- Pre-mortem - Before building, assume the project has already failed and list the reasons. - Klein, "Performing a Project Premortem", HBR, Sept 2007 [K]
+- FMEA - For each component, list how it can fail, the effect, the severity and how the failure is detected. - IEC 60812:2018 [K]
+- Design by contract - Write down preconditions, postconditions and invariants, and check them at the boundaries. - Meyer, "Applying Design by Contract", IEEE Computer 25(10), 1992 [K]
+- Property-based testing - State an invariant and let a generator search for a counterexample. - Claessen and Hughes, "QuickCheck", ICFP 2000 [K]
+- Fail fast - Make an error visible at the point where it happens instead of carrying on with a bad state. - Shore, "Fail Fast", IEEE Software 21(5), 2004 [K]
+- Ground truth from the environment - Agents should get ground truth from the environment at each step. Evaluator-optimizer loops fit when the evaluation criteria are clear. - Anthropic, "Building effective agents", 19 Dec 2024 [V]
+- Checklists - A short checklist for killer items, used at defined pause points. - Gawande, *The Checklist Manifesto*, 2009 [K]
+- SLOs and error budgets - Define the user-visible indicator and its target, then alert on how fast the error budget burns. - Beyer et al., *Site Reliability Engineering*, O'Reilly 2016, ch. 3 (error budgets) and ch. 4 (SLOs) [K]; burn-rate alerting is in Beyer et al., *The Site Reliability Workbook*, O'Reilly 2018, ch. 5 "Alerting on SLOs" [V]
+- Provenance - Every derived fact carries what it was derived from, by which activity, and when. - W3C PROV-O Recommendation, 30 Apr 2013 [K]
+- Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena", NeurIPS 2023 Datasets and Benchmarks [V]. GPT-4 as a judge reaches above 80% agreement with humans, about the same level as agreement between humans. The paper documents position bias, verbosity bias and self-enhancement bias.
+- Shankar et al., "Who Validates the Validators?", UIST 2024, doi 10.1145/3654777.3676450 [V, title and venue via Crossref; text via arXiv 2404.12272]. It names *criteria drift*: "users need criteria to grade outputs, but grading outputs helps users define criteria", and some criteria depend on the specific outputs observed. (Inference, not the paper's claim: re-grade the golden set when the pipeline or its outputs change.)
+- Ribeiro et al., "Beyond Accuracy: Behavioral Testing of NLP Models with CheckList", ACL 2020 [K]. It covers invariance and directional tests, for example that adding irrelevant context must not flip the verdict.
+- Raffel et al., T5 / C4, JMLR 2020 [V via Dodge et al. 2021 summary]. Uses rule filters for boilerplate, placeholder text and minimum sentence counts.
+- Dodge et al., "Documenting Large Webtext Corpora", EMNLP 2021 [V]. Audit what the filter actually kept and dropped.
+- Lee et al., "Deduplicating Training Data Makes Language Models Better", ACL 2022 [V]. Near-duplicate removal with MinHash. Broder, "On the resemblance and containment of documents", 1997 [K].
+- Gebru et al., "Datasheets for Datasets", CACM 64(12), 2021 [K]. Document the source, the intended content and known junk.
+- Barbaresi, "Trafilatura", ACL 2021 demo [K]. Boilerplate and main-text extraction.
+- Hogan et al., "Knowledge Graphs", ACM Computing Surveys 54(4), 2021, doi 10.1145/3447772 [V bibliographic]. Contrasts schema, validation and open- versus closed-world modelling. The section-level wording was not re-read in this pass [U].
+- W3C SHACL Recommendation, 2017 [K]. Validation is reported as a list of violations, not as a crash.
+- Banko et al., "Open Information Extraction from the Web", IJCAI 2007 [K]. Schema-free relation extraction.
+- Postel's robustness principle, RFC 761 (1980) [K]. Note that RFC 9413 (2023) cautions against applying it blindly; use it only for *types*, not for *junk*.
+- Horvitz, "Principles of Mixed-Initiative User Interfaces", CHI 1999, pp. 159-166 [V bibliographic; content via secondary summaries, the full text was not re-read in this pass]. Act autonomously only when the expected utility of acting exceeds that of not acting; the probability threshold follows from the costs and benefits of each outcome. (Inference: a cheaper undo lowers the cost of a wrong action and therefore the threshold.)
+- Amershi et al., "Guidelines for Human-AI Interaction", CHI 2019 [K]. G8 is "support efficient dismissal" and G9 is "support efficient correction".
+- Kohavi, Tang and Xu, *Trustworthy Online Controlled Experiments*, CUP 2020 [K]. Define the OEC up front, with guardrail metrics.
+- *Dark launch* (SRE book 2016, ch. 27 "Reliable Product Launches at Scale" [K]) and shadow mode, used to measure the would-have-done rate before enabling a feature. "Shadow mode" is common practice, not a term from that chapter [U].
+- *Threshold sweep:* on labelled candidates, plot precision against coverage across thresholds. Choose the operating point explicitly and record it in an ADR (Nygard, "Documenting Architecture Decisions", 2011 [K]).
+- Shneiderman, "The Eyes Have It", IEEE Symposium on Visual Languages 1996 [K]. The mantra is *overview first, zoom and filter, details on demand*. The graph is the overview, and clickable entities provide details on demand.
+- Nielsen, "10 Usability Heuristics", 1994 (in *Usability Inspection Methods*) [K]. Relevant are #3 user control and freedom, #4 consistency and standards, and #6 recognition rather than recall.
+- ISO 9241-210:2019, human-centred design [K]. Requirements derive from the user's tasks.
+- WCAG 2.2, W3C Recommendation, Oct 2023 [K]. SC 2.1.1 Keyboard and SC 4.1.2 Name, Role, Value: anything clickable must be an operable control.
+- Meyer 1992, design by contract [K].
+- Shore 2004, fail fast [K].
+- Deequ completeness and size constraints, VLDB 2018 [V].
+- Breck et al. 2017, monitoring silent failures [V].
+- RFC 9110, *HTTP Semantics*, 2022 [K]. A 404 or other 4xx/5xx status is not content.
+- Nygard, *Release It!* 2nd ed., 2018 [K]. Timeouts, circuit breakers and steady state.
+- Little's law, Little 1961, *Operations Research* 9(3):383-387 [K]. It states L = λW (items in the system = arrival rate × time in system), so a growing backlog shows up as rising wait time. The point that a queue whose arrivals exceed its throughput grows without bound is basic queueing stability, not Little's law itself; measure both rates.
+- W3C PROV-O, 2013 [K].
+- Snodgrass, *Developing Time-Oriented Database Applications in SQL*, 1999 [K]. Bitemporal valid-time and transaction-time.
+- Rasmussen et al., "Zep: A Temporal Knowledge Graph Architecture for Agent Memory", arXiv 2501.13956, Jan 2025 [V]. A bi-temporal model; contradicted edges are invalidated by setting their `t_invalid` (sec. 2.1, 2.2.3). Preprint, not peer-reviewed.
+- Sculley et al. 2015 [K]. Hidden feedback loops, where a system learns from its own outputs.
+- Anthropic, Dec 2024 [V]. Ground truth from the environment at each step.
+- IETF draft-ietf-httpbis-resumable-upload, derived from the tus protocol; -00 dated 5 Sept 2022 [V]. As of Oct 2026 it is still an active Internet-Draft (revision -14, 18 Oct 2026, intended Proposed Standard), not an RFC [V].
+- RFC 9110 (2022), status 413 *Content Too Large* [K].
+- Kleppmann, *Designing Data-Intensive Applications*, 2017 [K]. Idempotency and exactly-once effects through idempotency keys.
+- "Don't repeat yourself" from Hunt and Thomas, *The Pragmatic Programmer*, 1999 [K], applied to *paths*: one ingestion entry point.
+- Stalls, queues and SLOs - Queue age / throughput metrics, burn-rate alerts (SRE Workbook, 2018, ch. 5)
+- [Data Validation for Machine Learning (Google Research)](https://research.google/pubs/data-validation-for-machine-learning/)
+- [TFDV launch post, 2018](https://blog.tensorflow.org/2018/09/introducing-tensorflow-data-validation.html)
+- [Schelter et al., PVLDB 2018](https://www.vldb.org/pvldb/vol11/p1781-schelter.pdf)
+- [The ML Test Score](https://research.google/pubs/pub46555/)
+- [Shankar et al., UIST 2024](https://arxiv.org/pdf/2404.12272)
+- [Zheng et al., NeurIPS 2023](https://neurips.cc/virtual/2023/poster/73434)
+- [Lee et al., ACL 2022](https://aclanthology.org/2022.acl-long.577)
+- [Dodge et al., Documenting C4](https://arxiv.org/pdf/2104.08758)
+- [Raffel et al., T5](https://arxiv.org/pdf/1910.10683)
+- [Sambasivan et al., CHI 2021 (Google listing)](https://services.google.com/fh/files/misc/chi_2021_tp.pdf)
+- [Horvitz, CHI 1999](https://erichorvitz.com/uiact.htm)
+- [Hogan et al., Knowledge Graphs (accepted manuscript)](https://eprints.soton.ac.uk/446623)
+- [Anthropic, Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)
+- [IETF resumable upload draft -00](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-resumable-upload-00) and [current status](https://datatracker.ietf.org/doc/draft-ietf-httpbis-resumable-upload/)
+- [Zep, arXiv 2501.13956](https://arxiv.org/html/2501.13956v1)
+- [Shankar et al., Crossref record](https://api.crossref.org/works/10.1145/3654777.3676450)
+- [SRE Workbook, Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/)
+- [CHI 2021 awards](https://chi2021.acm.org/information/5208.html)

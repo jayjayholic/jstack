@@ -1,0 +1,43 @@
+{
+  "domain": "llm-cost",
+  "version": 1,
+  "title": "LLM cost, metering, keys and caching",
+  "triggers": {
+    "paths": ["**/ai/**", "**/llm/**", "**/*metered*", "**/*billing*", "**/*quota*", "**/*usage*", "**/*spend*", "**/*budget*", "**/ingest*/**"],
+    "diffTokens": ["new Anthropic", "new OpenAI", "@anthropic-ai/sdk", "openai", "cache_control", "usage", "input_tokens", "quota", "model:"],
+    "taskWords": ["cost", "costs", "spend", "billing", "meter", "metering", "usage", "tokens", "quota", "limit", "cache", "caching", "model", "provider", "api key", "byok", "experiment", "benchmark", "upload", "zip"]
+  },
+  "questions": [
+    { "id": "cost.q.choke-point", "tier": "S", "text": "Through which single client does this paid call go, and does it emit one raw-unit usage event per attempt?", "produces": "text", "prevents": ["unmetered-calls"] },
+    { "id": "cost.q.worst-case", "tier": "S", "text": "What is the worst-case cost of one trigger with the largest allowed input? Show the arithmetic.", "produces": "number", "prevents": ["runaway-spend"] },
+    { "id": "cost.q.stops", "tier": "M", "text": "What stops it: per-job ceiling, per-tenant quota, kill switch? What does each do on error? (It must deny.)", "produces": "table", "prevents": ["fail-open-gate"] },
+    { "id": "cost.q.who-pays", "tier": "M", "text": "Who pays (BYOK, gateway or system key), and how will I see that from the response, not from config?", "produces": "text", "prevents": ["routing-unverified"] },
+    { "id": "cost.q.model-choice", "tier": "M", "text": "Which model, and which eval shows a cheaper one is not good enough? Can it run batched?", "produces": "text", "prevents": ["expensive-model"] },
+    { "id": "cost.q.trigger", "tier": "M", "text": "What event triggers the call, and what predicate skips it? Have we computed this result before (cache key, TTL, negative cache)?", "produces": "text", "prevents": ["spend-on-every-event", "refetch-known-data"] },
+    { "id": "cost.q.cache-prefix", "tier": "L", "text": "Is the prompt prefix stable and over the model's minimum cacheable length? Where is the breakpoint, and what changes before it?", "produces": "text", "prevents": ["cache-miss"] },
+    { "id": "cost.q.limits-source", "tier": "L", "text": "Where do limits come from at decision time (source of truth or a cache), and how stale can they be?", "produces": "text", "prevents": ["stale-limits"] },
+    { "id": "cost.q.experiments", "tier": "L", "text": "For experiments: sample size from a power analysis, cost estimate, budget, stop rule. For keys: ledger state checked before testing?", "produces": "number", "prevents": ["experiment-overspend"] }
+  ],
+  "budgets": [
+    { "key": "cost.max_usd_per_trigger", "default": null, "unit": "USD", "measure": "worst-case arithmetic in pre-flight + metered sum per job", "source": "OWASP LLM10:2025 Unbounded Consumption" },
+    { "key": "cost.unmetered_call_sites", "default": 0, "unit": "count", "measure": "bypass scan (cost.direct-sdk) outside the metered client", "source": "design by contract: single choke point" },
+    { "key": "cost.metered_vs_invoice_gap_pct", "default": 2, "unit": "%", "measure": "metered sum vs provider usage export per provider per day", "source": "FinOps reconciliation (judgement threshold)" }
+  ],
+  "rules": [
+    { "id": "cost.direct-sdk", "title": "Provider SDK used directly outside the metered client", "engine": "regex", "pattern": "\\bnew\\s+(?:Anthropic|OpenAI|AzureOpenAI|Mistral|GoogleGenAI|GoogleGenerativeAI|Groq|CohereClient)\\s*\\(|\\bfrom\\s+['\"](?:@anthropic-ai/sdk|openai|@mistralai/mistralai|@google/genai|@google/generative-ai|groq-sdk)['\"]|\\brequire\\(\\s*['\"](?:@anthropic-ai/sdk|openai)['\"]\\s*\\)|^\\s*(?:import\\s+(?:anthropic|openai)\\b|from\\s+(?:anthropic|openai)\\s+import\\b)", "unless": "^\\s*import\\s+type\\b", "languages": ["ts", "tsx", "js", "jsx", "mjs", "cjs", "py"], "excludePaths": ["**/*metered*", "**/*metered*/**", "**/llm-client*", "**/ai-client*"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "unmetered-calls", "why": "Every call here is spend nobody records or bills.", "confirm": "failing-test: mock the provider, call the path, assert one usage event per attempt (fails: zero)", "fixHint": "route through the project's metered client; set metered paths in .jstack/unslop.json extraRules if they differ" },
+    { "id": "cost.fail-open-gate", "title": "Quota/spend gate that allows on error (catch returns true/null)", "engine": "regex", "multiline": true, "pattern": "catch\\s*(?:\\([^)]*\\))?\\s*\\{[^{}]*\\breturn\\s+(?:true|null|undefined|\\{\\s*allowed\\s*:\\s*true)|except[^:\\n]*:\\s*\\n?[ \\t]*return\\s+True\\b", "files": ["**/*{quota,limit,spend,budget,entitle,billing,gate,credit}*.{ts,tsx,js,mjs,cjs,py}"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "fail-open-gate", "why": "When the quota store is down, every paid call goes through (CWE-636).", "confirm": "failing-test: make the quota store throw; assert the paid call is not made", "fixHint": "deny on error for paid actions; document any degrade mode" },
+    { "id": "cost.allow-default", "title": "Gate defaults to allow (?? true / || true)", "engine": "regex", "pattern": "(?:\\?\\?|\\|\\|)\\s*true\\b", "files": ["**/*{quota,limit,spend,budget,entitle,billing,gate,credit}*.{ts,tsx,js,mjs,cjs}"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "fail-open-gate", "why": "A missing limit reads as unlimited.", "confirm": "failing-test: limit row absent; assert denied", "fixHint": "missing means deny (fail-safe default)" },
+    { "id": "cost.unbounded-fanout", "title": "Per-item paid call in a loop with no size bound or job ceiling before it", "engine": "eyes", "severity": "high", "failureClass": "runaway-spend", "why": "A big upload (or a zip bomb) multiplies the bill.", "confirm": "failing-test: 10k-entry archive through the entry point with the provider mocked; calls before rejection > N" },
+    { "id": "cost.unconditional-handler", "title": "Message or webhook handler calls the model on every event", "engine": "eyes", "severity": "medium", "failureClass": "spend-on-every-event", "why": "Group chatter becomes paid calls.", "confirm": "failing-test: replay a chat log; paid calls > messages meeting the trigger" },
+    { "id": "cost.unstable-prefix", "title": "Timestamp, id or user name before the cache breakpoint; tools in non-deterministic order", "engine": "eyes", "severity": "medium", "failureClass": "cache-miss", "why": "Every request misses the prompt cache.", "confirm": "measurement: cache hit ratio per call site near 0; prompt prefix diff across two users" },
+    { "id": "cost.precomputed-credits", "title": "Usage logged as converted credits or dollars instead of raw provider units", "engine": "eyes", "severity": "medium", "failureClass": "lossy-metering", "why": "Pricing changes cannot be replayed; reconciliation with the invoice breaks.", "confirm": "static-proof: the usage event has no input/output token fields" }
+  ],
+  "verify": [
+    { "id": "cost.v.bypass", "text": "bypass scan clean (scan.mjs cost.direct-sdk / ESLint no-restricted-imports)", "kind": "test", "tool": "scan.mjs" },
+    { "id": "cost.v.attempts", "text": "property test: attempts == usage events; keys unique per attempt", "kind": "test", "tool": "fast-check" },
+    { "id": "cost.v.fault", "text": "quota store down -> paid call refused; bad BYOK key -> system-credit fallback visible and alerted", "kind": "test", "tool": "test doubles" },
+    { "id": "cost.v.adversarial-input", "text": "zip bomb / 10k-entry archive rejected before the first model call", "kind": "test", "tool": "fixture archive" },
+    { "id": "cost.v.cache", "text": "cache hit ratio per call site from usage fields; prompt prefix diff across two users", "kind": "measure", "tool": "SQL over usage events" },
+    { "id": "cost.v.reconcile", "text": "metered sum vs provider usage export per provider per day within budget", "kind": "measure", "tool": "provider usage API" }
+  ]
+}

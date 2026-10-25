@@ -1,0 +1,95 @@
+# Sources: Evaluation, proof and testing
+
+Carried over from the research pass of 2026-10-25 (`02-research-eval-testing.md`), product-specific lines removed. Each line keeps the tag it had there: **[V]** checked against the primary page in that pass; **[K]**, **[B]**, **[C]** or **[M]** a known citation (author, year, venue) not re-opened; **[U]** unverified, treat as a hypothesis. Lines without a tag were cited with their venue and date only.
+
+- Write the *Definition of Done* and the acceptance criteria before you start. The Scrum Guide (Schwaber & Sutherland, Nov 2020 **[K]**) makes the DoD a formal commitment the increment must meet.
+- Use *Independent Verification & Validation*: the party that verifies is separated from the party that builds by management, finances and technique (IEEE Std 1012-2016, *System, Software, and Hardware Verification and Validation* **[K]**).
+- For agents, Anthropic's *Building Effective Agents* (19 Dec 2024 **[K]**) recommends getting "ground truth from the environment" at each step and an evaluator–optimizer split. Anthropic's *Best practices for Claude Code* (originally anthropic.com/engineering, Apr 2025; now at code.claude.com/docs/en/best-practices **[V]**) says "Give Claude a check it can run: tests, a build, a screenshot to compare" and "Have Claude show evidence rather than asserting success"; it also recommends a fresh-context reviewer subagent so "the agent doing the work isn't the one grading it".
+- Run a *cognitive walkthrough* of the task path (Wharton, Rieman, Lewis, Polson, "The Cognitive Walkthrough Method: A Practitioner's Guide", in *Usability Inspection Methods*, Nielsen & Mack eds., Wiley 1994 **[K]**).
+- Run a *heuristic evaluation* against Nielsen's 10 heuristics (Nielsen 1994 **[K]**).
+- Run end-to-end tests against the **built** artifact. The deployment-pipeline principle is "test the binary you ship" (Humble & Farley, *Continuous Delivery*, 2010 **[K]**).
+- Accessibility: run axe-core against WCAG 2.2 (W3C Recommendation, 5 Oct 2023 **[K]**).
+- Responsiveness: measure INP/LCP with `web-vitals`. INP replaced FID as a Core Web Vital in March 2024 **[K]**.
+- *Test oracles* that assert on correctness, not on termination (Barr et al. 2015 **[V]**).
+- *Design by Contract*: preconditions, postconditions and invariants (Meyer, *Object-Oriented Software Construction*, 2nd ed., 1997 **[K]**).
+- *Property-based testing* (Claessen & Hughes, "QuickCheck", ICFP 2000 **[K]**).
+- For LLM output, graded evals with explicit rubrics, plus continuous evaluation on every change. OpenAI's *Evaluation best practices* guide **[V]** says traditional software tests are insufficient for nondeterministic output and recommends pairwise, classification or rubric scoring. That page also announces the Evals platform shutdown on 30 Nov 2026 **[V]**.
+- Anthropic's *Demystifying evals for AI agents* (anthropic.com/engineering, 9 Jan 2026 **[V]**) gives the anatomy: tasks, trials, graders and transcripts, plus pass@k vs pass^k.
+- *Measurement bias*: an innocuous setup detail can flip a conclusion (Mytkowicz, Diwan, Hauswirth, Sweeney, "Producing Wrong Data Without Doing Anything Obviously Wrong!", ASPLOS 2009, pp. 265–276 **[V]**). Their remedies are setup randomization and causal analysis.
+- Repeat runs with statistical rigour (Georges, Buytaert, Eeckhout, "Statistically Rigorous Java Performance Evaluation", OOPSLA 2007 **[K]**; Kalibera & Jones, "Rigorous Benchmarking in Reasonable Time", ISMM 2013, pp. 63–74 **[V]**).
+- Check resource saturation first with the *USE method*: utilization, saturation and errors for every resource (Gregg, "Thinking Methodically about Performance", ACM Queue / CACM 2013 **[K]**).
+- *Trust checks* in online experiments, such as A/A tests and sample-ratio mismatch (Kohavi, Tang, Xu, *Trustworthy Online Controlled Experiments*, CUP 2020 **[K]**; Fabijan et al., "Diagnosing Sample Ratio Mismatch…", KDD 2019, pp. 2156–2164 **[V]**).
+- *Test-first, red → green → refactor* (Beck, *Test-Driven Development: By Example*, 2002 **[K]**).
+- *Mutation testing* measures whether the tests can detect faults at all (Jia & Harman, IEEE TSE 2011 survey **[K]**). Google runs diff-based mutation testing in code review (Petrović & Ivanković, "State of Mutation Testing at Google", ICSE-SEIP 2018 **[V]**).
+- Specification gaming and reward hacking describe exactly this incentive (Krakovna 2020 **[V]**; METR 2025 **[V]**).
+- For artifacts, *provenance*: tie each evidence file to the build that produced it. SLSA v1.0 (OpenSSF, Apr 2023 **[K]**) is the analogous supply-chain practice.
+- Luo, Hariri, Eloussi, Marinov, "An Empirical Analysis of Flaky Tests", FSE 2014, pp. 643–653 **[V]**: the top root causes are async wait, concurrency and test-order dependency.
+- Google reported large-scale flakiness and the cost of hiding it with reruns (Micco, Google Testing Blog, 27 May 2016 **[V]**; the specific percentages are second-hand **[U]**).
+- Test-double discipline: "mock roles, not objects" and "only mock types you own" (Freeman, Mackinnon, Pryce, Walnes, OOPSLA 2004 companion **[K]**; Freeman & Pryce, *Growing Object-Oriented Software, Guided by Tests*, 2009 **[K]**).
+- Fresh vs shared fixtures, and the "Interacting Tests" smell (Meszaros, *xUnit Test Patterns*, 2007 **[K]**).
+- Fowler, "Eradicating Non-Determinism in Tests", martinfowler.com, 2011 **[K]**.
+- Hermetic tests and test sizes (Winters, Manshreck, Wright, *Software Engineering at Google*, O'Reilly 2020, ch. 11–14 **[K]**).
+- Fast commit-stage feedback. Humble & Farley (2010 **[K]**) target a commit stage of about 10 minutes or less.
+- The test pyramid (Cohn, *Succeeding with Agile*, 2009 **[K]**) and Google's small/medium/large sizes (Winters et al. 2020 **[K]**).
+- *Prebuilt fixtures*: Meszaros' "Prebuilt Fixture" and "Test Data Builder" patterns (2007 **[K]**).
+- *Least privilege* and *fail-safe defaults* (Saltzer & Schroeder, "The Protection of Information in Computer Systems", Proc. IEEE 1975 **[K]**).
+- OWASP LLM06:2025 *Excessive Agency* **[V]**: human approval for high-impact actions, authorization enforced downstream rather than by the model, and complete mediation.
+- STRIDE threat modelling before the test plan (Shostack, *Threat Modeling: Designing for Security*, 2014 **[K]**).
+- Feature toggles and kill switches (Hodgson, "Feature Toggles", martinfowler.com, 2017 **[K]**).
+- Dynamic Client Registration (RFC 7591, 2015 **[K]**) creates real, persistent client records at the provider, so a probe is itself an outward write.
+- *Hermetic tests* (Winters et al. 2020 **[K]**).
+- Twelve-Factor App, factors VII (port binding) and X (dev/prod parity) (Wiggins, 12factor.net, 2011 **[K]**).
+- Idempotency keys for any write a retry could duplicate (Leach, "Designing robust and predictable APIs with idempotency", Stripe blog, Feb 2017 **[K]**).
+- SRE separation of environments and blast-radius limits (Beyer, Jones, Petoff, Murphy, *Site Reliability Engineering*, O'Reilly 2016 **[K]**).
+- *Reproduce first, then fix* (Zeller, *Why Programs Fail*, 2nd ed., 2009 **[K]**, "scientific debugging"; Agans, *Debugging: The 9 Indispensable Rules*, 2002 **[K]**, rules "Make it fail" and "Quit thinking and look").
+- A *control arm* and *pre-registration* of the hypothesis and metric (Nosek et al., "The preregistration revolution", PNAS 2018 **[K]**).
+- Interpret the experiment with effect sizes, not just p-values (Kohavi et al. 2020 **[K]**).
+- *LLM-as-judge calibration*: position, verbosity and self-enhancement biases. For example, GPT-4 gave the same verdict after an answer swap in only about 65% of default-prompt cases (Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena", NeurIPS 2023 Datasets & Benchmarks **[V]**).
+- Align the judge with human labels and expect the grading criteria to drift (Shankar, Zamfirescu-Pereira, Hartmann, Parameswaran, Arawjo, "Who Validates the Validators?", arXiv 2404.12272 **[V]**, which names "criteria drift"; UIST 2024 venue **[U]**, the ACM page was not reachable this session).
+- Use Cohen's κ for agreement (Cohen 1960 **[K]**).
+- **Barr, Harman, McMinn, Shahbaz, Yoo (2015).** "The Oracle Problem in Software Testing: A Survey." IEEE TSE 41(5):507–525. DOI 10.1109/TSE.2014.2372785. **[V]**
+- **Krakovna et al. (2020).** "Specification gaming: the flip side of AI ingenuity." DeepMind blog, 21 Apr 2020. **[V]**
+- **METR (2025).** "Recent Frontier Models Are Reward Hacking." metr.org, 5 Jun 2025. **[V]**
+- **Zheng et al. (2023).** "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena." NeurIPS 2023 (D&B). arXiv 2306.05685. **[V]**
+- **Mytkowicz, Diwan, Hauswirth, Sweeney (2009).** "Producing Wrong Data Without Doing Anything Obviously Wrong!" ASPLOS '09, pp. 265–276. **[V]**
+- **Kalibera, Jones (2013).** "Rigorous Benchmarking in Reasonable Time." ISMM 2013, pp. 63–74. DOI 10.1145/2464157.2464160. **[V]**
+- **Fabijan et al. (2019).** "Diagnosing Sample Ratio Mismatch in Online Controlled Experiments." KDD 2019, pp. 2156–2164. **[V]**
+- **Arcuri, Briand (2011).** "A Practical Guide for Using Statistical Tests to Assess Randomized Algorithms in SE." ICSE 2011. DOI 10.1145/1985793.1985795. **[V]**
+- **Luo, Hariri, Eloussi, Marinov (2014).** "An Empirical Analysis of Flaky Tests." FSE 2014, pp. 643–653. **[V]**
+- **Micco (2016).** "Flaky Tests at Google and How We Mitigate Them." Google Testing Blog, 27 May 2016. **[V]** The figures quoted elsewhere are **[U]**.
+- **Petrović, Ivanković (2018).** "State of Mutation Testing at Google." ICSE-SEIP 2018. **[V]**
+- **OWASP (2025).** "LLM06:2025 Excessive Agency." genai.owasp.org/llmrisk/llm06. **[V]**
+- **OpenAI.** "Evaluation best practices" (developers.openai.com/api/docs/guides/evaluation-best-practices) **[V]**: Evals platform deprecated, read-only 31 Oct 2026, shutdown 30 Nov 2026. "Evaluate agent workflows" **[U]** (not re-fetched this pass).
+- **Anthropic (9 Jan 2026).** "Demystifying evals for AI agents." anthropic.com/engineering. **[V]** (task, trial, grader, transcript, pass@k vs pass^k definitions confirmed).
+- **Anthropic (Dec 2024).** "Building Effective Agents." **[K]**
+- **Anthropic.** "Best practices for Claude Code." code.claude.com/docs/en/best-practices (moved from anthropic.com/engineering/claude-code-best-practices). **[V]** wording; Apr 2025 original date **[K]**.
+- **Shankar et al. (2024).** "Who Validates the Validators? Aligning LLM-Assisted Evaluation of LLM Outputs with Human Preferences." arXiv 2404.12272. **[V]**; UIST 2024 venue **[U]**.
+- Beck, *TDD: By Example* (2002).
+- Meszaros, *xUnit Test Patterns* (2007).
+- Freeman & Pryce, *GOOS* (2009); Freeman, Mackinnon, Pryce, Walnes, "Mock Roles, not Objects" (OOPSLA 2004).
+- Humble & Farley, *Continuous Delivery* (2010).
+- Winters, Manshreck, Wright, *Software Engineering at Google* (2020).
+- Beyer et al., *Site Reliability Engineering* (2016).
+- Kohavi, Tang, Xu, *Trustworthy Online Controlled Experiments* (2020).
+- Georges, Buytaert, Eeckhout (OOPSLA 2007).
+- Gregg, USE method (ACM Queue 2013).
+- Zeller, *Why Programs Fail* (2009).
+- Agans, *Debugging* (2002).
+- Meyer, *OOSC* 2nd ed. (1997).
+- Claessen & Hughes, QuickCheck (ICFP 2000).
+- Jia & Harman, mutation testing survey (IEEE TSE 2011).
+- Nielsen, heuristics (1994); Wharton et al., cognitive walkthrough (1994).
+- W3C WCAG 2.2 (2023).
+- IEEE Std 1012-2016.
+- Scrum Guide (2020).
+- Saltzer & Schroeder (1975).
+- Shostack, *Threat Modeling* (2014).
+- RFC 7591 (2015).
+- 12factor.net (2011).
+- Hodgson, "Feature Toggles" (2017).
+- Leach, Stripe idempotency (2017).
+- Cohn, *Succeeding with Agile* (2009).
+- Nosek et al., PNAS (2018).
+- Cohen κ (1960).
+- Gawande, *The Checklist Manifesto* (2009) — for the checklist form of §2.3.
+- Klein, "Performing a Project Premortem", HBR Sept 2007 — for pre-flight Q6/Q7: imagine the run has already caused damage, and ask how.

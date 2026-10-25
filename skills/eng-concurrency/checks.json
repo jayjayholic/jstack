@@ -1,0 +1,48 @@
+{
+  "domain": "concurrency",
+  "version": 1,
+  "title": "Concurrency, queues, retries and silent loss",
+  "triggers": {
+    "paths": ["**/queue*/**", "**/jobs/**", "**/workers/**", "**/webhook*/**", "**/cron/**", "**/*retry*", "**/*worker*", "**/*scheduler*"],
+    "diffTokens": ["retry", "attempt", "webhook", "enqueue", "RUNNING", "PROCESSING", "lock", "idempot", "heartbeat", "lease"],
+    "taskWords": ["queue", "background", "job", "webhook", "retry", "retries", "schedule", "cron", "sync", "duplicate", "duplicates", "concurrent", "parallel", "lock", "worker", "approval"]
+  },
+  "questions": [
+    { "id": "conc.q.commit-point", "tier": "S", "text": "What is the commit point? Name the line after which the work is durable. Is any done/seen/200 written before it?", "produces": "text", "prevents": ["silent-loss"] },
+    { "id": "conc.q.idempotency-key", "tier": "S", "text": "What makes two of these the same, and which database constraint enforces it?", "produces": "text", "prevents": ["duplicates"] },
+    { "id": "conc.q.time-limit", "tier": "M", "text": "Where does this run, and what is its hard time limit? If the worst case is over it, it needs a queue or workflow with a status, not the request.", "produces": "number", "prevents": ["killed-mid-way"] },
+    { "id": "conc.q.retry-owner", "tier": "M", "text": "Who retries, how many times, with what backoff and budget? Exactly one layer. Which errors are not retryable?", "produces": "table", "prevents": ["retry-amplification"] },
+    { "id": "conc.q.twice-at-once", "tier": "M", "text": "If this runs twice at the same moment, or crashes halfway and restarts, what does the user see?", "produces": "text", "prevents": ["duplicates", "stuck-state"] },
+    { "id": "conc.q.lease", "tier": "M", "text": "What proves the owner of a RUNNING row is alive (lease or heartbeat), and what moves it out when it is not?", "produces": "text", "prevents": ["stuck-state"] },
+    { "id": "conc.q.ids-not-positions", "tier": "L", "text": "Do long-lived references point at ids or at positions and copies? What version check stops a stale writer?", "produces": "text", "prevents": ["skip-or-rerun"] },
+    { "id": "conc.q.state-exits", "tier": "L", "text": "Draw the state machine, including approved, replaced and cancelled. What is every state's exit?", "produces": "diagram", "prevents": ["orphan-intent"] },
+    { "id": "conc.q.typed-outcome", "tier": "L", "text": "Does every tool or endpoint result say changed / unchanged / rejected / failed in a typed field, not only in prose?", "produces": "schema", "prevents": ["no-op-read-as-done"] },
+    { "id": "conc.q.shared-resources", "tier": "L", "text": "Which shared resources (git refs, worktree, ports, build slot, DB rows, cache keys) does this touch that another agent or instance also touches? Pre-mortem: it ran twice and lost one; why?", "produces": "list", "prevents": ["clobbered-shared-state"] }
+  ],
+  "budgets": [
+    { "key": "conc.duplicates_per_10k", "default": 0, "unit": "count", "measure": "duplicate-effect query: GROUP BY idempotency key HAVING count(*) > 1", "source": "Stripe idempotency keys (2017); IETF Idempotency-Key draft" },
+    { "key": "conc.stuck_running_rows", "default": 0, "unit": "count", "measure": "RUNNING rows whose heartbeat is older than 2 leases", "source": "Gray & Cheriton, Leases, SOSP 1989" },
+    { "key": "conc.attempts_per_request", "default": 3, "unit": "count", "measure": "attempts per logical request from logs (retry ratio under 10% per client)", "source": "Google SRE book ch. 21 (2016)" }
+  ],
+  "rules": [
+    { "id": "conc.empty-catch", "title": "Swallowed error (empty catch, or .catch that returns nothing)", "engine": "regex", "multiline": true, "pattern": "catch\\s*(?:\\([^)]*\\))?\\s*\\{\\s*\\}|\\.catch\\(\\s*\\(\\s*\\w*\\s*\\)\\s*=>\\s*(?:\\{\\s*\\}|undefined|null)\\s*\\)", "languages": ["ts", "tsx", "js", "jsx", "mjs", "cjs"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "silent-loss", "why": "The failure disappears: the caller marks the item done and the sender never retries.", "confirm": "failing-test: make the awaited call throw; assert the item is retried, failed or dead-lettered, never marked done", "fixHint": "rethrow, or record the failure and let the single retry owner decide", "knownFalsePositives": ["best-effort cleanup with a comment naming why loss is acceptable"] },
+    { "id": "conc.except-pass", "title": "Swallowed error in Python (except: pass)", "engine": "regex", "multiline": true, "pattern": "except(?:\\s+[\\w.]+(?:\\s+as\\s+\\w+)?|\\s*\\([^)]*\\)(?:\\s+as\\s+\\w+)?)?\\s*:\\s*\\n?[ \\t]*pass\\b", "languages": ["py"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "silent-loss", "why": "Same as an empty catch: the error is gone and the work looks done.", "confirm": "failing-test: raise inside the try; assert the outcome is a recorded failure", "fixHint": "re-raise, or log with context and record a failed state" },
+    { "id": "conc.retry-no-jitter", "title": "Retry loop in a file with no backoff or jitter", "engine": "regex", "pattern": "\\b(?:for|while)\\s*\\(.*\\b(?:attempts?|retr(?:y|ies)|tries)\\w*\\b", "unlessFile": "jitter|Math\\.random|backoff|p-retry|exponential", "flags": "i", "languages": ["ts", "tsx", "js", "jsx", "mjs", "cjs"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "retry-amplification", "why": "Fixed or zero delay retries in lockstep (thundering herd) and multiply load at every layer.", "confirm": "failing-test: dependency returns 503 for 30 s under fake timers; assert attempts <= 1 + budget and delays grow", "fixHint": "capped exponential backoff with full jitter, at one layer only" },
+    { "id": "conc.status-before-work", "title": "Status set to DONE/SEEN/200 before the awaited work", "engine": "eyes", "severity": "high", "failureClass": "silent-loss", "why": "Success recorded before the effect is durable: a crash in between loses the item.", "confirm": "failing-test: throw after the status write; assert the item is not left DONE" },
+    { "id": "conc.check-then-insert", "title": "findFirst/SELECT then create on the same key with no unique constraint or upsert", "engine": "eyes", "severity": "high", "failureClass": "duplicates", "why": "Two concurrent runs both see nothing and both insert.", "confirm": "failing-test: 3 concurrent calls via Promise.all; assert exactly one row" },
+    { "id": "conc.unawaited-promise", "title": "Fire-and-forget promise (void call, .then without return/catch)", "engine": "eslint", "eslintRule": "@typescript-eslint/no-floating-promises", "fallback": { "engine": "eyes" }, "severity": "medium", "failureClass": "fire-and-forget", "why": "The work can die silently and nobody records an outcome.", "confirm": "repro-script: kill the process mid-run; count started vs finished records" },
+    { "id": "conc.running-without-lease", "title": "RUNNING/PROCESSING state with no heartbeat or lease column", "engine": "eyes", "severity": "medium", "failureClass": "stuck-state", "why": "No reaper is possible, so a killed worker leaves the row RUNNING forever.", "confirm": "failing-test: kill the worker after the side effect; assert retried or failed within lease + interval" },
+    { "id": "conc.position-cursor", "title": "Persisted array index or position used as a cursor", "engine": "eyes", "severity": "medium", "failureClass": "skip-or-rerun", "why": "An insert before the cursor makes the next step skip or repeat.", "confirm": "failing-test: complete step k, insert a step before k, advance; assert no skip and no repeat" },
+    { "id": "conc.timing-in-comment", "title": "Timing constants related only by a comment", "engine": "eyes", "severity": "low", "failureClass": "coupled-constants", "why": "Someone edits one value and the 'must stay below' relation breaks silently.", "confirm": "failing-test: assert HEARTBEAT_MS * 3 <= STALE_AFTER_MS" },
+    { "id": "conc.prose-outcome", "title": "Tool or endpoint returns prose ('ok', 'kept as is') with no typed outcome", "engine": "eyes", "severity": "medium", "failureClass": "no-op-read-as-done", "why": "The caller (often a model) reads a no-op as success.", "confirm": "repro-script: run the no-op path; show the reply cannot be told apart from success" }
+  ],
+  "verify": [
+    { "id": "conc.v.dup-delivery", "text": "3 concurrent deliveries of one payload -> exactly 1 effect", "kind": "test", "tool": "test runner + Promise.all" },
+    { "id": "conc.v.idempotence", "text": "run(op); run(op) leaves the state equal to run(op) over generated inputs", "kind": "test", "tool": "fast-check / Hypothesis" },
+    { "id": "conc.v.kill-mid-step", "text": "kill the worker after the side effect -> row retried or failed within lease + interval, never stuck", "kind": "test", "tool": "test harness + process kill" },
+    { "id": "conc.v.fault-after-commit", "text": "throw after the commit-point candidate -> item retried or dead-lettered, never marked done", "kind": "test", "tool": "test doubles" },
+    { "id": "conc.v.retry-storm", "text": "dependency 503 for 30 s -> attempts <= 1 + budget, delays growing with jitter", "kind": "test", "tool": "fake timers + call counter" },
+    { "id": "conc.v.stuck-and-dup-queries", "text": "stuck-row, duplicate-effect and orphan-intent queries return 0", "kind": "measure", "tool": "SQL" },
+    { "id": "conc.v.state-liveness", "text": "every non-terminal state has an exit (enum-driven test)", "kind": "test", "tool": "unit test / TLA+ for critical flows" }
+  ]
+}

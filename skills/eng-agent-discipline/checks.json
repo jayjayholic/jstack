@@ -1,0 +1,42 @@
+{
+  "domain": "agent-discipline",
+  "version": 1,
+  "title": "The coding agent itself: scope, claims, self-verification, checkpoints",
+  "triggers": {
+    "paths": [".agent/**", "**/CLAUDE.md", "**/AGENTS.md", ".claude/**", "**/*report*.md", "**/pr-body*.md"],
+    "diffTokens": ["git stash", "should work", "probably", "TODO"],
+    "taskWords": ["agent", "agents", "subagent", "orchestrator", "brief", "handoff", "report", "docs", "documentation", "claude.md", "resume", "checkpoint", "eta", "worktree"]
+  },
+  "questions": [
+    { "id": "agent.q.quote-ask", "tier": "S", "text": "What exactly did the user say? Quote it and mark each item QUESTION, DIRECTIVE or INFO. A question never becomes a state change.", "produces": "table", "prevents": ["misread-intent"] },
+    { "id": "agent.q.scope-fence", "tier": "S", "text": "Which files may I touch, which are forbidden, what is explicitly NOT requested, and which 'don't' constraints did the user state verbatim?", "produces": "list", "prevents": ["forbidden-area", "ignored-order", "unasked-removal"] },
+    { "id": "agent.q.acceptance", "tier": "M", "text": "What is the acceptance check for each requested item?", "produces": "list", "prevents": ["hallucinated-work"] },
+    { "id": "agent.q.sources", "tier": "M", "text": "Which of my claims will rest on a source I have not opened yet? Open it now.", "produces": "list", "prevents": ["claims-from-memory"] },
+    { "id": "agent.q.own-tools", "tier": "M", "text": "What tools, sessions and credentials do I already hold that can verify this without the owner?", "produces": "list", "prevents": ["asking-owner-to-test"] },
+    { "id": "agent.q.checkpoint", "tier": "M", "text": "Where is my checkpoint written, and can a fresh process resume from it?", "produces": "file", "prevents": ["lost-work"] },
+    { "id": "agent.q.eta", "tier": "L", "text": "What is my ETA from comparable past tasks, and at what point do I stop and report?", "produces": "number", "prevents": ["no-timebox"] },
+    { "id": "agent.q.quotas", "tier": "L", "text": "For any shared resource such as quotas or locks, what budget triggers proactive backoff before the hard limit?", "produces": "number", "prevents": ["reactive-throttling"] },
+    { "id": "agent.q.premortem", "tier": "L", "text": "If this fails in a week, why? Write a 3-line pre-mortem.", "produces": "text", "prevents": ["all"] }
+  ],
+  "budgets": [
+    { "key": "agent.paths_outside_owned", "default": 0, "unit": "count", "measure": "git diff --name-only against the OWNED globs", "source": "least privilege (Saltzer & Schroeder 1975); OWASP LLM06" },
+    { "key": "agent.uncited_claims", "default": 0, "unit": "count", "measure": "claims in the final report without path:line, URL or command output", "source": "Anthropic, Reduce hallucinations" },
+    { "key": "agent.eta_overrun_ratio", "default": 1.5, "unit": "x ETA", "measure": "stop and report at 1.5x the stated ETA", "source": "reference class forecasting (Flyvbjerg 2006)" }
+  ],
+  "rules": [
+    { "id": "agent.git-stash", "title": "git stash in a script (the stash stack is shared by every worktree)", "engine": "regex", "pattern": "\\bgit\\s+stash\\b(?!\\s+list\\b)", "languages": ["sh", "bash", "zsh", "ps1", "mjs", "js", "ts", "py", "yml", "yaml", "json"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "clobbered-shared-state", "why": "refs/stash is shared across worktrees: one agent's pop applies another's work.", "confirm": "static-proof: the command is in a script that agents run", "fixHint": "set work aside with a WIP commit" },
+    { "id": "agent.hedged-claim", "title": "Hedged success claim in a report or PR body ('should work', 'probably fixed')", "engine": "regex", "pattern": "\\b(?:should (?:now )?work|probably (?:fixed|works)|likely fixed|as far as I know|I believe (?:this|it) (?:works|is fixed)|seems to work)\\b", "flags": "i", "files": ["**/pr-body*.md", "**/PR_BODY*.md", "**/*report*.md", "**/REPORT*.md", ".agent/**/*.md", "**/READY*.md"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "claims-from-memory", "why": "A claim without a receipt; the owner ends up testing it.", "confirm": "repro-script: run the claimed check; attach command, exit code, SHA", "fixHint": "replace with the command, its exit code and the SHA, or say 'not verified'" },
+    { "id": "agent.unasked-deletion", "title": "Deleted functions, exports, tests or files not named in the request", "engine": "eyes", "severity": "high", "failureClass": "unasked-removal", "why": "Chesterton's fence: working things vanish.", "confirm": "repro-script: git diff --diff-filter=D and removed exports vs the quoted ask" },
+    { "id": "agent.outside-owned", "title": "Diff touches paths outside OWNED or inside FORBIDDEN", "engine": "eyes", "severity": "high", "failureClass": "forbidden-area", "why": "Auth, schema or docs changed without being asked.", "confirm": "static-proof: git diff --name-only against the scope fence" },
+    { "id": "agent.ask-owner-first", "title": "'Can you test / click / give me access' with no tool-tried evidence", "engine": "eyes", "severity": "medium", "failureClass": "asking-owner-to-test", "why": "The owner does work the agent's own tools could do.", "confirm": "repro-script: the capability inventory shows a tool that could do it" },
+    { "id": "agent.blame-without-repro", "title": "'Probably the provider / network / cache' with no repro output", "engine": "eyes", "severity": "medium", "failureClass": "no-repro", "why": "The real cause stays and the fix targets the wrong thing.", "confirm": "repro-script: minimal repro + control run + timestamp" },
+    { "id": "agent.report-only-in-chat", "title": "Final report only in chat, nothing on disk", "engine": "eyes", "severity": "low", "failureClass": "lost-work", "why": "An interrupted agent loses everything it found.", "confirm": "static-proof: no report file in the run folder" }
+  ],
+  "verify": [
+    { "id": "agent.v.scope", "text": "changed paths vs OWNED and FORBIDDEN; every deletion justified or reverted", "kind": "test", "tool": "git diff --name-only / --diff-filter=D" },
+    { "id": "agent.v.trace", "text": "each ledger item DONE with evidence or explicitly DEFERRED", "kind": "test", "tool": ".agent/brief.md checklist (ready-gate)" },
+    { "id": "agent.v.claims", "text": "each factual claim in the report has a source; the rest is removed or marked unverified", "kind": "test", "tool": "report review" },
+    { "id": "agent.v.self-verify", "text": "tests, typecheck and an end-to-end check with my own tools before asking any human", "kind": "test", "tool": "test runner + browser automation" },
+    { "id": "agent.v.resume", "text": "long orchestration: kill and relaunch; no duplicated side effects", "kind": "test", "tool": "kill test" }
+  ]
+}

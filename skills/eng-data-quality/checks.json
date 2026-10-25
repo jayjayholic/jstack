@@ -1,0 +1,44 @@
+{
+  "domain": "data-quality",
+  "version": 1,
+  "title": "Ingestion, pipelines and data quality",
+  "triggers": {
+    "paths": ["**/ingest*/**", "**/pipeline*/**", "**/etl/**", "**/extract*/**", "**/import*/**", "**/connectors/**", "**/embed*", "**/upload*/**", "**/jobs/**"],
+    "diffTokens": ["extract(", "embed(", "status: 'complete'", "await fetch(", "LIMIT", "threshold", "upload"],
+    "taskWords": ["ingest", "ingestion", "pipeline", "etl", "extract", "extraction", "embed", "embedding", "upload", "import", "connector", "sync", "dedupe", "junk", "quality", "threshold", "nightly", "batch"]
+  },
+  "questions": [
+    { "id": "dq.q.postconditions", "tier": "S", "text": "What is each stage's postcondition, and where is it checked? Can a stage report complete while part of its input failed?", "produces": "table", "prevents": ["false-complete"] },
+    { "id": "dq.q.never-ingest", "tier": "S", "text": "What should never be ingested from each source (CI mail, lockfiles, binaries, spam)? Is there a fixture for each?", "produces": "list", "prevents": ["junk-ingested"] },
+    { "id": "dq.q.unknown-input", "tier": "M", "text": "What happens to an input never seen before: unknown type, empty file, a 404, a binary, a huge file?", "produces": "table", "prevents": ["crash-on-unknown"] },
+    { "id": "dq.q.caps", "tier": "M", "text": "Where are the caps? What does the reader see when one is hit?", "produces": "list", "prevents": ["silent-truncation"] },
+    { "id": "dq.q.yield", "tier": "M", "text": "What is the expected yield of each automated job, and what alerts on zero?", "produces": "number", "prevents": ["zero-yield"] },
+    { "id": "dq.q.judge-evidence", "tier": "M", "text": "What evidence does each automated decision-maker (judge, filter, threshold) see? Is it what a human would use?", "produces": "text", "prevents": ["judge-on-snippets"] },
+    { "id": "dq.q.golden-set", "tier": "L", "text": "Which golden set measures quality? What is the bar, the per-item minimum and the interval?", "produces": "number", "prevents": ["unmeasured-quality"] },
+    { "id": "dq.q.tasks-survive", "tier": "L", "text": "Which user tasks must survive this change? Is there a before/after script for each?", "produces": "list", "prevents": ["lost-core-view"] },
+    { "id": "dq.q.learned-data", "tier": "L", "text": "Which learned or derived data does this rely on? Where is its source, as-of date and invalidation trigger?", "produces": "table", "prevents": ["stale-learned-data"] },
+    { "id": "dq.q.entry-points", "tier": "L", "text": "How many entry points reach this pipeline? Can they be one?", "produces": "number", "prevents": ["fragmented-paths"] }
+  ],
+  "budgets": [
+    { "key": "dq.inconsistent_complete_rows", "default": 0, "unit": "count", "measure": "reconciliation query: complete rows with fewer outputs than inputs", "source": "Deequ (PVLDB 2018); design by contract" },
+    { "key": "dq.junk_rate_admitted", "default": null, "unit": "ratio", "measure": "hand-labelled random sample of 50 admitted items, with a Wilson interval", "source": "Dodge et al., EMNLP 2021" },
+    { "key": "dq.oldest_in_progress_min", "default": null, "unit": "min", "measure": "age of the oldest in-progress job", "source": "SRE Workbook ch. 5" }
+  ],
+  "rules": [
+    { "id": "dq.fetch-no-status", "title": "fetch() result used in a file that never checks res.ok or status", "engine": "regex", "pattern": "\\bawait\\s+fetch\\(", "unlessFile": "\\.ok\\b|\\.status\\b|raiseForStatus|throwIfNotOk|assertOk", "languages": ["ts", "tsx", "js", "jsx", "mjs", "cjs"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "error-as-content", "why": "A 404 page or an error body gets parsed, stored and indexed as content.", "confirm": "failing-test: serve a 404 fixture; assert it is rejected before indexing", "fixHint": "check res.ok and the content type; add a timeout" },
+    { "id": "dq.unknown-type-throw", "title": "Ingest path throws on an unknown type or kind", "engine": "regex", "pattern": "\\bthrow\\s+new\\s+\\w*Error\\(\\s*[`'\"](?:Unknown|Unsupported|Unexpected|Invalid)\\s+(?:entity\\s+|node\\s+|content\\s+|file\\s+|mime\\s+)?(?:type|kind)\\b", "flags": "i", "files": ["**/*{ingest,extract,import,parse,pipeline,etl}*/**", "**/*{ingest,extract,import,parse,pipeline,etl}*.*"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "crash-on-unknown", "why": "One new type fails the whole ingest instead of degrading to a generic type with a flag.", "confirm": "failing-test: property test with arbitrary type strings; ingest throws", "fixHint": "store with a fallback type and a flag; report it" },
+    { "id": "dq.paid-before-screen", "title": "extract()/embed()/model call before any content screen", "engine": "eyes", "severity": "high", "failureClass": "junk-ingested", "why": "Junk is paid for, then stored.", "confirm": "failing-test: junk fixture suite (lockfile, CI mail, minified bundle) reaches the paid call" },
+    { "id": "dq.complete-after-swallow", "title": "status = complete after a try that swallows errors, or with no count reconciliation", "engine": "eyes", "severity": "high", "failureClass": "false-complete", "why": "Failed embeddings or chunks hide behind a complete status.", "confirm": "failing-test: make the embedding call throw; document ends complete" },
+    { "id": "dq.zero-yield-success", "title": "Job logs done with 0 changes as success", "engine": "eyes", "severity": "medium", "failureClass": "zero-yield", "why": "A filter removing 100% of candidates looks like a quiet night.", "confirm": "measurement: funnel counts per stage show the filter removing ~100%" },
+    { "id": "dq.stacked-thresholds", "title": "Confidence thresholds stacked with AND, no funnel counts logged", "engine": "eyes", "severity": "medium", "failureClass": "zero-yield", "why": "Each threshold is reasonable; together they block everything.", "confirm": "measurement: precision vs coverage sweep on labelled candidates" },
+    { "id": "dq.learned-text-no-source", "title": "Learned note or report injected into a prompt with no source or as-of date", "engine": "eyes", "severity": "medium", "failureClass": "stale-learned-data", "why": "A stale lesson beats fresh evidence.", "confirm": "failing-test: seed a lesson contradicting the source; the answer follows the lesson" }
+  ],
+  "verify": [
+    { "id": "dq.v.golden", "text": "golden set: precision and recall per item plus the minimum, with Wilson intervals, against the baseline", "kind": "measure", "tool": "stats.mjs" },
+    { "id": "dq.v.junk", "text": "junk and look-alike fixture suite: reject vs admit with reason codes", "kind": "test", "tool": "test runner" },
+    { "id": "dq.v.faults", "text": "fault injection on every external call (throw, timeout, 404, empty body)", "kind": "test", "tool": "test doubles" },
+    { "id": "dq.v.reconcile", "text": "reconciliation SQL: inconsistent complete rows = 0", "kind": "measure", "tool": "SQL" },
+    { "id": "dq.v.funnel", "text": "funnel log per automated job in shadow mode, then apply mode", "kind": "measure", "tool": "job logs" },
+    { "id": "dq.v.tasks", "text": "task scripts on the old build vs the new one, then an axe scan", "kind": "render", "tool": "Playwright + axe" }
+  ]
+}

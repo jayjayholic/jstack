@@ -1,0 +1,46 @@
+{
+  "domain": "interaction",
+  "version": 1,
+  "title": "Mobile, scroll, layout and interaction",
+  "triggers": {
+    "paths": ["**/components/**", "**/*.css", "**/*.scss", "**/hooks/**", "**/app/**/*.tsx", "**/*.vue", "**/*.svelte"],
+    "diffTokens": ["scrollIntoView", "scrollTop", "overflow", "z-index", "z-[", "100vh", "h-screen", "Escape", "onClick", "useSearchParams", "matchMedia", "localStorage"],
+    "taskWords": ["scroll", "mobile", "phone", "keyboard", "modal", "dialog", "overlay", "menu", "dropdown", "click", "tap", "layout", "shift", "hydration", "responsive", "viewport", "esc", "focus"]
+  },
+  "questions": [
+    { "id": "ix.q.one-scroller", "tier": "S", "text": "Which single element scrolls in this view, and on which axis? What happens at its edge?", "produces": "text", "prevents": ["nested-scroll"] },
+    { "id": "ix.q.error-paths", "tier": "S", "text": "Pre-mortem: this flow broke in production. List the error, cancel, timeout, reload and double-submit paths and the state after each.", "produces": "table", "prevents": ["stuck-overlay", "lost-progress"] },
+    { "id": "ix.q.ready-state", "tier": "M", "text": "What is the view's ready state, and which transition sets the scroll position? What stops auto-follow?", "produces": "diagram", "prevents": ["scroll-before-content"] },
+    { "id": "ix.q.viewport", "tier": "M", "text": "What sizes the shell: dvh/svh or vh? What does the keyboard do (interactive-widget)?", "produces": "text", "prevents": ["hidden-by-keyboard"] },
+    { "id": "ix.q.overlay-stack", "tier": "M", "text": "Which overlays can stack here, who owns the stack, and what does Esc close first?", "produces": "list", "prevents": ["wrong-layer"] },
+    { "id": "ix.q.source-of-truth", "tier": "M", "text": "For each state item: where is its one source of truth (URL, server or local)? What happens if two requests overlap?", "produces": "table", "prevents": ["state-race"] },
+    { "id": "ix.q.affordance", "tier": "L", "text": "For each interactive element: its signifier (cursor, hover, focus), its target size and its placement relative to the pointer.", "produces": "table", "prevents": ["poor-affordance"] },
+    { "id": "ix.q.layout-shift", "tier": "L", "text": "Does anything appear, disappear or change size when async data arrives? Where is its space reserved?", "produces": "text", "prevents": ["layout-shift"] },
+    { "id": "ix.q.hydration", "tier": "L", "text": "What reads device or time values, and does the first client render equal the server render?", "produces": "list", "prevents": ["hydration-mismatch"] },
+    { "id": "ix.q.devices", "tier": "L", "text": "Which device and viewport matrix will prove it, and which part can only be checked on a real device?", "produces": "list", "prevents": ["unverified-on-device"] }
+  ],
+  "budgets": [
+    { "key": "perf.cls", "default": 0.1, "unit": "score", "measure": "sum of layout-shift entries without hadRecentInput during load and status changes", "source": "web.dev CLS" },
+    { "key": "a11y.target_px", "default": 24, "unit": "CSS px", "measure": "DOM target-size scan; 44 for primary touch actions", "source": "WCAG 2.2 SC 2.5.8" },
+    { "key": "ix.scrollers_per_view", "default": 1, "unit": "count", "measure": "DOM audit of overflowing auto/scroll elements per view", "source": "CSS Overscroll Behavior L1" }
+  ],
+  "rules": [
+    { "id": "ix.vh-shell", "title": "100vh / h-screen sizing (sits under mobile toolbars and keyboards)", "engine": "regex", "pattern": "\\b100vh\\b|\\b(?:min-)?h-screen\\b", "languages": ["css", "scss", "less", "tsx", "jsx", "html", "vue", "svelte"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "hidden-by-keyboard", "why": "vh equals the large viewport, so the bottom of the shell hides under browser toolbars and the keyboard.", "confirm": "render: Pixel/iPhone emulation, focus the input, assert its bottom <= visualViewport.height", "fixHint": "dvh/svh (h-dvh, min-h-svh) and an explicit interactive-widget choice" },
+    { "id": "ix.magic-z-index", "title": "Magic z-index number (3+ digits)", "engine": "regex", "pattern": "\\bz-\\[\\d{3,}\\]|z-index\\s*:\\s*\\d{3,}|zIndex\\s*:\\s*\\d{3,}", "languages": ["css", "scss", "less", "tsx", "jsx", "ts", "html", "vue", "svelte"], "scope": "added", "severity": "low", "mode": "warn", "failureClass": "wrong-layer", "why": "z-index arms races put modals behind other layers; there is no stack owner.", "confirm": "failing-test: open A then B; elementFromPoint at B's centre is B; Esc closes B only", "fixHint": "the top layer (<dialog>.showModal) or a token scale owned by one overlay manager" },
+    { "id": "ix.scroll-on-mount", "title": "scrollIntoView in a mount-only effect (runs before the content is there)", "engine": "regex", "pattern": "useEffect\\(\\s*\\(\\)\\s*=>\\s*\\{?\\s*[\\w.]+(?:\\?\\.|\\.)scrollIntoView\\(.*\\[\\s*\\]\\s*\\)", "languages": ["tsx", "jsx", "ts", "js"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "scroll-before-content", "why": "It runs while the skeleton shows, so the view never lands on the latest item.", "confirm": "failing-test: delay the data 1.5 s; after the skeleton goes, assert distance to bottom < 2 px", "fixHint": "scroll on the transition to ready, re-assert while height settles, stop at the first user scroll" },
+    { "id": "ix.nested-scroll", "title": "overflow:auto inside another scroll container", "engine": "eyes", "severity": "medium", "failureClass": "nested-scroll", "why": "Three scrollbars, a list that will not scroll, jumps on status change.", "confirm": "render: DOM audit counts > 1 overflowing scroller per view" },
+    { "id": "ix.div-onclick", "title": "onClick on a div/span with no role, tabIndex, cursor or keyboard support", "engine": "eyes", "severity": "medium", "failureClass": "poor-affordance", "why": "No signifier, no keyboard access, often a tiny target.", "confirm": "render: cursor and target-size scan; axe" },
+    { "id": "ix.late-primary-action", "title": "Primary action rendered only when data arrives ({data && <Button/>})", "engine": "eyes", "severity": "low", "failureClass": "layout-shift", "why": "The button appears late and shifts the layout.", "confirm": "measurement: CLS during load over budget" },
+    { "id": "ix.overlay-no-finally", "title": "Overlay opened with no close in catch/finally", "engine": "eyes", "severity": "high", "failureClass": "stuck-overlay", "why": "A failed call leaves an overlay over the whole UI.", "confirm": "failing-test: abort the call; assert no [aria-modal=true] left and the page is interactive" },
+    { "id": "ix.device-read-in-render", "title": "window/localStorage/matchMedia/Date read in render", "engine": "eyes", "severity": "medium", "failureClass": "hydration-mismatch", "why": "Server and client render differ: hydration errors and flicker.", "confirm": "render: built app route crawl with a non-UTC timezone; console has hydration errors" },
+    { "id": "ix.unaborted-fetch-effect", "title": "fetch in an effect without abort or stale guard", "engine": "eyes", "severity": "medium", "failureClass": "state-race", "why": "A slow old response overwrites the newer selection.", "confirm": "failing-test: A delayed 1500 ms, B 100 ms; B stays shown" }
+  ],
+  "verify": [
+    { "id": "ix.v.built", "text": "run on the production build; dev-mode hydration and CLS differ", "kind": "render", "tool": "build + start" },
+    { "id": "ix.v.matrix", "text": "Pixel 7, iPhone 13, iPad, desktop 1440; non-UTC timezone and a second locale; light and dark", "kind": "render", "tool": "Playwright devices" },
+    { "id": "ix.v.per-route", "text": "per route: console clean, scrollers <= 1, no horizontal overflow, target-size and cursor scans", "kind": "render", "tool": "DOM audit snippets" },
+    { "id": "ix.v.per-flow", "text": "per flow: race test, error-path matrix (abort and 500), reload-resume, overlay stack (Esc order, focus return)", "kind": "test", "tool": "Playwright page.route" },
+    { "id": "ix.v.cls", "text": "interaction CLS <= 0.1", "kind": "measure", "tool": "PerformanceObserver layout-shift" },
+    { "id": "ix.v.device", "text": "real-device spot check of anything the keyboard touches, or say 'not verified on device'", "kind": "render", "tool": "real device" }
+  ]
+}

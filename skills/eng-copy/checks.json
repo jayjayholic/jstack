@@ -1,0 +1,40 @@
+{
+  "domain": "copy",
+  "version": 1,
+  "title": "Product copy, text density, naming and consent",
+  "triggers": {
+    "paths": ["**/messages/**", "**/locales/**", "**/i18n/**", "**/copy/**", "**/*.po", "**/emails/**"],
+    "diffTokens": ["title", "subtitle", "description", "label", "placeholder", "agree", "terms"],
+    "taskWords": ["copy", "text", "wording", "label", "heading", "title", "message", "notification", "email", "onboarding", "consent", "terms", "name", "naming", "card", "cta", "tooltip"]
+  },
+  "questions": [
+    { "id": "copy.q.show-not-say", "tier": "S", "text": "What can the UI show instead of saying it (state, preview, default, example, disabled reason)? What is the word budget, and which one sentence must survive?", "produces": "number", "prevents": ["text-walls"] },
+    { "id": "copy.q.claim-sources", "tier": "S", "text": "For every claim about product behaviour in this copy: what is its source (code path, spec line, owner quote)? No source, no claim.", "produces": "table", "prevents": ["invented-framing"] },
+    { "id": "copy.q.real-data", "tier": "M", "text": "Have I rendered this with >= 5 real records and the extreme values (longest, shortest, empty)?", "produces": "file", "prevents": ["filler-templates"] },
+    { "id": "copy.q.headings", "tier": "M", "text": "Does every heading carry instance-specific information? Does every proactive item have one specific fact and one one-tap action?", "produces": "text", "prevents": ["filler-headings", "no-cta"] },
+    { "id": "copy.q.member-words", "tier": "M", "text": "Is every term the member's word? Is any internal or ops term left?", "produces": "list", "prevents": ["jargon"] },
+    { "id": "copy.q.pattern", "tier": "M", "text": "Which established pattern governs this surface (consent, form, error, empty state), and does the copy follow it?", "produces": "text", "prevents": ["reinvented-consent"] },
+    { "id": "copy.q.names", "tier": "L", "text": "Is every new name in the glossary, and unique to one concept?", "produces": "list", "prevents": ["name-collision"] },
+    { "id": "copy.q.house-lint", "tier": "L", "text": "Which house rules apply here, and does each one have a lint (houseRules in .jstack/unslop.json) that will catch me?", "produces": "list", "prevents": ["rule-in-memory-only"] }
+  ],
+  "budgets": [
+    { "key": "copy.card_body_words", "default": 25, "unit": "words", "measure": "word count of rendered card text", "source": "example budget; Nielsen 1997 (79% scan)" },
+    { "key": "copy.modal_words", "default": 60, "unit": "words", "measure": "word count of rendered modal text", "source": "example budget" },
+    { "key": "copy.sentence_words_max", "default": 20, "unit": "words", "measure": "longest sentence per new string", "source": "plain-language practice, ISO 24495-1:2023" }
+  ],
+  "rules": [
+    { "id": "copy.filler-words", "title": "Hedge or filler word in user-facing text (simply, seamlessly, easily...)", "engine": "regex", "pattern": "\\b(?:simply|seamlessly|effortlessly|easily|basically|just (?:click|tap))\\b", "flags": "i", "files": ["**/messages/**/*.json", "**/locales/**/*.json", "**/i18n/**/*.json", "**/lang/**/*.json"], "scope": "added", "severity": "low", "mode": "warn", "failureClass": "text-walls", "why": "Filler costs reading time and promises ease the UI has to deliver anyway.", "confirm": "static-proof: the word is in a user-facing string", "fixHint": "delete it; if the sentence collapses, the UI should show it instead" },
+    { "id": "copy.meta-narration", "title": "Meta-narration ('This screen lets you...', 'Below you will find...')", "engine": "regex", "pattern": "\\b(?:this (?:screen|page|section|panel|modal) (?:lets|allows|helps) you|below you(?:'ll| will) find|here you can|in this (?:screen|page|section),? you)\\b", "flags": "i", "files": ["**/messages/**/*.json", "**/locales/**/*.json", "**/i18n/**/*.json", "**/lang/**/*.json"], "scope": "added", "severity": "low", "mode": "warn", "failureClass": "text-walls", "why": "Explains the UI instead of making it obvious; nobody reads it.", "confirm": "static-proof: the phrase is in a user-facing string", "fixHint": "remove; use a specific heading or an example instead" },
+    { "id": "copy.generic-heading", "title": "Generic heading value (Overview, Insights, Summary, Details...)", "engine": "regex", "pattern": "\"(?:title|heading|header|subtitle)\"\\s*:\\s*\"(?:Overview|Insights|Summary|Details|Information|Welcome|Here's what I found)\"", "flags": "i", "files": ["**/messages/**/*.json", "**/locales/**/*.json", "**/i18n/**/*.json", "**/lang/**/*.json"], "scope": "added", "severity": "low", "mode": "warn", "failureClass": "filler-headings", "why": "A heading that says nothing gives no information scent.", "confirm": "render: heading-only read-through of 5 real records shows identical headings", "fixHint": "name the instance: a subject, number or date" },
+    { "id": "copy.consent-no-link", "title": "'You agree' / terms text with no link next to it", "engine": "eyes", "severity": "high", "failureClass": "reinvented-consent", "why": "Assent without a linked, conspicuous notice is weak (Meyer v. Uber, 2017).", "confirm": "render: DOM test finds no a[href] to the terms in the notice" },
+    { "id": "copy.identical-cards", "title": "Cards whose text differs only in one slot", "engine": "eyes", "severity": "medium", "failureClass": "filler-templates", "why": "Template text dominates the data; members stop reading.", "confirm": "measurement: pairwise token Jaccard > 0.8 across rendered cards for different entities" },
+    { "id": "copy.invented-claim", "title": "Copy claims product behaviour with no source", "engine": "eyes", "severity": "high", "failureClass": "invented-framing", "why": "The agent filled a gap with plausible framing; it may contradict the spec.", "confirm": "repro-script: claim-to-source table with an empty source cell" }
+  ],
+  "verify": [
+    { "id": "copy.v.lint", "text": "prose lint (house banned words, jargon, hedges) over every locale file", "kind": "test", "tool": "scan.mjs --domain copy / Vale" },
+    { "id": "copy.v.measure", "text": "word counts per component and readability per new string vs the budget", "kind": "measure", "tool": "script over catalog keys; text-readability" },
+    { "id": "copy.v.render", "text": "render with real data at 375 px and desktop; contact sheet; axe link names and contrast", "kind": "render", "tool": "Playwright + axe" },
+    { "id": "copy.v.sameness", "text": "pairwise similarity across rendered cards; heading-only read-through", "kind": "measure", "tool": "token Jaccard script" },
+    { "id": "copy.v.claims", "text": "claim-to-source table for copy that describes behaviour", "kind": "test", "tool": "manual table in the PR" }
+  ]
+}

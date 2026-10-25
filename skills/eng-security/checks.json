@@ -1,0 +1,46 @@
+{
+  "domain": "security",
+  "version": 1,
+  "title": "Security and secrets",
+  "triggers": {
+    "paths": ["**/auth/**", "**/*auth*", "**/*session*", "**/*permission*", "**/*role*", "**/middleware*", "**/routers/**", "**/api/**", "**/*oauth*", "**/*webhook*", "**/docker-compose*.yml", "**/.env*"],
+    "diffTokens": ["where: { id", "redirect(", "new RegExp", "console.error(err", "token", "secret", "password", "isAdmin", "role ===", "ports:"],
+    "taskWords": ["auth", "login", "oauth", "token", "session", "permission", "permissions", "role", "roles", "admin", "secret", "secrets", "password", "redirect", "tenant", "security", "webhook", "scope", "regex", "expose"]
+  },
+  "questions": [
+    { "id": "sec.q.ownership", "tier": "S", "text": "Which objects does this change read or write, and which line proves the caller's tenant/owner matches?", "produces": "table", "prevents": ["bola"] },
+    { "id": "sec.q.gate", "tier": "S", "text": "Which permission key and scope gate each new route or tool, and is it declared as data in the registry? Is the public allowlist delta empty?", "produces": "table", "prevents": ["missing-authz"] },
+    { "id": "sec.q.revocation", "tier": "M", "text": "For every credential or copied ACL: how is it revoked, and what is the max staleness?", "produces": "table", "prevents": ["stale-authz"] },
+    { "id": "sec.q.input-sinks", "tier": "M", "text": "Does any input flow into a redirect, regex, shell, SQL or HTML? What bound or allowlist applies?", "produces": "list", "prevents": ["open-redirect", "redos", "injection"] },
+    { "id": "sec.q.protocol", "tier": "M", "text": "Am I implementing a protocol (OAuth/OIDC, webhook signature)? Which BCP section am I following, and which negative tests prove it?", "produces": "text", "prevents": ["incomplete-protocol"] },
+    { "id": "sec.q.error-logs", "tier": "M", "text": "What does an error from this path log? Could it include headers, URLs, configs or tokens?", "produces": "text", "prevents": ["secrets-in-logs"] },
+    { "id": "sec.q.exposure", "tier": "L", "text": "What new listener, port, endpoint or container appears, and what is its default exposure?", "produces": "list", "prevents": ["unsafe-defaults"] },
+    { "id": "sec.q.artifacts", "tier": "L", "text": "Which artifacts leave the machine (PR text, screenshots, docs, transcripts), and were they scanned?", "produces": "list", "prevents": ["secret-leak"] },
+    { "id": "sec.q.stride", "tier": "L", "text": "STRIDE, one line per changed data flow: who could spoof, tamper, read, deny or escalate here?", "produces": "table", "prevents": ["unreviewed-change"] }
+  ],
+  "budgets": [
+    { "key": "sec.ungated_routes", "default": 0, "unit": "count", "measure": "route/tool inventory: entries neither gated nor in the public allowlist", "source": "OWASP API5:2023; architecture fitness functions" },
+    { "key": "sec.canary_leaks", "default": 0, "unit": "count", "measure": "sentinel secrets found in logs, artifacts and outputs after a test run", "source": "OWASP Logging Cheat Sheet; CWE-532" },
+    { "key": "sec.redos_ms_at_max_input", "default": 50, "unit": "ms", "measure": "regex timing at the max accepted input length with a pumped attack string", "source": "CWE-1333; Davis et al. FSE 2018" }
+  ],
+  "rules": [
+    { "id": "sec.regexp-from-input", "title": "RegExp built from request or user input", "engine": "regex", "pattern": "\\bnew\\s+RegExp\\(\\s*(?:req|request|input|query|params|body|search|term|userInput|keyword)(?:\\.\\w+)*\\s*[,)]", "languages": ["ts", "tsx", "js", "jsx", "mjs", "cjs"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "redos", "why": "Regex injection and catastrophic backtracking on attacker-chosen patterns.", "confirm": "measurement: pumped attack string at 1e3/1e4/1e5 grows super-linearly or breaks the budget", "fixHint": "escape the input, bound its length, or use a linear engine" },
+    { "id": "sec.password-in-command", "title": "Password on a command line or inside a connection string", "engine": "regex", "pattern": "\\b(?:mysql|mysqldump|psql|pg_dump|mongosh?|redis-cli)\\b[^\\n]*(?:\\s-p\\S|--password[= ]\\S|\\s-a\\s+\\S)|\\b(?:postgres(?:ql)?|mysql|mongodb(?:\\+srv)?|redis|amqp)://[^:\\s/'\"]+:(?![$<{*])[^@\\s'\"]{3,}@", "languages": ["sh", "bash", "zsh", "ps1", "yml", "yaml", "json", "mjs", "js", "ts", "py", "toml"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "secrets-in-argv", "why": "Visible to every local user in the process list and kept in shell history and transcripts (CWE-214).", "confirm": "static-proof: the credential is in the command or file", "fixHint": "read credentials from env or a password file" },
+    { "id": "sec.raw-error-log", "title": "Raw error/response/config object logged", "engine": "regex", "pattern": "\\bconsole\\.(?:log|error|warn)\\(\\s*(?:err|error|e|res|response|config)\\s*\\)|JSON\\.stringify\\(\\s*(?:err|error)\\s*\\)", "languages": ["ts", "tsx", "js", "jsx", "mjs", "cjs"], "scope": "added", "severity": "low", "mode": "warn", "failureClass": "secrets-in-logs", "why": "HTTP and DB client errors carry headers, URLs with keys and configs (CWE-532).", "confirm": "failing-test: canary secret in env, force a provider error, grep outputs for the canary", "fixHint": "log message, code and status only" },
+    { "id": "sec.public-port-bind", "title": "Compose service port published on all interfaces", "engine": "regex", "pattern": "^\\s*-\\s*[\"']?(?:0\\.0\\.0\\.0:)?\\d{2,5}:\\d{2,5}(?:/(?:tcp|udp))?[\"']?\\s*$", "files": ["**/docker-compose*.{yml,yaml}", "**/compose*.{yml,yaml}"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "unsafe-defaults", "why": "A dev database or metrics port reachable from the network, often with default credentials.", "confirm": "measurement: ss -ltn / netstat shows 0.0.0.0:<port>", "fixHint": "bind to 127.0.0.1:<host>:<container>" },
+    { "id": "sec.missing-ownership", "title": "Lookup by client-supplied id with no tenant/owner condition", "engine": "eyes", "severity": "high", "failureClass": "bola", "why": "Another tenant's object is one id away (OWASP API1:2023).", "confirm": "failing-test: two tenants; B's member requests A's id and gets 200" },
+    { "id": "sec.route-without-gate", "title": "New route/procedure/tool with no permission call and not in the public allowlist", "engine": "eyes", "severity": "high", "failureClass": "missing-authz", "why": "Anyone signed in (or anyone) can call it.", "confirm": "failing-test: call it with a token lacking the permission; expect 403" },
+    { "id": "sec.role-name-check", "title": "Authorization by role name (role === 'ADMIN', isAdmin) instead of the permission resolver", "engine": "eyes", "severity": "medium", "failureClass": "missing-authz", "why": "Custom roles and scopes are bypassed or over-granted.", "confirm": "failing-test: permission matrix property test finds an over- or under-grant" },
+    { "id": "sec.open-redirect", "title": "Redirect target from request input without an origin compare", "engine": "eyes", "severity": "high", "failureClass": "open-redirect", "why": "Phishing via a trusted domain (CWE-601).", "confirm": "failing-test: next=https://evil.example and //evil.example resolve off-origin" },
+    { "id": "sec.no-revocation-path", "title": "Token without expiry, or an ACL copied to another store with no update path", "engine": "eyes", "severity": "high", "failureClass": "stale-authz", "why": "Removed users keep access.", "confirm": "failing-test: grant, use, revoke, reuse the same token -> still works" }
+  ],
+  "verify": [
+    { "id": "sec.v.inventory", "text": "route/tool inventory diff: every entry gated or allowlisted", "kind": "test", "tool": "fitness test over the router registry" },
+    { "id": "sec.v.bola", "text": "two-tenant tests for each changed endpoint (1 positive, 2 negative)", "kind": "test", "tool": "test runner" },
+    { "id": "sec.v.matrix", "text": "permission/scope matrix property test", "kind": "test", "tool": "fast-check" },
+    { "id": "sec.v.revocation", "text": "revocation test per credential type and derived ACL", "kind": "test", "tool": "test runner" },
+    { "id": "sec.v.protocol", "text": "protocol negative tests (state, PKCE, redirect allowlist, webhook signature)", "kind": "test", "tool": "test runner" },
+    { "id": "sec.v.canary", "text": "canary-secret run: sentinel secrets, run suite, grep all outputs = 0", "kind": "test", "tool": "tools/memory/secrets.mjs + grep" },
+    { "id": "sec.v.secret-scan", "text": "secret scan of the diff and every outbound artifact", "kind": "test", "tool": "gitleaks / trufflehog" }
+  ]
+}

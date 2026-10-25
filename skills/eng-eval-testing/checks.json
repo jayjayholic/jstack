@@ -1,0 +1,46 @@
+{
+  "domain": "eval-testing",
+  "version": 1,
+  "title": "Evaluation, proof and testing",
+  "triggers": {
+    "paths": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/tests/**", "**/test/**", "**/evals/**", "**/eval/**", "**/__snapshots__/**", "**/benchmarks/**"],
+    "diffTokens": ["expect(", "assert", ".only", ".skip", "toBeTruthy", "waitForTimeout", "mock", "snapshot"],
+    "taskWords": ["test", "tests", "testing", "eval", "evals", "benchmark", "a/b", "ab test", "verify", "prove", "proof", "flaky", "regression", "judge", "fixture", "coverage", "ready"]
+  },
+  "questions": [
+    { "id": "test.q.oracle", "tier": "S", "text": "What is the oracle: which command, test, rubric or labelled set says this is correct, and does it exist before my change?", "produces": "text", "prevents": ["self-certification"] },
+    { "id": "test.q.evidence", "tier": "S", "text": "What evidence will I attach to done (command, exit code, SHA, log or screenshot with provenance), and could someone else rerun it?", "produces": "text", "prevents": ["done-without-proof"] },
+    { "id": "test.q.dod", "tier": "M", "text": "What is the Definition of Done, written as runnable checks with thresholds?", "produces": "list", "prevents": ["pass-on-execution"] },
+    { "id": "test.q.repro", "tier": "M", "text": "Can I reproduce the problem now, on the baseline, with a script I can commit?", "produces": "file", "prevents": ["speculative-fix"] },
+    { "id": "test.q.outward", "tier": "M", "text": "Which outward or irreversible actions can this code or test perform, and what blocks them by default (egress deny, hold flag, dry-run)?", "produces": "list", "prevents": ["test-side-effects"] },
+    { "id": "test.q.lane", "tier": "M", "text": "Which shared resources (ports, DB, queues, tenants, branches, deploys) will I touch, and how is my lane isolated and cleaned up?", "produces": "list", "prevents": ["shared-environment"] },
+    { "id": "test.q.baseline", "tier": "L", "text": "Which baseline arm do I compare against (clean HEAD worktree, frozen numbers), and is the A/A difference about zero?", "produces": "number", "prevents": ["no-baseline"] },
+    { "id": "test.q.validity", "tier": "L", "text": "What are the validity preconditions (RAM/CPU floors, headed GPU, production build, isolated lane), and does a preflight enforce them?", "produces": "list", "prevents": ["invalid-measurement"] },
+    { "id": "test.q.feedback-loop", "tier": "L", "text": "How long is my inner feedback loop, and what fixture or snapshot would cut it below a minute?", "produces": "number", "prevents": ["slow-feedback"] },
+    { "id": "test.q.judge", "tier": "L", "text": "If I use an LLM judge: what is its measured agreement with humans, and is it order-swapped and blind?", "produces": "number", "prevents": ["uncalibrated-judge"] }
+  ],
+  "budgets": [
+    { "key": "tests.inner_loop_s", "default": 60, "unit": "s", "measure": "wall time of the targeted test command", "source": "Humble & Farley, Continuous Delivery (2010)" },
+    { "key": "tests.flaky_reruns", "default": 5, "unit": "runs", "measure": "shuffled, repeated runs of the affected suites must all pass", "source": "Luo et al., FSE 2014" },
+    { "key": "tests.judge_agreement_kappa", "default": null, "unit": "kappa", "measure": "Cohen's kappa vs >= 30 human labels before trusting a judge", "source": "Zheng et al., NeurIPS 2023" }
+  ],
+  "rules": [
+    { "id": "test.focus-skip", "title": "Focused or skipped test (.only, .skip, xit, @skip)", "engine": "regex", "pattern": "\\b(?:it|test|describe|context)\\.(?:only|skip)\\s*\\(|\\bx(?:it|describe|test)\\s*\\(|@pytest\\.mark\\.skip\\b|@unittest\\.skip\\b", "files": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/test_*.py", "**/*_test.py", "**/*_test.go"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "optimising-for-green", "why": "The suite goes green by not running the tests that matter.", "confirm": "static-proof: the modifier is on an added line", "fixHint": "remove it; quarantine a flaky test in a tracked list instead" },
+    { "id": "test.sleep-wait", "title": "Fixed sleep used to wait in a test", "engine": "regex", "pattern": "\\bwaitForTimeout\\(\\s*\\d|\\bawait\\s+(?:sleep|delay|wait)\\(\\s*\\d{3,}|\\btime\\.sleep\\(\\s*\\d", "files": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/test_*.py", "**/*_test.py"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "flaky", "why": "Too short on a busy machine, too long everywhere else.", "confirm": "measurement: shuffled 5x rerun shows a failure, or the wait dominates test time", "fixHint": "wait for the condition (expect.poll, locator auto-wait, fake timers)" },
+    { "id": "test.weak-assert", "title": "Weak assertion (toBeTruthy/toBeDefined/not.toBeNull, bare assert.ok(x))", "engine": "regex", "pattern": "\\.toBeTruthy\\(\\)|\\.toBeDefined\\(\\)|\\.not\\.toBeNull\\(\\)|\\bassert\\.ok\\(\\s*\\w+\\s*\\)", "files": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**"], "scope": "added", "severity": "low", "mode": "eyes-hint", "failureClass": "pass-on-execution", "why": "A plausible but wrong value still passes.", "confirm": "measurement: a mutant returning a wrong non-null value survives", "fixHint": "assert the exact value or shape" },
+    { "id": "test.weakened-in-diff", "title": "Assertions removed or loosened, tolerances raised, snapshots rewritten in bulk", "engine": "eyes", "severity": "high", "failureClass": "optimising-for-green", "why": "The test no longer catches the bug it was written for.", "confirm": "failing-test: run the old assertion on the new code; it fails" },
+    { "id": "test.never-red", "title": "New test never seen failing on the parent commit", "engine": "eyes", "severity": "medium", "failureClass": "no-red-before-green", "why": "It may pass for the wrong reason.", "confirm": "failing-test: run it against the parent's source; it must fail for the stated reason" },
+    { "id": "test.unguarded-egress", "title": "Test can reach real third-party hosts (no egress deny, hold flag not enforced in code)", "engine": "eyes", "severity": "high", "failureClass": "test-side-effects", "why": "Tests send mail, register clients or post for real.", "confirm": "repro-script: run with network logging; external hosts contacted" },
+    { "id": "test.invalid-ab", "title": "A/B or perf number with no A/A run, baseline arm, environment fingerprint or interval", "engine": "eyes", "severity": "high", "failureClass": "invalid-measurement", "why": "Noise or a starved machine reads as an effect.", "confirm": "measurement: A/A pair under the same conditions shows a difference of the same size" }
+  ],
+  "verify": [
+    { "id": "test.v.oracle-first", "text": "acceptance checks committed before the implementation (or in the same commit with red proof)", "kind": "test", "tool": "git log" },
+    { "id": "test.v.red-on-baseline", "text": "failing case run on a clean HEAD worktree, output saved", "kind": "test", "tool": "evidence.mjs run" },
+    { "id": "test.v.green", "text": "same command passes on the branch, output saved with the SHA", "kind": "test", "tool": "evidence.mjs rerun --expect pass" },
+    { "id": "test.v.diff-audit", "text": "no weakened assertions; any that were weakened are justified", "kind": "test", "tool": "git diff -- '*test*' + scan.mjs --domain eval-testing" },
+    { "id": "test.v.mutation", "text": "mutation spot-check on the changed functions", "kind": "test", "tool": "Stryker / mutmut / cargo-mutants" },
+    { "id": "test.v.shuffle", "text": "shuffled and repeated run (3-5x) of the affected suites", "kind": "test", "tool": "vitest --sequence.shuffle / bun test --rerun-each" },
+    { "id": "test.v.built-app", "text": "real-browser run of the user path on the production build, screenshots with provenance", "kind": "render", "tool": "Playwright" },
+    { "id": "test.v.manifest", "text": "evidence manifest (command, exit, SHA, artifact) attached to READY", "kind": "test", "tool": "ready message" }
+  ]
+}

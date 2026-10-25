@@ -1,0 +1,40 @@
+{
+  "domain": "machine",
+  "version": 1,
+  "title": "Machine resources: RAM, processes, browsers, waits",
+  "triggers": {
+    "paths": ["scripts/**", "tools/**", "**/*.sh", "**/*.ps1", "**/playwright*.{ts,js,mjs}", "**/.mcp.json", "**/docker-compose*.yml"],
+    "diffTokens": ["spawn", "exec", "taskkill", "pkill", "sleep", "launch(", "launchPersistentContext", "Promise.all", "--max-old-space-size"],
+    "taskWords": ["ram", "memory", "oom", "crash", "freeze", "process", "processes", "orphan", "browser", "playwright", "server", "dev server", "install", "parallel", "agents", "subagent", "mcp", "sleep", "poll", "wait"]
+  },
+  "questions": [
+    { "id": "mach.q.peak", "tier": "S", "text": "What is the measured peak RAM of one instance of each heavy job I will run, and how many run machine-wide right now?", "produces": "number", "prevents": ["uncapped-parallel"] },
+    { "id": "mach.q.teardown", "tier": "S", "text": "Which processes, servers and browsers will I start, which handle owns each tree, and what kills it on success, failure and interrupt?", "produces": "table", "prevents": ["orphans", "forgotten-browser"] },
+    { "id": "mach.q.lock", "tier": "M", "text": "Which lock or slot will I take, and is it enforced by a hook or only by good intent?", "produces": "text", "prevents": ["lock-bypass"] },
+    { "id": "mach.q.reuse", "tier": "M", "text": "Is there already a running server, install or browser I can reuse instead of starting another?", "produces": "text", "prevents": ["duplicate-instances"] },
+    { "id": "mach.q.browser-profile", "tier": "M", "text": "Which browser, profile or tab will I use, and is it isolated from the owner's own windows?", "produces": "text", "prevents": ["owner-browser-hijack"] },
+    { "id": "mach.q.waits", "tier": "M", "text": "For every wait: what event, what timeout, what happens on timeout?", "produces": "table", "prevents": ["busy-wait"] },
+    { "id": "mach.q.per-session-cost", "tier": "L", "text": "Does any tool or local server I add cost RAM per session, and what is the total at max sessions?", "produces": "number", "prevents": ["per-session-spawn"] },
+    { "id": "mach.q.budgets", "tier": "L", "text": "What are my budgets: wall-clock deadline, max agents, max tool calls, and who stops me? Pre-mortem: the machine froze an hour from now; what did I start?", "produces": "number", "prevents": ["runaway-agents"] }
+  ],
+  "budgets": [
+    { "key": "ram.heavy_job_peak_gb", "default": null, "unit": "GB", "measure": "peak summed private bytes of the job's tree (mem_map / heavy_capped log)", "source": "Little's law; USE method" },
+    { "key": "mach.orphans_after_task", "default": 0, "unit": "count", "measure": "processes started after task start whose parent is gone, plus ports still bound", "source": "Release It! Steady State" },
+    { "key": "mach.automation_browsers_after_task", "default": 0, "unit": "count", "measure": "automation browser processes (debugging port/pipe, non-default profile) after the task", "source": "Playwright Browser.close docs" }
+  ],
+  "rules": [
+    { "id": "mach.kill-by-name", "title": "Kill by process name (taskkill /IM, pkill, killall)", "engine": "regex", "pattern": "\\btaskkill\\b[^\\n]*\\s(?:/|//)IM\\s|\\b(?:pkill|killall)\\s+(?:-\\S+\\s+)*(?:node|bun|chrome|chromium|python|java|deno)\\b", "flags": "i", "languages": ["sh", "bash", "zsh", "ps1", "cmd", "bat", "mjs", "js", "ts", "py", "yml", "yaml", "json"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "collateral-kill", "why": "Kills every process with that name: other agents, the owner's tools, the agent host itself.", "confirm": "static-proof: the command is in a script", "fixHint": "kill the tree you started by PID (taskkill /PID <pid> /T /F, kill -- -<pgid>) or a Job Object" },
+    { "id": "mach.while-true-sleep", "title": "while-true sleep loop (busy wait with no exit or deadline)", "engine": "regex", "multiline": true, "pattern": "while\\s+(?:true|:|\\[\\s*1\\s*\\])\\s*;?\\s*do\\b[\\s\\S]{0,300}?\\bsleep\\s+\\d", "languages": ["sh", "bash", "zsh"], "scope": "added", "severity": "medium", "mode": "warn", "failureClass": "busy-wait", "why": "Waits forever or polls blindly; holds a slot and hides a stall.", "confirm": "repro-script: run with the awaited event never happening; it never exits", "fixHint": "wait on the event (process exit, health endpoint with a deadline, a watcher) with an explicit timeout" },
+    { "id": "mach.launch-no-close", "title": "Browser/context launched with no close in finally or fixture teardown", "engine": "eyes", "severity": "medium", "failureClass": "forgotten-browser", "why": "Windows pile up and eat RAM; a crash leaves them open.", "confirm": "measurement: automation browser count after the run > 0" },
+    { "id": "mach.unbounded-parallel", "title": "Promise.all / & / background over heavy jobs with no concurrency limit", "engine": "eyes", "severity": "high", "failureClass": "uncapped-parallel", "why": "Peak RAM = jobs x peak per job; the machine swaps or crashes.", "confirm": "measurement: peak commit during the run vs the budget" },
+    { "id": "mach.heavy-outside-lock", "title": "Typecheck/build/install outside the machine-wide lock", "engine": "eyes", "severity": "high", "failureClass": "lock-bypass", "why": "Advisory locks only work when everyone takes them.", "confirm": "repro-script: guard log shows the command without the wrapper" },
+    { "id": "mach.agent-fanout", "title": "Agent spawn loop with no cap or deadline passed to children", "engine": "eyes", "severity": "medium", "failureClass": "runaway-agents", "why": "Agents multiply and outlive the task.", "confirm": "measurement: live agents vs the cap during the run" }
+  ],
+  "verify": [
+    { "id": "mach.v.orphans", "text": "no process from this task alive (PID tree, start time, command line); ports released", "kind": "measure", "tool": "mem_map; netstat -ano / ss -ltnp" },
+    { "id": "mach.v.browsers", "text": "automation browser processes = 0; tabs I created closed; owner tabs untouched", "kind": "measure", "tool": "process list by profile dir" },
+    { "id": "mach.v.lock-audit", "text": "every heavy command ran under the wrapper (guard log violations = 0)", "kind": "measure", "tool": "hook-report.mjs" },
+    { "id": "mach.v.budget-report", "text": "peak RAM / commit %, concurrent heavy jobs, agents spawned, wall-clock vs deadline", "kind": "measure", "tool": "mem_map / machine-memory" },
+    { "id": "mach.v.waits", "text": "no bare sleeps; every wait has a timeout", "kind": "test", "tool": "scan.mjs --domain machine" }
+  ]
+}

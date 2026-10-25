@@ -1,0 +1,44 @@
+{
+  "domain": "ci-git",
+  "version": 1,
+  "title": "CI, build, tooling and git/train hygiene",
+  "triggers": {
+    "paths": [".github/**", "**/*.yml", "**/*.yaml", "**/Dockerfile*", "**/package.json", "**/tsconfig*.json", "**/turbo.json", "scripts/**", "tools/**", ".husky/**", ".githooks/**"],
+    "diffTokens": ["export ", "<<<<<<<", "-X ", "--no-verify", "workflow", "runs-on"],
+    "taskWords": ["ci", "build", "pipeline", "workflow", "merge", "rebase", "conflict", "branch", "worktree", "train", "typecheck", "lint", "prettier", "release", "cache", "oom", "refactor", "rename", "signature", "export"]
+  },
+  "questions": [
+    { "id": "ci.q.ci-command", "tier": "S", "text": "What exact command does CI run, and can I run it locally on the merged tree (base + my branch)?", "produces": "text", "prevents": ["self-certified-ready"] },
+    { "id": "ci.q.callers", "tier": "S", "text": "Which exported symbols or contracts does my change touch, and who calls them?", "produces": "list", "prevents": ["broken-caller"] },
+    { "id": "ci.q.asked-for", "tier": "M", "text": "Is every new component (infra, service, workflow, dependency) named in the request? If not, have I asked?", "produces": "text", "prevents": ["unasked-infra"] },
+    { "id": "ci.q.irreversible", "tier": "M", "text": "Which actions are irreversible or outward (push, merge, force, admin, delete, billing)? Do I have explicit approval for each?", "produces": "list", "prevents": ["unapproved-push"] },
+    { "id": "ci.q.build-budget", "tier": "M", "text": "What is my build budget (typecheck time, peak RSS, deploy machine memory), and what is the baseline?", "produces": "number", "prevents": ["build-oom"] },
+    { "id": "ci.q.cleanup", "tier": "M", "text": "What will I create (worktrees, branches, servers, caches), and when will I delete it?", "produces": "list", "prevents": ["sprawl"] },
+    { "id": "ci.q.dependencies", "tier": "L", "text": "Which external dependencies (CI minutes, deploy provider, quota, keys) must be up, and how do I see they are?", "produces": "list", "prevents": ["billing-stall"] },
+    { "id": "ci.q.queue", "tier": "L", "text": "What is the merge queue length and service rate right now, and what wakes me when it changes?", "produces": "number", "prevents": ["idle-waits"] },
+    { "id": "ci.q.location", "tier": "L", "text": "Where does the platform expect this artifact to live (skills, env files, configs), per its docs?", "produces": "text", "prevents": ["wrong-location"] },
+    { "id": "ci.q.premortem", "tier": "L", "text": "Pre-mortem: it is a week later and this broke the integration branch. Why?", "produces": "text", "prevents": ["train-bounce"] }
+  ],
+  "budgets": [
+    { "key": "ci.train_bounce_rate", "default": 0, "unit": "ratio", "measure": "trains dropped because of this branch / trains it boarded", "source": "Not Rocket Science Rule; merge queues" },
+    { "key": "ci.typecheck_s", "default": null, "unit": "s", "measure": "tsc --extendedDiagnostics Check time vs baseline", "source": "TypeScript wiki Performance" },
+    { "key": "ci.build_peak_gb", "default": null, "unit": "GB", "measure": "peak private bytes of the build tree (mem_map / heavy_capped log)", "source": "deploy machine memory table" }
+  ],
+  "rules": [
+    { "id": "ci.conflict-marker", "title": "Conflict marker committed", "engine": "regex", "pattern": "^(?:<{7}|>{7})(?: .*)?$", "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "broken-merge", "why": "The file no longer parses, or both sides ship half each.", "confirm": "static-proof: the marker line is in the tree", "fixHint": "resolve the hunk by reading both sides (git show :2:path / :3:path)" },
+    { "id": "ci.blanket-merge-side", "title": "Blanket -X ours/theirs or checkout --ours/--theirs over many files", "engine": "regex", "pattern": "(?:^|\\s)-X\\s*(?:ours|theirs)\\b|--strategy-option[= ](?:ours|theirs)\\b|\\bcheckout\\s+--(?:ours|theirs)\\s+\\.(?:\\s|$)|\\bmerge\\s+-s\\s+ours\\b", "languages": ["sh", "bash", "zsh", "ps1", "yml", "yaml", "json", "mjs", "js", "ts", "py"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "dropped-hunks", "why": "Every conflicting hunk is resolved unread; exports, imports and catalog keys disappear silently.", "confirm": "static-proof: the option is in a script; train merged-tree check finds lost keys or exports", "fixHint": "resolve conflicts file by file; union only for append-only files" },
+    { "id": "ci.skip-hooks", "title": "Hooks bypassed (--no-verify, HUSKY=0, SKIP_HOOKS)", "engine": "regex", "pattern": "--no-verify(?![\\w-])|\\bHUSKY=0\\b|\\bSKIP_HOOKS?=1\\b", "languages": ["sh", "bash", "zsh", "ps1", "yml", "yaml", "json", "mjs", "js"], "scope": "added", "severity": "high", "mode": "block-when-confirmed", "failureClass": "bypassed-guardrail", "why": "The check that would have caught the break never runs.", "confirm": "static-proof: the flag is in a script or workflow", "fixHint": "fix what the hook reports" },
+    { "id": "ci.signature-callers", "title": "Exported signature changed with fewer callers updated than a search finds", "engine": "eyes", "severity": "high", "failureClass": "broken-caller", "why": "Another package or adapter breaks at runtime or in the train.", "confirm": "failing-test: workspace typecheck or the caller's test fails on the merged tree" },
+    { "id": "ci.unasked-infra", "title": "New Dockerfile, runner, workflow or service not named in the request", "engine": "eyes", "severity": "medium", "failureClass": "unasked-infra", "why": "Somebody now owns and pays for a thing nobody asked for.", "confirm": "repro-script: quote the request; the component is not in it" },
+    { "id": "ci.heap-bump-fix", "title": "OOM 'fixed' by raising --max-old-space-size without a profile", "engine": "eyes", "severity": "medium", "failureClass": "build-oom", "why": "The real growth stays; the next build OOMs on a bigger machine.", "confirm": "measurement: --extendedDiagnostics or trace shows the hot file" },
+    { "id": "ci.ready-without-proof", "title": "READY/done with no command, exit code and SHA attached", "engine": "eyes", "severity": "high", "failureClass": "self-certified-ready", "why": "The train bounces and the owner re-checks by hand.", "confirm": "repro-script: run the CI command on the stated SHA; it fails" }
+  ],
+  "verify": [
+    { "id": "ci.v.merged-tree", "text": "gate on the merged tree: rebase, format check, lint, typecheck, tests; record exit codes + SHA", "kind": "test", "tool": "ready-gate.sh" },
+    { "id": "ci.v.markers", "text": "git diff --check and the conflict-marker scan return nothing", "kind": "test", "tool": "git diff --check; scan.mjs" },
+    { "id": "ci.v.callers", "text": "dependents' tests ran; workspace typecheck green", "kind": "test", "tool": "turbo --filter=...pkg / LSP references" },
+    { "id": "ci.v.budget", "text": "Types / Check time / Memory from --extendedDiagnostics and build peak vs baseline", "kind": "measure", "tool": "tsc --extendedDiagnostics; mem_map" },
+    { "id": "ci.v.clean-rebuild", "text": "any unexplained error reproduced from a clean tree on the same SHA before a code change", "kind": "test", "tool": "clean caches + rerun" },
+    { "id": "ci.v.cleanup", "text": "worktrees, branches and servers I started are gone", "kind": "test", "tool": "git worktree list; netstat" }
+  ]
+}

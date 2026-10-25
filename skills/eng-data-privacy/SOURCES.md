@@ -1,0 +1,65 @@
+# Sources: Data model, migrations and privacy
+
+Carried over from the research pass of 2026-10-25 (`02-research-data-privacy.md`), product-specific lines removed. Each line keeps the tag it had there: **[V]** checked against the primary page in that pass; **[K]**, **[B]**, **[C]** or **[M]** a known citation (author, year, venue) not re-opened; **[U]** unverified, treat as a hypothesis. Lines without a tag were cited with their venue and date only.
+
+- Sadalage & Fowler, *Evolutionary Database Design* (martinfowler.com, rewrite May 2016; original 2003): "all changes are made by migrations", with no ad hoc DDL. When two developers pick the same number, the local migration is renumbered before it reaches mainline.
+- GDPR Art. 30 (Regulation (EU) 2016/679) requires records of processing activities.
+- Sadalage & Fowler (2016): no schema editing tools or ad hoc DDL.
+- Greshake et al., "Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection", AISec '23 (ACM, 2023; arXiv 2302.12173). Content an agent retrieves blurs data and instructions, and the abstract lists "information ecosystem contamination" among the threats. (The arXiv listing shows no venue; the AISec '23 venue is from the ACM proceedings, not re-fetched.)
+- OWASP Top 10 for LLM Applications 2025: LLM01 Prompt Injection, LLM04 Data and Model Poisoning, LLM06 Excessive Agency.
+- Willison, "The lethal trifecta for AI agents" (simonwillison.net, 16 June 2025): private data plus untrusted content plus an outbound channel is exploitable. Persisting untrusted content into the private store builds the first two legs permanently.
+- AWS, *SaaS Tenant Isolation Strategies* whitepaper (1 Aug 2020, archived) and the Well-Architected SaaS Lens SEC 2: tenant context is resolved server-side and enforced at each layer.
+- OWASP ASVS 5.0.0 (released 30 May 2025), chapter V8 Authorization. Section V8.4 is "Other Authorization Considerations"; the OWASP cheat-sheet ASVS index lists the Multi-Tenant Application Security Cheat Sheet as its related resource. That V8.4 contains a cross-tenant requirement, and its wording, are **[unverified]**.
+- OWASP Top 10:2021 A01 Broken Access Control.
+- McDermott & Fox, "Using Abuse Case Models for Security Requirements Analysis", ACSAC 1999.
+- Sindre & Opdahl, misuse cases (TOOLS-Pacific 2000; *Requirements Engineering* 10(1), 2005).
+- **Property-based isolation test:** use QuickCheck-style generation. Claessen & Hughes, "QuickCheck: a lightweight tool for random testing of Haskell programs", ICFP 2000. In TypeScript, fast-check. Generate random orgs, users and chats, then assert that for every read, `result.org_id ∈ actor.orgs` and every personal item has `owner == actor`.
+- Denning (1976): combining labelled data takes the lattice operation on labels.
+- High-water mark: combined data is at least as restricted as its most restricted part. The idea is Weissman's ADEPT-50 high-water-mark model (AFIPS FJCC, 1969), not Bell & LaPadula (who formalised the simple-security and *-properties, MITRE 1973); attribution corrected, not re-fetched **[unverified]**.
+- Design by Contract: Meyer, *Object-Oriented Software Construction* (2nd ed., 1997). Postcondition of merge: no fact's readers grow.
+- Inverse property and model-based testing: QuickCheck (ICFP 2000); fast-check `fc.commands` / `modelRun`; Hypothesis `RuleBasedStateMachine` with `@invariant()`.
+- **Before:** the spec lists each destructive or combining operation with its inverse and its ACL rule. Record it as an ADR: Nygard, "Documenting Architecture Decisions" (2011).
+- **Pre-mortem:** Klein, HBR 2007. Run it on every schema or ACL change before coding.
+- **Checklists at pause points:** Gawande 2009. The pre-flight questions below are the checklist.
+- **ADRs:** Nygard 2011. One per new person table, per merge/ACL rule, per onboarding rule.
+- **Definition of Done:** Scrum Guide (Schwaber & Sutherland, Nov 2020). A data-model change is done only when migration, erasure entry, authz matrix rows and inverse operation all exist.
+- **Fitness functions:** Ford et al. 2017. Turn each rule above into a CI test, so the agent stays free in *how* it builds while the invariants hold.
+- Sadalage & Fowler, *Evolutionary Database Design*, May 2016: https://martinfowler.com/articles/evodb.html
+- Ambler & Sadalage, *Refactoring Databases: Evolutionary Database Design*, Addison-Wesley, 2006.
+- Prisma docs, *About migration histories*: https://www.prisma.io/docs/orm/prisma-migrate/understanding-prisma-migrate/migration-histories
+- Prisma docs, *Prototyping your schema* (db push): https://www.prisma.io/docs/orm/prisma-migrate/workflows/prototyping-your-schema
+- Redgate Flyway, *Validate*: https://documentation.red-gate.com/fd/validate-277578898.html
+- Atlas, *Migration directory integrity*: https://atlasgo.io/concepts/migration-directory-integrity
+- Squawk, `prefer-robust-stmts`: https://squawkhq.com/docs/prefer-robust-stmts
+- Wiggins, *The Twelve-Factor App*, 2011: https://12factor.net/dev-prod-parity
+- GDPR (Regulation (EU) 2016/679), Arts. 5, 17, 25, 30.
+- Cavoukian, *Privacy by Design: The 7 Foundational Principles*, IPC Ontario, 2009.
+- Deng et al., LINDDUN, *Requirements Engineering* 16(1):3–32, 2011.
+- Ford, Parsons & Kua, *Building Evolutionary Architectures*, O'Reilly, 2017.
+- Saltzer & Schroeder, *Proc. IEEE* 63(9):1278–1308, 1975.
+- Denning, "A Lattice Model of Secure Information Flow", *CACM* 19(5):236–243, 1976.
+- Weissman, "Security Controls in the ADEPT-50 Time-Sharing System", AFIPS FJCC, 1969 (high-water mark) [from memory, unverified].
+- Hardy, "The Confused Deputy", *ACM SIGOPS OSR* 22(4), 1988 [from memory].
+- W3C PROV-DM / PROV-O Recommendations, 30 April 2013: https://www.w3.org/TR/prov-overview/
+- Greshake et al., AISec '23, arXiv 2302.12173: https://arxiv.org/abs/2302.12173
+- OWASP Top 10 for LLM Applications 2025: https://genai.owasp.org/llm-top-10/
+- Willison, "The lethal trifecta for AI agents", 16 June 2025: https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/
+- AWS, *SaaS Tenant Isolation Strategies*, 1 Aug 2020: https://docs.aws.amazon.com/whitepapers/latest/saas-tenant-isolation-strategies/saas-tenant-isolation-strategies.html
+- AWS Well-Architected SaaS Lens SEC 2: https://wa.aws.amazon.com/saas.question.SEC_2.en.html
+- OWASP ASVS 5.0.0 (May 2025) V8, and ASVS index: https://cheatsheetseries.owasp.org/IndexASVS.html [V8.4 is "Other Authorization Considerations"; requirement wording unverified]
+- PostgreSQL docs, Row Security Policies: https://www.postgresql.org/docs/current/ddl-rowsecurity.html
+- McDermott & Fox, ACSAC 1999: https://www.acsac.org/1999/abstracts/wed-b-1030-john.html
+- Sindre & Opdahl, misuse cases, 2000/2005.
+- Shostack, *Threat Modeling: Designing for Security*, Wiley, 2014.
+- Slack, *Manage how people join your workspace*: https://slack.com/help/articles/115004856503
+- Klein, "Performing a Project Premortem", HBR, Sept 2007.
+- Gawande, *The Checklist Manifesto*, 2009.
+- Nygard, "Documenting Architecture Decisions", 2011.
+- Schwaber & Sutherland, *The Scrum Guide*, Nov 2020.
+- Garcia-Molina & Salem, "Sagas", SIGMOD 1987, DOI 10.1145/38713.38742.
+- Korth, Levy & Silberschatz, VLDB 1990.
+- Fowler, "Event Sourcing", 2005: https://martinfowler.com/eaaDev/EventSourcing.html
+- Meyer, *Object-Oriented Software Construction*, 2nd ed., 1997.
+- Claessen & Hughes, "QuickCheck", ICFP 2000.
+- fast-check, model-based testing: https://fast-check.dev/docs/advanced/model-based-testing/
+- Hypothesis, stateful testing: https://hypothesis.readthedocs.io/en/latest/stateful.html

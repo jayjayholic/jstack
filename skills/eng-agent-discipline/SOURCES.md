@@ -1,0 +1,49 @@
+# Sources: The coding agent itself: scope, claims, self-verification, checkpoints
+
+Carried over from the research pass of 2026-10-25 (`02-research-coding-agent-discipline.md`), product-specific lines removed. Each line keeps the tag it had there: **[V]** checked against the primary page in that pass; **[K]**, **[B]**, **[C]** or **[M]** a known citation (author, year, venue) not re-opened; **[U]** unverified, treat as a hypothesis. Lines without a tag were cited with their venue and date only.
+
+- S1 - Anthropic, "Building effective agents" (anthropic.com/engineering/building-effective-agents) - 2024-12-19 - V
+- S2 - Anthropic, "Effective context engineering for AI agents" - 2025-09-29 - V
+- S3 - Anthropic, "Effective harnesses for long-running agents" - 2025-11-26 - V
+- S4 - Claude Code docs, "How Claude remembers your project" (code.claude.com/docs/en/memory) - live docs, read 2026-10-25 - V
+- S5 - Claude Code docs, Subagents (code.claude.com/docs/en/sub-agents) - live docs, read 2026-10-25 - V
+- S6 - Claude Code docs, Hooks reference (code.claude.com/docs/en/hooks) - live docs, read 2026-10-25 - V
+- S7 - Claude API docs, "Reduce hallucinations" (platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) - live docs, read 2026-10-25 - V
+- S8 - OWASP Top 10 for LLM Applications 2025, LLM06 "Excessive Agency" (genai.owasp.org/llmrisk/llm062025) - 2025 - V (page body read 2026-10-25; quoted mitigations confirmed. An earlier draft's claim of a 2026 renumbering was not supported by the page and was removed)
+- S9 - OpenAI, "A practical guide to building agents" (PDF) - 2025 - V (PDF text read 2026-10-25: "Plan for human intervention" names two triggers, exceeding failure thresholds and high-risk actions)
+- S10 - Sharma et al., "Towards Understanding Sycophancy in Language Models" - ICLR 2024 (arXiv 2310.13548) - V
+- S11 - Dhuliawala et al., "Chain-of-Verification Reduces Hallucination in LLMs" - Findings of ACL 2024, pp. 3563-3578 - V
+- S12 - Liu et al., "Lost in the Middle: How Language Models Use Long Contexts" - TACL vol. 12, 2024, pp. 157-173 - V
+- S13 - Google SRE book, ch. 21 "Handling Overload": client-side adaptive throttling, retry budgets - O'Reilly 2016; sre.google - V
+- S14 - Brooker, "Timeouts, retries, and backoff with jitter", Amazon Builders' Library - 2019-12-05 (now hosted at builder.aws.com) - V (page read: capped exponential backoff, jitter, token-bucket retry limiting, idempotent APIs)
+- S15 - IETF draft-ietf-httpapi-ratelimit-headers-11 (RateLimit, RateLimit-Policy) - May 2026, still a draft - V
+- S16 - RFC 6585 (HTTP 429), RFC 9110 (Retry-After) - 2012 / 2022 - C
+- S17 - Candea & Fox, "Crash-Only Software" - HotOS IX, 2003 - V
+- S19 - Garcia-Molina & Salem, "Sagas" - SIGMOD 1987 - C
+- S20 - Klein, "Performing a Project Premortem" - HBR 85(9), Sept 2007 - V (title, author, date; article body paywalled, so the 30% figure is C)
+- S21 - Flyvbjerg, "From Nobel Prize to Project Management: Getting Risks Right" (reference class forecasting) - Project Management Journal 37(3), 2006 - V
+- S22 - Kahneman & Tversky, planning fallacy ("Intuitive prediction: biases and corrective procedures") - 1979 - C
+- S24 - Nielsen, response-time limits (0.1 s / 1 s / 10 s), from *Usability Engineering* - 1993 (restated by NN/g in 2014) - V
+- S25 - Nielsen, 10 usability heuristics (visibility of system status; user control and freedom) - 1994 - C
+- S26 - Zeller, *Why Programs Fail*, 2nd ed., ch. 6 "Scientific Debugging" - Morgan Kaufmann 2009 - V
+- S27 - Nygard, "Documenting Architecture Decisions" (ADR) - Cognitect blog, 2011-11-15 - V (date and URL; text via secondary sources)
+- S28 - GitHub, "Introducing code owners" + CODEOWNERS / branch protection - 2017; 2025 changelog - V (blog; docs page not read)
+- S29 - Saltzer & Schroeder, "The Protection of Information in Computer Systems" (least privilege, fail-safe defaults) - Proc. IEEE 63(9), 1975 - C
+- S30 - Gawande, *The Checklist Manifesto* - 2009 - C
+- S31 - Scrum Guide (Definition of Done) - 2020 - C
+- S32 - ISO/IEC/IEEE 29148 (requirements engineering: unambiguous, verifiable requirements) - 2018 - C
+- S33 - Chesterton, "The Thing" ("Chesterton's fence") - 1929 - C
+- S34 - Austin, *How to Do Things with Words* (1962) / Searle, *Speech Acts* (1969): illocutionary force (question vs directive) - 1962 / 1969 - C
+- S35 - Nygard, *Release It!* (circuit breaker, bulkhead) - 2007; 2nd ed. 2018 - C
+- S36 - Google SRE book ch. 15 "Postmortem Culture" (blameless, evidence-based) and ch. 5 "Eliminating Toil" - 2016 - C
+- S37 - Martraire, *Living Documentation* - Addison-Wesley 2019 - C
+- S38 - Claessen & Hughes, "QuickCheck" - ICFP 2000 - C
+- **Method.** Sycophancy is a measured, general trait of RLHF assistants (Sharma et al., ICLR 2024, S10). Countermeasures are grounding and verification:
+- **Method.** Scientific debugging (Zeller 2009, S26): state a hypothesis, predict, experiment, observe, and keep a log. Blameless, evidence-based postmortems (S36). A claim that the provider, network or library is at fault is a hypothesis that needs a falsifying experiment.
+- Living documentation (Martraire 2019, S37): docs derived from or checked against code.
+- ADRs for decisions (Nygard 2011, S27).
+- Crash-only software (Candea & Fox, HotOS 2003, S17): stop = crash and start = recover, so recovery is the normal startup path.
+- Progress visibility: users prefer having a percent-done progress indicator (Myers CHI '85, S23; not re-read this pass, and the earlier claim that presence matters more than precision is unverified and dropped). Waits over 10 s need "feedback indicating when the computer expects to be done" (Nielsen 1993, S24; NN/g's 2014 update asks for a percent-done indicator). See also visibility of system status (S25).
+- Estimation: the planning fallacy (S22) is corrected by reference class forecasting, which uses actual outcomes of comparable past tasks (Flyvbjerg 2006, S21).
+- **Pre-mortem** (Klein 2007, S20): before starting, assume the task has failed and list why. Klein reports that prospective hindsight increased the ability to correctly identify reasons for future outcomes by about 30% (Mitchell, Russo & Pennington 1989). Unverified this pass: the HBR body is paywalled and the original study was not read.
+- **Checklists** (Gawande 2009, S30): short checklists of the steps that kill when skipped, at defined pause points. They complement expertise; they do not replace it.
