@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25: the RAM clean runs itself, worktrees opt out with one command, and a night of train lessons
+
+**What:**
+- `tools/ram-clean.ps1` + `tools/setup-ram-clean.ps1` (Windows): register RAMMap `-Ew` once as an on-demand scheduled task with highest privileges (signature checked, battery limits off), then fire it with no UAC prompt. `mem_guard` fires it once per call when RAM is short and rechecks; `heavy_release`, `tc_run`, `worktree-deps` installs and `worktree-deps remove` fire it in the background; `ram-clean.ps1 -Watch` acts only while RAM is low or the system cache is huge AND real work runs. One cooldown for every trigger (`JSTACK_RAM_CLEAN_COOLDOWN_S`, 300 s), before/after numbers in `~/.jstack/ram-clean.log`, a silent no-op without the task. New settings `JSTACK_RAM_CLEAN_TASK` (`JstackRamClean`), `JSTACK_RAM_CLEAN_SETTLE_S`, `JSTACK_RAM_CLEAN_SKIP_ABOVE_PCT`.
+- `worktree-deps.mjs own deps|generated` and `share deps|generated`: a worktree takes its own copy (reading the store, never writing it) and keeps it on later runs until it shares again; `status` shows the choice.
+- `machine-memory`: step 3b is now the automatic clean; step 3c says share by default, own by choice, and adds Playwright, ORM engines, the test database, task-runner caches and env files to the measured table; the orchestrator frees the cache on a watch tick instead of asking, and starts no optional stack during a build. The pattern table carries the night's numbers (16 of 21 cache climbs had an install running, 0 a scan).
+- `/train` lessons: migration timestamp collisions inside one train, conflicts with a train mate, a green deploy serving 500s (smoke-test touched URLs), merging when only irrelevant slow checks are pending plus job-level path filters, agents that go quiet without committing, and "the owner's OK is final".
+
+**Why:** the file cache kept refilling to 10-16 GB and the only fix waited for a human to click UAC, sometimes all night. One clean took the system cache from 14.3 GB to 1.1 GB and available RAM from 2.7 to 16.8 GB in 5 s; it refills within a minute while installs run, which is why it fires after each install instead of once a day. The guards keep reading "available" (free + standby): the true free list sat at 0 to 1.3 GB the whole time and `-Ew` never raises it, so a free-list guard would never pass. The opt-out exists because the next `deps` run used to delete an own install to relink the store. Unverified: the watcher's thresholds are a first guess, and the per-trigger before/after numbers are still being collected. The 32 GB laptop has asked to be credited as a co-author.
+
 ## 2026-10-25: worktrees share their dependencies, and removing one no longer eats the store
 
 **What:**

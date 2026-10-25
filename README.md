@@ -282,6 +282,8 @@ The full list with dates is in the Lessons section of `skills/train/SKILL.md`. T
 - Never `git stash`. All worktrees share one stash stack, and one agent popped another agent's changes. Use WIP commits.
 - A hard crash can wipe `.git/config`. Keep `[core]`, add the remote back from `FETCH_HEAD`, restore branch tracking, run `git fsck`.
 - Rate limits hit every agent at the same moment. Resume each one after, and the orchestrator rebuilds whatever got cut off.
+- A green build can still 500. The deploy-ignore file dropped a folder of Markdown the app reads at runtime. Smoke-test the touched URLs after every deploy.
+- Path-filter slow CI jobs with a job-level `if`, not the workflow's `paths:`. A workflow skipped by `paths` never reports, and a required check waits for it forever. My train waited on a desktop Rust job that nothing in it could break.
 
 ## Measure it
 
