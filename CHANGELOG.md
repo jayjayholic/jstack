@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25: a README that gets to the point
+
+**What:**
+- README rewritten top-down: a one-line pitch, the two install lines, a "what you get" table and a one-line table of contents come first. Every feature area (trains, preflight and unslop, RAM, guard hooks, browser cleanup, worktrees, domain packs, /optimize, the account switcher) gets one or two plain sentences, and its lists, tables, flags and long explanations sit in collapsed `<details>` blocks. The FAQ is one collapsed block per question.
+- Nothing dropped: every command, install path, opt-in (`guards.json`, `"browsers"`, `"watch"`, `memory.mjs init`), opt-out (`keep-browser`, `--accept-config-change`) and caveat (UNVERIFIED Linux/macOS cleanup, untested RAM ceiling outside Windows, not built yet) is still there. New: the `unslop@jstack` install line, a 16-pack table with when to use each, and the `JSTACK_READY_*` gate vars in the settings table.
+- Badges: the static skills-list badge is gone, a real license badge joined the others.
+
+**Why:** the old README opened with five paragraphs of story before you knew what to install, and the useful lists were walls of text. Now a visitor reads three lines and knows what it is and how to try it, and the details are one click away. The 32 GB laptop jokes stayed. The laptop insisted.
+
 ## 2026-10-26: six security fixes, a front desk for /unslop, and the pages that explain and measure it
 
 **What:**
