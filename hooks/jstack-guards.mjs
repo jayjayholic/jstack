@@ -299,6 +299,29 @@ function scanCheck(cmd, project, cwd) {
   return { guard: 'scan', reason, suggestion }
 }
 
+// Once per agent: a scoped `grep -r` passes, but the Grep tool (ripgrep) or `git grep` is 2-3x faster and skips
+// ignored files. A note, never a block, and never "alias grep to rg": rg's regex differs from grep's BRE.
+function scopedGrep(cmd, project, cwd) {
+  if (project.scans?.enabled === false || project.scans?.nudge === false) return false
+  let here = cwd, hit = false
+  walkSegments(cmd, seg => {
+    if (hit) return
+    const toks = tokens(seg)
+    while (toks.length && PREFIX.test(toks[0])) toks.shift()
+    if (!toks.length) return
+    const prog = toks[0].replace(/^.*[\\/]/, '').toLowerCase()
+    if (/^(?:cd|pushd|set-location|sl|chdir)$/.test(prog) && toks[1]) { here = resolveFrom(here, toks[1]); return }
+    if (scanTargets(head(seg), toks, here)?.kind === 'grep') hit = true
+  })
+  return hit
+}
+
+const GREP_NOTE = [
+  'jstack scan note (once per agent): this recursive grep is allowed, but the Grep tool (ripgrep) or `git grep` does the same search 2-3x faster and skips ignored files',
+  '(measured on a 7.7k-file TypeScript repo, median of 3: grep -rn 1.1 s, rg 0.46 s, git grep 0.35 s; at a repo root with worktrees: grep >120 s, rg 2.5 s).',
+  'Do not swap grep for rg inside the same pattern: grep\'s `\\|` alternation is a literal pipe in rg, so the search silently finds nothing. Use `rg "a|b"` or `git grep -e a -e b`.',
+].join(' ')
+
 // ---------- state + log ----------
 
 function stateDir() {
@@ -384,7 +407,14 @@ function pre(payload, env = process.env) {
       log(project, payload, { type: 'block', guard: verdict.guard, tool, command: cmd, suggestion: verdict.suggestion, repeat: repeats })
     } else calls.openWindow(payload, env)
   }
+  let note = null
+  if (!verdict && (tool === 'Bash' || tool === 'PowerShell') && !state.grepNoted && scopedGrep(cmd, project, cwd)) {
+    state.grepNoted = true
+    note = GREP_NOTE
+    log(project, payload, { type: 'note', guard: 'scan', tool, command: cmd })
+  }
   writeState(payload, state)
+  if (note) return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: note } }
   if (!verdict) return null
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: verdict.reason } }
 }

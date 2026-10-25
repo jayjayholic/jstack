@@ -72,8 +72,32 @@ test('scan: blocks recursive scans over the repo root, worktrees and node_module
 
 test('scan: allows scoped and non-recursive searches', () => {
   for (const [c, cwd] of [['grep -rn foo src/lib', wt], ['find src -name "*.ts"', wt], ['grep foo a.txt', repo], ['git grep foo', repo], ['find . -maxdepth 1 -name x', repo], ['du -sh src', wt], ['rg foo', repo], ['Get-ChildItem src -Recurse', wt]]) {
-    assert.equal(call(c, { cwd }), null, `${c} @ ${cwd}`)
+    assert.ok(!denied(call(c, { cwd })), `${c} @ ${cwd}`)
   }
+})
+
+test('scan note: a scoped recursive grep gets one note per agent, never a block', () => {
+  const ctx = out => out?.hookSpecificOutput?.additionalContext ?? ''
+  const first = call('grep -rn foo src/lib', { agent: 'N1' })
+  assert.ok(!denied(first))
+  assert.match(ctx(first), /git grep/)
+  assert.match(ctx(first), /literal pipe in rg/)
+  assert.equal(call('grep -rn bar src/lib', { agent: 'N1' }), null)
+  assert.match(ctx(call('cd src && grep -r foo lib', { agent: 'N2' })), /Grep tool/)
+  for (const c of ['grep foo a.txt', 'git grep foo', 'rg foo', 'cat a.txt | grep foo']) {
+    assert.equal(call(c, { agent: 'N3', cwd: repo }), null, c)
+  }
+})
+
+test('scan note: off with scans.nudge false', () => {
+  const save = process.env.JSTACK_GUARDS_CONFIG
+  const f = path.join(tmp, 'guards-nonudge.json')
+  fs.writeFileSync(f, JSON.stringify({ log: logFile, projects: [{ name: 'test', roots: [repo], scans: { nudge: false } }] }))
+  process.env.JSTACK_GUARDS_CONFIG = f
+  try {
+    assert.equal(call('grep -rn foo src/lib', { agent: 'N4' }), null)
+    assert.ok(denied(call('grep -rn foo .', { agent: 'N4', cwd: repo })))
+  } finally { process.env.JSTACK_GUARDS_CONFIG = save }
 })
 
 test('log: records blocks, repeats and whether the next call followed the advice', () => {

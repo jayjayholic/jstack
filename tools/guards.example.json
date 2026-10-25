@@ -34,6 +34,7 @@
       },
       "scans": {
         "enabled": true,
+        "nudge": true,
         "extraRoots": []
       },
       "cleanup": {
