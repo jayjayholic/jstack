@@ -34,6 +34,15 @@ let n = 0
 const call = (command, extra = {}) => pre({ session_id: 's1', agent_id: extra.agent ?? `a${++n}`, cwd: extra.cwd ?? wt, tool_name: extra.tool ?? 'Bash', tool_input: { command } }, env)
 const denied = out => out?.hookSpecificOutput?.permissionDecision === 'deny'
 
+test('worktree removal goes through worktree-deps.mjs, which unlinks junctions first', () => {
+  for (const c of ['git worktree remove .worktrees/x', 'git -c core.longpaths=true worktree remove --force /c/r/.worktrees/x', 'robocopy C:/empty C:/r/.worktrees/x /MIR']) {
+    const out = call(c)
+    assert.ok(denied(out), c)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /worktree-deps\.mjs remove/)
+  }
+  for (const c of ['node /x/worktree-deps.mjs remove .worktrees/x', 'git worktree list', 'git worktree add .worktrees/y -b y', 'robocopy a b /E']) assert.ok(!denied(call(c)), c)
+})
+
 test('heavy: blocks bare typecheck, build and install', () => {
   for (const c of ['tsc --noEmit', 'bun run typecheck', 'npx tsc -p .', 'cd /c/x && next build --turbopack', 'bun install', 'npm install', 'FOO=1 bunx next build', 'node_modules/.bin/tsc', 'bash -c "bun run build"', 'yarn build', 'node node_modules/typescript7/bin/tsc --noEmit', 'node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit','bun run typecheck:fast 2>&1 | tail -5']) {
     assert.ok(denied(call(c)), c)

@@ -22,6 +22,8 @@ const DEFAULT_HEAVY = [
   { kind: 'build', re: '^(?:pnpm|yarn)\\s+build(?:[\\s:]|$)' },
   { kind: 'build', re: '^(?:(?:bunx|npx)\\s+)?turbo\\s+(?:run\\s+)?(?:build|typecheck)(?:\\s|$)' },
   { kind: 'install', re: '^(?:bun|npm|pnpm|yarn)\\s+(?:install|i|ci)(?:\\s|$)' },
+  { kind: 'worktree-remove', re: '^git(?:\\s+-c\\s+\\S+)*\\s+worktree\\s+remove(?:\\s|$)' },
+  { kind: 'worktree-remove', re: '^robocopy\\s.*\\s/mir(?:\\s|$)' },
 ]
 const LIGHT_FLAGS = /\s(?:--version|-v|--help|-h|--init)(?:\s|$)/
 const DEFAULT_KILL_NAMES = ['node', 'bun', 'bash', 'sh', 'tail', 'cmd', 'powershell', 'pwsh']
@@ -181,10 +183,21 @@ function heavyCheck(cmd, project) {
   })
   if (!hit) return null
   const lock = conf.lockScript ?? '<jstack tools>/heavy-lock.sh'
+  const tools = lock.replace(/[\\/][^\\/]*$/, '')
   const tpl = (conf.suggest ?? {})[hit.kind] ?? (hit.kind === 'typecheck'
     ? `source ${lock} && tc_run "{cmd}"`
-    : `source ${lock} && heavy_acquire ${hit.kind} && heavy_capped "{cmd}"; heavy_release`)
+    : hit.kind === 'worktree-remove'
+      ? `node ${tools}/worktree-deps.mjs remove <worktree path> --delete-branch`
+      : `source ${lock} && heavy_acquire ${hit.kind} && heavy_capped "{cmd}"; heavy_release`)
   const suggestion = tpl.replace('{cmd}', hit.segment.replace(/"/g, '\\"'))
+  if (hit.kind === 'worktree-remove') {
+    const reason = [
+      `jstack worktree guard: \`${hit.segment}\` follows NTFS junctions on Windows (seen with Git for Windows 2.40 and robocopy /MIR) and deletes what they point at: the shared node_modules and generated stores every other worktree links to.`,
+      `Run instead:  ${suggestion}`,
+      'It unlinks every junction first, then runs git worktree remove.',
+    ].join('\n')
+    return { guard: 'heavy-lock', reason, suggestion }
+  }
   const reason = [
     `jstack heavy-lock guard: \`${hit.segment}\` is a heavy ${hit.kind} (5-8 GB each) and must run inside the machine-wide lock, or two of them at once take the machine down.`,
     `Run it again as:  ${suggestion}`,

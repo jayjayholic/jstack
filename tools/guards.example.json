@@ -5,11 +5,12 @@
       "roots": ["C:/code/my-app"],
       "heavyLock": {
         "lockScript": "~/jstack-tools/heavy-lock.sh",
-        "wrappers": ["tc_run", "heavy_capped", "heavy_acquire"],
+        "wrappers": ["tc_run", "heavy_capped", "heavy_acquire", "worktree-deps.mjs"],
         "suggest": {
           "typecheck": "source ~/jstack-tools/heavy-lock.sh && tc_run \"{cmd}\"",
           "build": "source ~/jstack-tools/heavy-lock.sh && heavy_acquire build && heavy_capped \"{cmd}\"; heavy_release",
-          "install": "source ~/jstack-tools/heavy-lock.sh && heavy_capped \"{cmd}\""
+          "install": "node ~/jstack-tools/worktree-deps.mjs deps   # inside the worktree: links the shared node_modules, own install only when the branch changed a dependency",
+          "worktree-remove": "node ~/jstack-tools/worktree-deps.mjs remove <worktree path> --delete-branch"
         },
         "extraPatterns": [{ "kind": "build", "re": "^bun\\s+run\\s+bundle(?:\\s|$)" }],
         "note": "Optional extra line shown with every heavy-lock denial."
