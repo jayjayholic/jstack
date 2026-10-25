@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25 (late night): the warden and the optimizer
+
+**What:**
+- `tools/perf/warden.mjs`, run by the collector after every tick: kills orphaned dev tools (`grep`, `rg`, `find`, `tail`, `sleep`, `tsc`, `tsgo`, `esbuild` after 10 min; idle `node`/`bun` in agent worktrees and automation browsers after 30 min idle), with a protect list it never crosses (agent CLI, MCP, Docker/WSL, editors and language servers, jstack's tools, the heavy-lock holder's worktree, `keep-browser` pids, main checkout servers, unreadable command lines, any tree containing one). Runs the RAM clean task under 10% available (ram-clean.ps1's cooldown stamp, 10 min minimum). Flags tests at 90%+ of a core for 15+ min to `notices.jsonl` without killing them. Stops a configured Docker Compose project after 30+ min with no container CPU, no TCP client and no eval process. Writes triggers for the optimizer. Modes act/dry/off; a failing step is logged and the tick continues. Every action, and available RAM one tick later, goes to `actions.jsonl`.
+- `perf.mjs ensure | actions | notices | optimizer due|start|finish | floor | search-exclude`, and `search-scope.cs` (the Windows Search Crawl Scope Manager API: no admin needed here; a one-click elevated script otherwise).
+- `PERF.md` sections 5-7: the warden, the optimizer agent (floor, priority by expected saving, `at-floor`, what it may do alone and what it only proposes) and the exact prompt. `/train` and `/train-compound` run `perf.mjs ensure` at the start and `perf.mjs optimizer due` every watch round, launching one background optimizer when due.
+
+**Why:** the log only helps if someone acts on it, and on a busy night nobody does. The safe part (orphans, RAM clean, idle stacks) needs no judgment, so it runs every minute without a session; the part that needs judgment (is there a cheaper tool, is this load just the work) is an agent, launched only when there's something to look at. Its first dry-run tick found an orphaned `find` 196 min old, two `tail -f` nobody read for up to 172 min and an orphaned `grep` at 56% of a core, with available RAM at 1.25 GB. Tests: 336 green (18 new, the kill policy among them).
+
 ## 2026-10-25 (night): a performance log, a panel, and an optimize loop
 
 **What:**
