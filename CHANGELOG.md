@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25: the file cache that wouldn't leave, and one sweeper at a time
+
+**What:**
+- `machine-memory` gets step 3b: when the Windows file cache stays resident and won't trim, Sysinternals RAMMap `-Ew` empties it. Downloaded from live.sysinternals.com, signature checked, kept in the tools folder, run elevated only with the human there to click UAC. Plus: delete worktrees in small batches, `core.longpaths` or `robocopy /MIR` for "Filename too long", and prevention (remove on merge, one install at a time, an optional antivirus exclusion that's the human's call).
+- `/train` section 6b: exactly one sweep owner at a time, and no sweep removes a worktree with untracked work or one touched in the last 2 hours. `clean-worktrees.sh` enforces both (a `-sweep` lock next to the heavy slot, idle default 60 to 120 min, build/scratch output ignored when checking untracked files) and removes with `core.longpaths=true`.
+- New `/train-compound`: many ready branches pile up in one release branch, each boarding typechecked and deploy-checked, released only on the owner's word. Points at `/train`'s watch and hygiene sections, and warns that the release build may need the cache emptied first.
+- `/optimize`: samples taken below 35% free RAM are invalid, and a deploy mid-measurement resets cold starts, so hold merges or throw that window away.
+
+**Why:** the file cache sat at 16.8 GB after installs, antivirus scans and deleting worktrees out of a repo with about 368 of them. No process held it, so killing agents did nothing; RAMMap freed about 14 GB in seconds, twice. Separately, two cleanup sweeps ran at once and one removed worktrees the other had decided to keep. The 32 GB laptop has filed a complaint.
+
 ## 2026-10-24: the train cleans up after itself
 
 **What:** `/train` gets a section 6b.

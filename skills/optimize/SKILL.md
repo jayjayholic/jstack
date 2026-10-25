@@ -12,7 +12,7 @@ Run this as one agent from start to finish. If this file still has unfilled plac
 `{{PLAYBOOK_FILE}}`; read it before measuring (create it from the sections in step 5 if it doesn't exist yet).
 `$ARGUMENTS` says what feels slow; with none, measure the whole suite of `{{MAIN_ROUTE}}`.
 
-Five rules, each from a mistake an earlier run made (or one Lauren Tan and Brendan Gregg already wrote down):
+Six rules, each from a mistake an earlier run made (or one Lauren Tan and Brendan Gregg already wrote down):
 
 - **Built app or staging only.** Dev server timings are meaningless (no minification, hot reload, different
   chunking). If a train runs (see the `/train` skill), agents never run the production build themselves: commit, stop
@@ -24,7 +24,11 @@ Five rules, each from a mistake an earlier run made (or one Lauren Tan and Brend
   the compare table says so. A fix that speeds up the load and slows down the next click is not a win. Before trusting
   any number, go through `DEBUG-CHECKS.md`.
 - **Quiet machine.** Every run logs the machine's CPU use and free memory. A block measured while another build or a
-  heavy background job ran is thrown away and re-run.
+  heavy background job ran is thrown away and re-run. So is any sample taken with less than 35% of RAM free: the OS is
+  already paging and evicting cache, and the timings measure the machine, not the app.
+- **Hold the target still.** A deploy of the staging (or measured) environment in the middle of a measurement resets
+  its cold starts and caches, so the samples before and after it are different experiments. Hold merges to that branch
+  while you measure, or throw away the window that a deploy landed in and re-run it.
 - **Keep behaviour.** Lazy-load, cut waterfalls, trim bundles, stop re-renders; never drop a feature, a permission
   check or a metered/billed call to win time.
 - **Explain the number.** Before you trust a result, name what limits it ("why not double?") from a trace or counters

@@ -1,7 +1,7 @@
 # jstack: Claude Code skills for parallel AI coding agents on one laptop
 
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757)](#quickstart)
-[![Skills](https://img.shields.io/badge/skills-%2Ftrain%20%C2%B7%20%2Ftrain--queue%20%C2%B7%20%2Foptimize%20%C2%B7%20%2Fgrill--me%20%C2%B7%20%2Fwayfinder-blue)](skills)
+[![Skills](https://img.shields.io/badge/skills-%2Ftrain%20%C2%B7%20%2Ftrain--compound%20%C2%B7%20%2Ftrain--queue%20%C2%B7%20%2Foptimize%20%C2%B7%20%2Fgrill--me%20%C2%B7%20%2Fwayfinder-blue)](skills)
 [![GitHub stars](https://img.shields.io/github/stars/jayjayholic/jstack?style=flat)](https://github.com/jayjayholic/jstack/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/jayjayholic/jstack)](CHANGELOG.md)
 
@@ -135,6 +135,8 @@ skills/train/
   SKILL.md               the /train skill: when to train, how to brief agents, the gates, and the Lessons log
   orchestrator-brief.md  the prompt for the one orchestrator agent
   worker-clause.md       the block pasted into every coding agent's prompt (build rules + READY format)
+skills/train-compound/
+  SKILL.md               the /train-compound skill: many ready branches pile up in one release branch, each boarding proved, merged only when you say so
 skills/machine-memory/
   SKILL.md               the machine-memory skill: map the RAM, name the leak, free it safely, the orchestrator's memory duty
 skills/train-queue/
@@ -172,7 +174,7 @@ Every agent gets its own worktree from `new-worktree.sh`, so eight of them can e
 
 ## Quickstart
 
-The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train`, `/jstack:train-queue`, `/jstack:optimize`, `/jstack:grill-me`, `/jstack:grilling` and `/jstack:wayfinder` (plus the skills wayfinder calls: research, prototype, domain-modeling, setup-matt-pocock-skills). `/simplify` is already in Claude Code.
+The plugin way: run the two `/plugin` lines at the top, then put your values in `~/.jstack/config.sh` (copy `tools/config.example.sh`). The skills show up as `/jstack:train`, `/jstack:train-compound`, `/jstack:train-queue`, `/jstack:optimize`, `/jstack:grill-me`, `/jstack:grilling` and `/jstack:wayfinder` (plus the skills wayfinder calls: research, prototype, domain-modeling, setup-matt-pocock-skills). `/simplify` is already in Claude Code.
 
 The lazy way: clone it and tell your coding agent "follow ADAPT.md in jstack for my project at <path>". It detects your stack, fills in the settings, installs everything and checks it works. That's what I'd do.
 

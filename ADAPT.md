@@ -70,13 +70,13 @@ About the RAM ceiling: on Windows `heavy_capped` uses a Job Object (`run-capped.
    Edit `~/.jstack/config.sh` with the values from step 2.
 2. Skill. User-wide for Claude Code:
    ```bash
-   mkdir -p ~/.claude/skills && cp -r <jstack>/skills/train <jstack>/skills/train-queue ~/.claude/skills/
+   mkdir -p ~/.claude/skills && cp -r <jstack>/skills/train <jstack>/skills/train-compound <jstack>/skills/train-queue ~/.claude/skills/
    ```
    For one project only, use `<repo>/.claude/skills/` instead. Other agents (Codex, Cursor and friends): put the three files wherever that tool reads skills or rules from.
 3. Fill the placeholders in the installed copy only (never in the jstack clone, so `git pull` stays clean). Replace each `{{NAME}}` with its value from step 2, for example:
    ```bash
    cd ~/.claude/skills
-   sed -i 's|{{INTEGRATION_BRANCH}}|stage|g; s|{{JSTACK_TOOLS}}|'"$HOME"'/jstack-tools|g' train/*.md train-queue/*.md
+   sed -i 's|{{INTEGRATION_BRANCH}}|stage|g; s|{{JSTACK_TOOLS}}|'"$HOME"'/jstack-tools|g' train/*.md train-compound/*.md train-queue/*.md
    ```
    On macOS use `sed -i ''`. Values with `|` or `&` in them need escaping, or edit by hand.
 4. Add the worktrees folder to the project's `.gitignore` if it lives inside the repo.
@@ -95,7 +95,7 @@ About the RAM ceiling: on Windows `heavy_capped` uses a Job Object (`run-capped.
 
 Run each check and fix what fails.
 
-- [ ] No placeholder left in the installed skills: `grep -rn "{{" ~/.claude/skills/train ~/.claude/skills/train-queue` prints nothing.
+- [ ] No placeholder left in the installed skills: `grep -rn "{{" ~/.claude/skills/train ~/.claude/skills/train-compound ~/.claude/skills/train-queue` prints nothing.
 - [ ] The config loads: `bash -c 'source ~/jstack-tools/heavy-lock.sh; echo "$JSTACK_REPO_ROOT $JSTACK_INTEGRATION_BRANCH $JSTACK_LOCK_DIR"'` prints your values.
 - [ ] RAM check works: `bash -c 'source ~/jstack-tools/heavy-lock.sh; jstack_free_gb'` prints a plausible number (not empty, not 0 on an idle machine).
 - [ ] The slot works:

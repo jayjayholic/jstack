@@ -17,7 +17,7 @@ mem_map -Summary          # per-agent peak and average from the sampler log (-Si
 ```
 
 - **Read private bytes, not working set.** Private bytes are what a process committed. A paged-out 8 GB typecheck shows about 50 MB of working set but its full size here, with `PagedOut` set.
-- **Look at "in use" outside processes.** The second line of the map splits memory in use into processes, the system file cache and kernel pools. On Windows the file cache can stay resident (not standby) through a mass install. We've seen 15.8 GB during two concurrent `bun install`s, while every agent process together held under 2 GB.
+- **Look at "in use" outside processes.** The second line of the map splits memory in use into processes, the system file cache and kernel pools. On Windows the file cache can stay resident (not standby) through a mass install. We've seen 15.8 GB during two concurrent `bun install`s, while every agent process together held under 2 GB. When it won't trim, see step 3b.
 - **Per agent:** each process is traced to its worktree (current directory, then command line, then an ancestor's), then its branch, then its agent name. The name comes from `<worktree>/.agent`, the lock owner's `@ <path>`, the queue file, or `wt:<folder>` as a last resort.
 - **What can't be split:** every subagent's own reasoning runs inside the Claude Code process. Claude Code has no per-subagent resource view; hooks only carry `agent_id` (https://code.claude.com/docs/en/hooks).
 - **WSL VM vs containers:** `docker stats` subtracts page cache, so a `vmmemWSL` bigger than the sum of its containers is cache the VM kept.
@@ -33,7 +33,7 @@ Done when you can name the top three holders of memory, each with its agent and 
 | Test servers (2 GB+ each, several at once) | `next-server`, ports 3000-3200 | One at a time after `server_wait`, stopped by whoever started it. |
 | WSL VM keeps memory after containers stop | `vmmemWSL` much bigger than the containers | Stop the stack, then drop caches in the VM; set `autoMemoryReclaim=dropCache` and a `memory=` cap in `.wslconfig` (https://learn.microsoft.com/en-us/windows/wsl/wsl-config). |
 | Orphans (we found 131 greps, `tail -f`, "stopped" A/B loops) | orphan candidates | `mem_map -Kill orphans -DryRun`, then without `-DryRun`. |
-| File cache resident during installs | `!! system file cache` | One install at a time (`mem_guard` first), prune dead worktrees. |
+| File cache resident during installs, scans or worktree deletion | `!! system file cache`, processes small | One install at a time (`mem_guard` first), prune dead worktrees in small batches; when it won't trim, empty it (step 3b). |
 | Nonpaged pool above 1.5 GB | `!! nonpaged pool` | A driver leak, so report it to the human: PoolMon sorted by bytes names the tag (https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/using-poolmon-to-find-a-kernel-mode-memory-leak). |
 
 Done when every top holder from step 1 has a pattern and a fix, or is the human's own app.
@@ -45,6 +45,19 @@ Done when every top holder from step 1 has a pattern and a fix, or is the human'
 - The human's apps, the agent CLI, MCP servers, the test database and `wsl --shutdown` are the human's call. Report them instead.
 
 Done when free memory is back above what the next job needs, or what's left is the human's to decide.
+
+## 3b. When the file cache won't let go (Windows)
+
+The system file cache is supposed to sit in standby and give memory back under pressure. Sometimes it stays **resident** (counted as in use) and doesn't trim, even with RAM nearly gone. We saw 16.8 GB of it after a round of `bun install`s, Defender scanning the fresh files, and deleting worktrees out of a repo that had about 368 of them. Killing agents freed nothing, because no agent was holding it.
+
+- **The fix that worked:** Sysinternals RAMMap, `RAMMap64.exe -Ew` (Empty System Working Set). It freed about 14 GB in seconds, twice. It needs admin, so it runs elevated and shows a UAC prompt; **only run it with the human there to click it**. Never try to get around UAC.
+- **Getting RAMMap:** download it from `https://live.sysinternals.com/RAMMap64.exe` into the tools folder (for example `tools/rammap/`), then check its Authenticode signature is valid and signed by Microsoft before the first run (`Get-AuthenticodeSignature <exe>`: `Status` must be `Valid` and the signer `Microsoft Corporation`). Keep it there; don't re-download every time.
+- **Run it** from PowerShell: `Start-Process <tools>/rammap/RAMMap64.exe -ArgumentList '-accepteula','-Ew' -Verb RunAs`, then `mem_map` again to confirm the cache line dropped.
+- **Mass worktree removal refills the cache.** Deleting hundreds of worktrees reads and touches every file in them, and the cache fills right back up. Remove them in small batches (say 20 at a time), check `mem_map` between batches, and empty the cache again if it climbs.
+- **Long paths:** on Windows `git worktree remove` can fail with "Filename too long" in deep `node_modules`. Turn on `git config --global core.longpaths true` (or pass `-c core.longpaths=true`), or delete the folder with `robocopy <empty dir> <worktree> /MIR` and then `rmdir`, followed by `git worktree prune`.
+- **Prevention:** remove each worktree when its branch merges (the train's hygiene step), run one install at a time, and, if the human agrees, add a Defender exclusion for the dev folder so fresh installs aren't scanned file by file. The exclusion is the human's call: it trades some protection for RAM and speed.
+
+Done when the cache line in `mem_map` is back down, or the human has said no to the UAC prompt.
 
 ## 4. Rules for every agent
 

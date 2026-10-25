@@ -25,6 +25,7 @@ Use it three times per run: **before the baseline** (method and machine traps), 
 | Arms differ in data, not code | errors in the server log per block | a shared test DB changed under you (another branch's enum value broke a list in both arms) | both arms in one data state, one sitting | no errors in either arm |
 | An empty panel, and every number after it lies | call one API route with the session cookie, read the server log | a failing request (session minted under another env, schema drift) | fix the setup before measuring | every panel draws |
 | Staging redirects to sign-in | the stored session's cookie expiries | the session expired | ask the human to sign in again; never type credentials | a probe loads the app |
+| Cold-start numbers jump halfway through a staging run | deploy times of the measured branch against the sample timestamps | a merge deployed mid-measurement and reset cold starts and caches | hold merges to that branch while measuring, or discard the window a deploy landed in and re-run it | no deploy inside any kept window |
 
 ## 2. Machine and tooling traps
 

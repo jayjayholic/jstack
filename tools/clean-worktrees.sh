@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Removes finished worktrees, safely. A worktree goes only when ALL hold: its branch is merged into
-# origin/$JSTACK_INTEGRATION_BRANCH, it has no uncommitted or untracked work, no process runs inside it, and nothing in it
-# changed in the last JSTACK_CLEAN_IDLE_MIN minutes (default 60). Anything else is skipped and listed. Branches are kept.
+# origin/$JSTACK_INTEGRATION_BRANCH, it has no uncommitted work and no untracked files outside build/scratch output
+# (artifacts/ .next/ node_modules/ .generated/ logs), no process runs inside it, and nothing in it changed in the last
+# JSTACK_CLEAN_IDLE_MIN minutes (default 120). Anything else is skipped and listed. Branches are kept.
+# Only one sweep runs at a time: it holds ${JSTACK_LOCK_DIR}-sweep, and a second sweep exits instead of racing it.
 #
 # Usage: bash clean-worktrees.sh [--dry-run] [--keep <pattern>]...
 #   --dry-run  print what would be removed, remove nothing
@@ -20,7 +22,15 @@ while [ $# -gt 0 ]; do
 done
 
 REPO="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
-idle_min="${JSTACK_CLEAN_IDLE_MIN:-60}"
+idle_min="${JSTACK_CLEAN_IDLE_MIN:-120}"
+sweep_lock="${JSTACK_LOCK_DIR}-sweep"
+mkdir -p "$(dirname "$sweep_lock")"
+if ! mkdir "$sweep_lock" 2>/dev/null; then
+	echo "another sweep owns $sweep_lock ($(cat "$sweep_lock/owner" 2>/dev/null || echo unknown)); not running beside it" >&2
+	exit 3
+fi
+echo "$$ $(date -u +%FT%TZ) @ $PWD" > "$sweep_lock/owner"
+trap 'rm -rf "$sweep_lock"' EXIT
 base="origin/${JSTACK_INTEGRATION_BRANCH}"
 git -C "$REPO" fetch -q origin
 
@@ -40,14 +50,14 @@ while read -r wt branch; do
 	why=""
 	if [ -z "$branch" ]; then why="detached HEAD"
 	elif ! git -C "$REPO" merge-base --is-ancestor "$branch" "$base" 2>/dev/null; then why="not merged into $base"
-	elif [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then why="uncommitted work"
+	elif [ -n "$(git -C "$wt" status --porcelain 2>/dev/null | grep -vE '^\?\? "?(artifacts|\.next|node_modules|\.generated|logs)/|^\?\? "?[^/]*\.log"?$')" ]; then why="uncommitted or untracked work"
 	elif printf '%s' "$busy" | grep -qF "$wt"; then why="a process runs inside it"
 	elif [ -n "$(find "$wt" -path "$wt/node_modules" -prune -o -path "$wt/.next" -prune -o -path "$wt/.git" -prune -o -type f -mmin "-$idle_min" -print -quit 2>/dev/null)" ]; then why="changed in the last $idle_min min"
 	fi
 	if [ -n "$why" ]; then echo "skip   $wt ($why)"; skipped=$((skipped + 1)); continue; fi
 	if [ "$dry" = 1 ]; then echo "would remove $wt"; removed=$((removed + 1)); continue; fi
 	# Untracked build output (node_modules, .next, generated code) is why a plain remove can refuse; status was clean.
-	git -C "$REPO" worktree remove "$wt" 2>/dev/null || git -C "$REPO" worktree remove --force "$wt"
+	git -C "$REPO" -c core.longpaths=true worktree remove "$wt" 2>/dev/null || git -C "$REPO" -c core.longpaths=true worktree remove --force "$wt"
 	echo "removed $wt"; removed=$((removed + 1))
 done < <(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} /^branch /{sub("refs/heads/","",$2); print w, $2; w=""} /^detached/{print w, ""; w=""}')
 
