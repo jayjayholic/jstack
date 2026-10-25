@@ -27,3 +27,7 @@ export JSTACK_CODEGEN_REUSE_PATHS=".generated"           # generated folders a n
 export JSTACK_CODEGEN_REQUIRED=".generated/client .generated/sql" # every one must exist and be non-empty in a sibling before it's copied
 export JSTACK_TC_SLOTS=2                                 # parallel typecheck lanes for worker agents (tc_run); a tsc peaks ~5 GB
 export JSTACK_TC_CAP_GB=8                                # RAM ceiling for each lane's typecheck
+export JSTACK_HEAVY_MIN_AVAIL_GB=12                      # free RAM a build waits for once it holds the slot
+export JSTACK_TC_MIN_AVAIL_GB=10                         # free RAM a typecheck lane waits for
+export JSTACK_MEM_WAIT_MAX_MIN=15                        # after this a memory wait gives up and runs anyway (still capped)
+export JSTACK_QUEUE_FILE="$HOME/.jstack/train-queue.md"  # the orchestrator's queue; mem-map reads it to name agents
