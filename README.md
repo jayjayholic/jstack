@@ -160,6 +160,21 @@ hooks/
                          CLI: keep-browser, browser-watch
   jstack-calls.mjs       which agent's tool call started a process (call windows + the command text in the shell's command line)
   jstack-browsers.mjs    finds the Playwright/automation browsers an agent left open and closes them (CDP, then the tree)
+skills/preflight/
+  SKILL.md               /preflight: quote the ask, tier the risk, pick the domain packs, read project memory, answer the
+                         questions, write budgets + runnable acceptance checks + a scope fence into .agent/preflight.md
+  TEMPLATE.md, RISK.md   the file it fills, and the S/M/L tier rubric with worked examples
+skills/unslop/
+  SKILL.md               /unslop: scan the diff, confirm each red flag with evidence a second agent reproduces, then
+                         test-red, fix, re-test and record it (--fix, --full, --train, learn, retro)
+  EYES.md, CONFIRM.md    the briefs for the review agents, the prosecutor and the skeptic
+  EVIDENCE.md            what counts as evidence (failing test, measurement, repro, static proof, render) and what doesn't
+  SELF-EVAL.md           how /unslop itself is measured: golden fixtures, holdout, field precision, rule demotion
+  fixtures/              golden slop: per domain, 1 slop + 2 near-misses per static rule (dev) and a holdout set
+skills/eng-*/            16 domain packs (performance, ui-visual, interaction, i18n-a11y, copy, data-privacy, concurrency,
+                         ci-git, machine, llm-app, llm-cost, eval-testing, security, data-quality, agent-discipline,
+                         deploy-config): SKILL.md (questions, budgets, red flags, tools, traps), checks.json (the machine
+                         part), SOURCES.md (dated sources with verification tags)
 skills/simplify/
   README.md              /simplify is built into Claude Code, so this is only a pointer (its licence doesn't allow a copy)
 plugins/jay-claude-switcher/
@@ -186,10 +201,36 @@ tools/
   ready-gate.sh          the READY gate the orchestrator runs before accepting READY (typecheck on the final commit, tests, prettier, brief)
   hook-report.mjs        `jstack hook-report`: what the guard hooks blocked per day, who got blocked twice, who took the advice
   guards.example.json    the per-project guard config; copy to ~/.jstack/guards.json
+  unslop/                scan.mjs (static red flags on added lines), classify.mjs (task -> domain packs + tier hint),
+                         ledger.mjs (finding state machine), evidence.mjs (runs and reruns evidence, redacts secrets),
+                         report.mjs (only reproduced findings reach the human), gate.mjs (fast mode for ready-gate and
+                         trains), selftest.mjs (scanner precision on the fixtures), packs.mjs, stats.mjs
+  memory/                memory.mjs (project memory: add, query, check, reanchor, retire, lint, budgets), anchors.mjs
+                         (FRESH / DRIFTED / MOVED / RENAMED / SPLIT / STALE after refactors), symbols.mjs, secrets.mjs
   node-memory-watch.ps1  the bouncer: when RAM runs out, kills the fattest node/bun process (never your agent CLI) before Windows does something worse
 ```
 
 Every agent gets its own worktree from `new-worktree.sh`, so eight of them can edit the same repo without stepping on each other. The memory watcher is the last line of defense. It's not pretty, but a killed build beats a frozen laptop and a zeroed `.git/config` (yes, that happened).
+
+## Think before, prove after: /preflight, /unslop and project memory
+
+I went back through a few months of my own agents' work: about a thousand of my messages, 2,500 subagent transcripts and 1,900 fix, perf and revert commits. The bugs were almost never hard. They were things nobody asked before (no budget, no test oracle, no state machine, no commit point, no "what happens if this runs twice") or things nobody proved after (a READY that really meant "should work", a speed number measured on the dev server, a test that never once failed). So now there's a step before and a step after.
+
+**Before: `/preflight`.** The agent quotes the ask word for word and splits it into directives, questions and info (a question gets an answer, not a refactor). It scores the risk S, M or L, and `classify.mjs` picks the domain packs the task touches. Each pack asks its questions for that tier. The answers go into `.agent/preflight.md` with budgets (numbers, each with how it gets measured), acceptance checks you can run, and a scope fence (what the agent may touch, what needs a human). It fixes the WHAT and leaves the HOW to the model. Tier S takes about three minutes. Its checks land in `.agent/brief.md`, which the READY gate already refuses to pass while anything is unticked.
+
+**After: `/unslop`.** A static scan of the lines the branch added (`scan.mjs`, 47 regex and script rules) plus one review agent per domain makes a list of candidates. A candidate is a hypothesis. A prosecutor agent builds evidence blind: a failing test, a measurement over budget, a repro, or a static proof like a conflict marker. `evidence.mjs` records it with the commit, the machine state and redacted output. Then a different agent, the skeptic, reruns it and hunts for the reason it's not a bug. The ledger refuses CONFIRMED without that independent rerun, and the report only shows confirmed findings. With `--fix` it keeps going: test red, propose, fix, re-test, record. Nothing reaches me without evidence from someone other than the agent claiming it.
+
+**The 16 domain packs** (`skills/eng-*`) carry the questions, budgets, red flags, tools and known traps per domain, ported from 16 research files with dated sources (`SOURCES.md`, every line tagged verified or not). `checks.json` is the machine part. The SKILL.md block is generated from it, so the two never disagree (`node tools/unslop/packs.mjs check`).
+
+**/unslop gets measured too.** Every static rule has a golden slop case and two near-misses that look the same and must stay silent, plus a holdout set I didn't tune against. `node tools/unslop/selftest.mjs` prints precision and recall per rule with Wilson intervals. Today that's 141 dev cases and 24 holdout cases, 100% on both, which mostly says the fixtures are young. The number that matters is field precision. Every finding someone rejects goes into `.jstack/local/feedback.jsonl`, and a rule only gets to block a branch after it earned it (Wilson lower bound 0.8 over 10 verdicts). Under 0.5 it drops to a hint for the review agents. The first run on jstack itself: 26 hits, every one a false positive (the packs quoting their own patterns, `.slice(0, 10)` on dates). So the date and string slices got carved out, jstack ignores its own pack files, and the gate starts in warn mode. Humbling, and exactly why.
+
+**Project memory** (`tools/memory/memory.mjs`): decisions and their why, the reason behind a budget, confirmed slop, past failures, conventions and false positives. One JSON file per entry under `.jstack/memory/entries/`, so parallel branches never conflict on it. Each entry is anchored to code (`path#symbol` plus a hash of the normalized body), and the anchors follow refactors: FRESH, DRIFTED (body changed, re-check before trusting it), MOVED (`git mv`), RENAMED (found by body similarity), SPLIT (two functions now cover it) or STALE (gone; it names the commit that removed it and the best partial matches). A branch that moves an anchor re-anchors it in the same branch, or the READY gate says so. Every write is secret-scanned and refused on a hit.
+
+**Wired into /train.** The worker clause runs `/preflight` before the first edit and `/unslop` before READY. `ready-gate.sh` gets checks 7 to 9: pre-flight present, unslop gate, memory anchors (`JSTACK_READY_PREFLIGHT`, `JSTACK_READY_UNSLOP`, `JSTACK_READY_MEMORY`; warn by default, memory blocks). The orchestrator runs `gate.mjs --train` on the merged tree (conflict markers, catalog keys a merge lost, duplicate migration stamps) and drops the branch that brought them, like a red typecheck. Opt a repo in with `node tools/memory/memory.mjs init`.
+
+Not built yet: the seeded app for the agentic eval, canary injection, the retro miner as a script (`/unslop retro` is the by-hand version for now), and a hook that denies hand edits of `.jstack/memory` (`memory.mjs lint` catches them meanwhile). The scanner, the ledger and the memory tools never start a build, so for once the 32 GB laptop got a feature it doesn't have to pay for.
+
+Tests: `node --test tools/unslop/*.test.mjs tools/memory/*.test.mjs`.
 
 ## Guard hooks (opt-in, per project)
 

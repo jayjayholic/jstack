@@ -18,6 +18,9 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 - [/train-queue](https://github.com/jayjayholic/jstack/blob/main/skills/train-queue/SKILL.md): read-only status board of the train: live, in flight, queue, what each agent is doing
 - [/grill-me](https://github.com/jayjayholic/jstack/blob/main/skills/grill-me/SKILL.md) and [/grilling](https://github.com/jayjayholic/jstack/blob/main/skills/grilling/SKILL.md): Matt Pocock's plan interview, copied as-is (MIT)
 - [/wayfinder](https://github.com/jayjayholic/jstack/blob/main/skills/wayfinder/SKILL.md): Matt Pocock's planning map of decision tickets, copied as-is (MIT), with the skills it calls: research, prototype, domain-modeling, setup-matt-pocock-skills
+- [/preflight](https://github.com/jayjayholic/jstack/blob/main/skills/preflight/SKILL.md): before the first edit: quote the ask, tier the risk, pick the domain packs, read project memory, write budgets, runnable acceptance checks and a scope fence
+- [/unslop](https://github.com/jayjayholic/jstack/blob/main/skills/unslop/SKILL.md): after the work: scan the diff against 16 domain packs, confirm each red flag with evidence a second agent reproduces, test red, fix, re-test, record in project memory
+- domain packs `skills/eng-*` (performance, ui-visual, interaction, i18n-a11y, copy, data-privacy, concurrency, ci-git, machine, llm-app, llm-cost, eval-testing, security, data-quality, agent-discipline, deploy-config): questions, budgets, red flags, tools, traps and dated sources per domain
 - [orchestrator brief](https://github.com/jayjayholic/jstack/blob/main/skills/train/orchestrator-brief.md): prompt for the orchestrator agent
 - [worker clause](https://github.com/jayjayholic/jstack/blob/main/skills/train/worker-clause.md): block pasted into every coding agent's prompt
 - [machine-memory](https://github.com/jayjayholic/jstack/blob/main/skills/machine-memory/SKILL.md): find which agent is eating the RAM (private bytes, per-worktree attribution, WSL/Docker, orphans), the known leak patterns and how to free memory safely
@@ -37,6 +40,8 @@ Install as a Claude Code plugin with `/plugin marketplace add jayjayholic/jstack
 - [run-capped.ps1](https://github.com/jayjayholic/jstack/blob/main/tools/run-capped.ps1): Windows Job Object memory cap behind heavy_capped
 - [train.sh](https://github.com/jayjayholic/jstack/blob/main/tools/train.sh): assemble, build and ship a train
 - [new-worktree.sh](https://github.com/jayjayholic/jstack/blob/main/tools/new-worktree.sh): one ready-to-run git worktree per agent
+- [tools/unslop](https://github.com/jayjayholic/jstack/tree/main/tools/unslop): static red-flag scanner, finding ledger, evidence recorder, report, ready-gate fast mode, domain classifier and the scanner's precision self-test
+- [tools/memory](https://github.com/jayjayholic/jstack/tree/main/tools/memory): project memory with anchors that follow refactors (FRESH, DRIFTED, MOVED, RENAMED, SPLIT, STALE) and secret scanning on every write
 - [config.example.sh](https://github.com/jayjayholic/jstack/blob/main/tools/config.example.sh): every setting in one file
 
 ## Optional
