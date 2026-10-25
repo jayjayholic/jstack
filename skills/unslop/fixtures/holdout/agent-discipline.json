@@ -1,0 +1,31 @@
+{
+  "domain": "agent-discipline",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "stash-push",
+      "rule": "agent.git-stash",
+      "kind": "slop",
+      "note": "stash push in a hook",
+      "files": {
+        "hooks/pre.mjs": "import { execSync } from 'node:child_process'\nexecSync('git stash push -m tmp')\n"
+      },
+      "expect": [
+        {
+          "path": "hooks/pre.mjs",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "stash-word",
+      "rule": "agent.git-stash",
+      "kind": "near-miss",
+      "note": "a variable named stash",
+      "files": {
+        "src/cache.ts": "const stash = new Map()\nexport { stash }\n"
+      },
+      "expect": []
+    }
+  ]
+}

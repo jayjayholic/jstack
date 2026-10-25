@@ -1,0 +1,149 @@
+{
+  "domain": "i18n-a11y",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "respond-in-english",
+      "rule": "i18n.prompt-language-literal",
+      "kind": "slop",
+      "note": "a hardcoded reply language in a prompt",
+      "files": {
+        "src/agent/prompt.ts": "const SYSTEM = 'You are a helper. Always respond in English.'\nexport { SYSTEM }\n"
+      },
+      "expect": [
+        {
+          "path": "src/agent/prompt.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "locale-param",
+      "rule": "i18n.prompt-language-literal",
+      "kind": "near-miss",
+      "note": "the language comes from the user setting",
+      "files": {
+        "src/agent/prompt.ts": "const system = (locale) => `You are a helper. Reply in the user language (${locale}).`\nexport { system }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "language-label",
+      "rule": "i18n.prompt-language-literal",
+      "kind": "near-miss",
+      "note": "a language name as a label",
+      "files": {
+        "src/agent/languages.ts": "const LABELS = { en: 'English', pt: 'Portuguese' }\nexport { LABELS }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "locale-string",
+      "rule": "i18n.date-no-timezone",
+      "kind": "slop",
+      "note": "renders in the server or browser zone and locale",
+      "files": {
+        "src/ui/when.tsx": "const When = ({ at }) => <span>{new Date(at).toLocaleDateString()}</span>\nexport { When }\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/when.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "with-zone",
+      "rule": "i18n.date-no-timezone",
+      "kind": "near-miss",
+      "note": "locale and zone passed",
+      "files": {
+        "src/ui/when.tsx": "const When = ({ at, locale, timeZone }) => <span>{new Date(at).toLocaleDateString(locale, { timeZone })}</span>\nexport { When }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "iso",
+      "rule": "i18n.date-no-timezone",
+      "kind": "near-miss",
+      "note": "a machine timestamp",
+      "files": {
+        "src/ui/stamp.ts": "const stamp = (at) => new Date(at).toISOString()\nexport { stamp }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "iso-slice",
+      "rule": "i18n.utc-today",
+      "kind": "slop",
+      "note": "UTC date used as the user's today",
+      "files": {
+        "src/ui/today.ts": "const today = new Date().toISOString().slice(0, 10)\nexport { today }\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/today.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "zoned",
+      "rule": "i18n.utc-today",
+      "kind": "near-miss",
+      "note": "date computed in the user zone",
+      "files": {
+        "src/ui/today.ts": "const today = (tz) => formatInTimeZone(new Date(), tz, 'yyyy-MM-dd')\nexport { today }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "id-slice",
+      "rule": "i18n.utc-today",
+      "kind": "near-miss",
+      "note": "slicing an id",
+      "files": {
+        "src/ui/short.ts": "const short = (id) => id.slice(0, 10)\nexport { short }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "missing-key",
+      "rule": "i18n.catalog-parity",
+      "kind": "slop",
+      "note": "a locale lost a key (a merge took one side whole)",
+      "files": {
+        "messages/en/home.json": "{\n  \"title\": \"Hi\",\n  \"cta\": \"Go\"\n}\n",
+        "messages/pt/home.json": "{\n  \"title\": \"Oi\"\n}\n"
+      },
+      "expect": [
+        {
+          "path": "messages/pt/home.json",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "complete",
+      "rule": "i18n.catalog-parity",
+      "kind": "near-miss",
+      "note": "both locales complete",
+      "files": {
+        "messages/en/home.json": "{\n  \"title\": \"Hi\",\n  \"cta\": \"Go\"\n}\n",
+        "messages/pt/home.json": "{\n  \"title\": \"Oi\",\n  \"cta\": \"Vai\"\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "other-namespace",
+      "rule": "i18n.catalog-parity",
+      "kind": "near-miss",
+      "note": "different namespaces are compared separately",
+      "files": {
+        "messages/en/home.json": "{\n  \"title\": \"Hi\"\n}\n",
+        "messages/pt/settings.json": "{\n  \"theme\": \"Tema\"\n}\n"
+      },
+      "expect": []
+    }
+  ]
+}

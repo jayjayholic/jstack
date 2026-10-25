@@ -1,0 +1,111 @@
+{
+  "domain": "concurrency",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "swallow-then-done",
+      "rule": "conc.empty-catch",
+      "kind": "slop",
+      "note": "the error is swallowed and the batch is marked done",
+      "files": {
+        "src/jobs/sync.ts": "async function syncBatch(items) {\n  try {\n    await provider.send(items)\n  } catch {}\n  await store.markDone(items)\n}\nexport { syncBatch }\n"
+      },
+      "expect": [
+        {
+          "path": "src/jobs/sync.ts",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "record-and-rethrow",
+      "rule": "conc.empty-catch",
+      "kind": "near-miss",
+      "note": "the failure is recorded and rethrown",
+      "files": {
+        "src/jobs/sync.ts": "async function syncBatch(items) {\n  try {\n    await provider.send(items)\n  } catch (err) {\n    await store.markFailed(items, err)\n    throw err\n  }\n  await store.markDone(items)\n}\nexport { syncBatch }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "catch-logs",
+      "rule": "conc.empty-catch",
+      "kind": "near-miss",
+      "note": "a catch handler that does something",
+      "files": {
+        "src/jobs/ping.ts": "function ping(client) {\n  return client.ping().catch((err) => log.warn('ping failed', err.code))\n}\nexport { ping }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "except-pass",
+      "rule": "conc.except-pass",
+      "kind": "slop",
+      "note": "Python swallow, then success recorded",
+      "files": {
+        "workers/sync.py": "def sync(items):\n    try:\n        provider.send(items)\n    except Exception:\n        pass\n    store.mark_done(items)\n"
+      },
+      "expect": [
+        {
+          "path": "workers/sync.py",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "except-raise",
+      "rule": "conc.except-pass",
+      "kind": "near-miss",
+      "note": "records the failure and re-raises",
+      "files": {
+        "workers/sync.py": "def sync(items):\n    try:\n        provider.send(items)\n    except Exception as e:\n        store.mark_failed(items, e)\n        raise\n    store.mark_done(items)\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "pass-in-class",
+      "rule": "conc.except-pass",
+      "kind": "near-miss",
+      "note": "pass as an empty class body is not a swallow",
+      "files": {
+        "workers/errors.py": "class RetryLater(Exception):\n    pass\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "fixed-delay-retry",
+      "rule": "conc.retry-no-jitter",
+      "kind": "slop",
+      "note": "fixed delay retry loop with no jitter or backoff",
+      "files": {
+        "src/net/send.ts": "async function sendWithRetry(msg) {\n  for (let attempt = 0; attempt < 5; attempt++) {\n    try { return await client.send(msg) } catch (e) { await sleep(1000) }\n  }\n}\nexport { sendWithRetry }\n"
+      },
+      "expect": [
+        {
+          "path": "src/net/send.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "jittered-retry",
+      "rule": "conc.retry-no-jitter",
+      "kind": "near-miss",
+      "note": "exponential backoff with full jitter",
+      "files": {
+        "src/net/send.ts": "async function sendWithRetry(msg) {\n  for (let attempt = 0; attempt < 5; attempt++) {\n    try { return await client.send(msg) } catch (e) { await sleep(Math.random() * 100 * 2 ** attempt) }\n  }\n}\nexport { sendWithRetry }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "plain-loop",
+      "rule": "conc.retry-no-jitter",
+      "kind": "near-miss",
+      "note": "a loop over items is not a retry",
+      "files": {
+        "src/net/batch.ts": "function total(items) {\n  let sum = 0\n  for (const item of items) sum += item.size\n  return sum\n}\nexport { total }\n"
+      },
+      "expect": []
+    }
+  ]
+}

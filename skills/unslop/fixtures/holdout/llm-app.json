@@ -1,0 +1,16 @@
+{
+  "domain": "llm-app",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "has-more",
+      "rule": "llm.silent-slice",
+      "kind": "near-miss",
+      "note": "reports hasMore",
+      "files": {
+        "src/agent/tools/list.ts": "const page = (rows) => ({ rows: rows.slice(0, 50), hasMore: rows.length > 50 })\nexport { page }\n"
+      },
+      "expect": []
+    }
+  ]
+}

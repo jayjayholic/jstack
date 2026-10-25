@@ -1,0 +1,31 @@
+{
+  "domain": "concurrency",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "promise-catch-empty",
+      "rule": "conc.empty-catch",
+      "kind": "slop",
+      "note": "promise catch with an empty arrow",
+      "files": {
+        "src/workers/notify.ts": "function notify(user) {\n  mailer.send(user).catch(() => {})\n}\nexport { notify }\n"
+      },
+      "expect": [
+        {
+          "path": "src/workers/notify.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "catch-returns-failure",
+      "rule": "conc.empty-catch",
+      "kind": "near-miss",
+      "note": "catch returns a typed failure",
+      "files": {
+        "src/workers/notify.ts": "async function notify(user) {\n  try { await mailer.send(user) } catch (err) { return { ok: false, error: err.code } }\n  return { ok: true }\n}\nexport { notify }\n"
+      },
+      "expect": []
+    }
+  ]
+}

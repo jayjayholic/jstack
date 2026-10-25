@@ -1,0 +1,76 @@
+{
+  "domain": "llm-app",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "silent-slice",
+      "rule": "llm.silent-slice",
+      "kind": "slop",
+      "note": "the agent gets 20 rows and never learns there were more",
+      "files": {
+        "src/agent/tools/search.ts": "async function searchDocs(q) {\n  const docs = await index.search(q)\n  return docs.slice(0, 20)\n}\nexport { searchDocs }\n"
+      },
+      "expect": [
+        {
+          "path": "src/agent/tools/search.ts",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "with-remaining",
+      "rule": "llm.silent-slice",
+      "kind": "near-miss",
+      "note": "the cut is reported",
+      "files": {
+        "src/agent/tools/search.ts": "async function searchDocs(q) {\n  const docs = await index.search(q)\n  return { items: docs.slice(0, 20), remaining: Math.max(0, docs.length - 20) }\n}\nexport { searchDocs }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "drop-last",
+      "rule": "llm.silent-slice",
+      "kind": "near-miss",
+      "note": "not a cap",
+      "files": {
+        "src/agent/text.ts": "const trimNewline = (s) => s.slice(0, -1)\nexport { trimNewline }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "compact-literal",
+      "rule": "llm.token-threshold-literal",
+      "kind": "slop",
+      "note": "a context threshold frozen for one model",
+      "files": {
+        "src/agent/compact.ts": "const COMPACT_THRESHOLD = 150_000\nexport { COMPACT_THRESHOLD }\n"
+      },
+      "expect": [
+        {
+          "path": "src/agent/compact.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "derived",
+      "rule": "llm.token-threshold-literal",
+      "kind": "near-miss",
+      "note": "derived from the model window",
+      "files": {
+        "src/agent/compact.ts": "const compactThreshold = (model) => model.contextWindow * 0.8\nexport { compactThreshold }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "unrelated-limit",
+      "rule": "llm.token-threshold-literal",
+      "kind": "near-miss",
+      "note": "a limit that is not about context",
+      "files": {
+        "src/agent/limits.ts": "const RETRY_LIMIT_MS = 10000\nexport { RETRY_LIMIT_MS }\n"
+      },
+      "expect": []
+    }
+  ]
+}

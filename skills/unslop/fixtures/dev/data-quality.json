@@ -1,0 +1,76 @@
+{
+  "domain": "data-quality",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "no-status-check",
+      "rule": "dq.fetch-no-status",
+      "kind": "slop",
+      "note": "an error page is parsed as data",
+      "files": {
+        "src/sync/users.ts": "async function loadUser(id) {\n  const res = await fetch(`/api/users/${id}`)\n  return res.json()\n}\nexport { loadUser }\n"
+      },
+      "expect": [
+        {
+          "path": "src/sync/users.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "checks-ok",
+      "rule": "dq.fetch-no-status",
+      "kind": "near-miss",
+      "note": "the status is checked",
+      "files": {
+        "src/sync/users.ts": "async function loadUser(id) {\n  const res = await fetch(`/api/users/${id}`)\n  if (!res.ok) throw new Error(`users ${res.status}`)\n  return res.json()\n}\nexport { loadUser }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "not-fetch",
+      "rule": "dq.fetch-no-status",
+      "kind": "near-miss",
+      "note": "a function whose name starts with fetch",
+      "files": {
+        "src/sync/users.ts": "async function loadUser(id) {\n  return await fetchUser(id)\n}\nexport { loadUser }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "throw-on-unknown",
+      "rule": "dq.unknown-type-throw",
+      "kind": "slop",
+      "note": "one unknown input type fails the whole ingest",
+      "files": {
+        "src/ingest/parse-node.ts": "function parseNode(node) {\n  switch (node.type) {\n    case 'text': return { kind: 'text', value: node.value }\n    default:\n      throw new Error(`Unknown node type ${node.type}`)\n  }\n}\nexport { parseNode }\n"
+      },
+      "expect": [
+        {
+          "path": "src/ingest/parse-node.ts",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "id": "keep-unknown",
+      "rule": "dq.unknown-type-throw",
+      "kind": "near-miss",
+      "note": "unknown input kept and counted",
+      "files": {
+        "src/ingest/parse-node.ts": "function parseNode(node) {\n  switch (node.type) {\n    case 'text': return { kind: 'text', value: node.value }\n    default:\n      return { kind: 'unknown', raw: node.type }\n  }\n}\nexport { parseNode }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "ui-code",
+      "rule": "dq.unknown-type-throw",
+      "kind": "near-miss",
+      "note": "the same throw outside an ingestion path",
+      "files": {
+        "src/ui/menu.ts": "function iconFor(item) {\n  if (!ICONS[item.type]) throw new Error('Unknown item type')\n  return ICONS[item.type]\n}\nexport { iconFor }\n"
+      },
+      "expect": []
+    }
+  ]
+}

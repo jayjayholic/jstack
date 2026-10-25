@@ -1,0 +1,41 @@
+{
+  "domain": "ui-visual",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "hex-in-component",
+      "rule": "ui.hardcoded-color",
+      "kind": "slop",
+      "note": "a raw color outside the tokens breaks themes",
+      "files": {
+        "src/ui/card.css": ".card {\n  color: #333;\n}\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/card.css",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "token-var",
+      "rule": "ui.hardcoded-color",
+      "kind": "near-miss",
+      "note": "uses a token",
+      "files": {
+        "src/ui/card.css": ".card {\n  color: var(--text-muted);\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "token-definition",
+      "rule": "ui.hardcoded-color",
+      "kind": "near-miss",
+      "note": "defining the token is where the hex belongs",
+      "files": {
+        "src/ui/root.css": ":root {\n  --brand: #0a66c2;\n}\n"
+      },
+      "expect": []
+    }
+  ]
+}

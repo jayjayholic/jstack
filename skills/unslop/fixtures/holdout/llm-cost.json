@@ -1,0 +1,21 @@
+{
+  "domain": "llm-cost",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "python-openai",
+      "rule": "cost.direct-sdk",
+      "kind": "slop",
+      "note": "python import outside the client",
+      "files": {
+        "jobs/summarize.py": "from openai import OpenAI\nclient = OpenAI()\n"
+      },
+      "expect": [
+        {
+          "path": "jobs/summarize.py",
+          "line": 1
+        }
+      ]
+    }
+  ]
+}

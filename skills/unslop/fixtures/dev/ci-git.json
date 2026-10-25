@@ -1,0 +1,115 @@
+{
+  "domain": "ci-git",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "marker-committed",
+      "rule": "ci.conflict-marker",
+      "kind": "slop",
+      "note": "merge conflict markers left in source",
+      "files": {
+        "src/app.ts": "export const a = 1\n<<<<<<< HEAD\nexport const b = 2\n=======\nexport const b = 3\n>>>>>>> feature\n"
+      },
+      "expect": [
+        {
+          "path": "src/app.ts",
+          "line": 2
+        },
+        {
+          "path": "src/app.ts",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "id": "marker-in-string",
+      "rule": "ci.conflict-marker",
+      "kind": "near-miss",
+      "note": "the marker text inside a string literal",
+      "files": {
+        "src/merge.ts": "const START = '<<<<<<<'\nexport { START }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "ascii-rule",
+      "rule": "ci.conflict-marker",
+      "kind": "near-miss",
+      "note": "a longer run of the same character is a divider, not a marker",
+      "files": {
+        "docs/notes.md": "# Notes\n<<<<<<<<<<<<<<<<\ntext\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "merge-x-theirs",
+      "rule": "ci.blanket-merge-side",
+      "kind": "slop",
+      "note": "-X theirs drops conflicting hunks unread",
+      "files": {
+        "scripts/train.sh": "#!/usr/bin/env bash\ngit merge -X theirs origin/feature\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/train.sh",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "plain-merge",
+      "rule": "ci.blanket-merge-side",
+      "kind": "near-miss",
+      "note": "a plain merge stops on conflicts",
+      "files": {
+        "scripts/train.sh": "#!/usr/bin/env bash\ngit merge --no-ff origin/feature\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "per-file-side",
+      "rule": "ci.blanket-merge-side",
+      "kind": "near-miss",
+      "note": "taking one side for one named file after reading it",
+      "files": {
+        "scripts/resolve.sh": "#!/usr/bin/env bash\ngit checkout --theirs src/generated/schema.ts\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "no-verify",
+      "rule": "ci.skip-hooks",
+      "kind": "slop",
+      "note": "skipping hooks ships what they would have caught",
+      "files": {
+        "scripts/ship.sh": "#!/usr/bin/env bash\ngit commit --no-verify -m \"wip\"\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/ship.sh",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "plain-commit",
+      "rule": "ci.skip-hooks",
+      "kind": "near-miss",
+      "note": "a normal commit",
+      "files": {
+        "scripts/ship.sh": "#!/usr/bin/env bash\ngit commit -m \"fix: retry once\"\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "other-flag",
+      "rule": "ci.skip-hooks",
+      "kind": "near-miss",
+      "note": "a longer flag that only starts the same way",
+      "files": {
+        "scripts/deploy.sh": "#!/usr/bin/env bash\n./bin/upload --no-verify-ssl-for-localhost dist/\n"
+      },
+      "expect": []
+    }
+  ]
+}

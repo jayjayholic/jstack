@@ -1,0 +1,111 @@
+{
+  "domain": "copy",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "simply",
+      "rule": "copy.filler-words",
+      "kind": "slop",
+      "note": "filler adverb in user-facing text",
+      "files": {
+        "messages/en/home.json": "{\n  \"cta\": \"Simply click here to connect your calendar\"\n}\n"
+      },
+      "expect": [
+        {
+          "path": "messages/en/home.json",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "plain-cta",
+      "rule": "copy.filler-words",
+      "kind": "near-miss",
+      "note": "the same action without filler",
+      "files": {
+        "messages/en/home.json": "{\n  \"cta\": \"Connect your calendar\"\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "simplify",
+      "rule": "copy.filler-words",
+      "kind": "near-miss",
+      "note": "a word that starts like the filler",
+      "files": {
+        "messages/en/home.json": "{\n  \"title\": \"Simplify your week\"\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "this-page-lets-you",
+      "rule": "copy.meta-narration",
+      "kind": "slop",
+      "note": "the screen describes itself instead of doing its job",
+      "files": {
+        "messages/en/invoices.json": "{\n  \"intro\": \"This page lets you manage your invoices.\"\n}\n"
+      },
+      "expect": [
+        {
+          "path": "messages/en/invoices.json",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "direct-intro",
+      "rule": "copy.meta-narration",
+      "kind": "near-miss",
+      "note": "says what is there",
+      "files": {
+        "messages/en/invoices.json": "{\n  \"intro\": \"Your invoices, newest first.\"\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "this-page-question",
+      "rule": "copy.meta-narration",
+      "kind": "near-miss",
+      "note": "\"this page\" in a useful sentence",
+      "files": {
+        "messages/en/errors.json": "{\n  \"slow\": \"This page loaded slowly? Refresh it.\"\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "overview-title",
+      "rule": "copy.generic-heading",
+      "kind": "slop",
+      "note": "a heading that says nothing",
+      "files": {
+        "messages/en/report.json": "{\n  \"title\": \"Overview\"\n}\n"
+      },
+      "expect": [
+        {
+          "path": "messages/en/report.json",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "specific-title",
+      "rule": "copy.generic-heading",
+      "kind": "near-miss",
+      "note": "a heading that names the content",
+      "files": {
+        "messages/en/report.json": "{\n  \"title\": \"Invoices due this week\"\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "tab-label",
+      "rule": "copy.generic-heading",
+      "kind": "near-miss",
+      "note": "a tab label, not a heading",
+      "files": {
+        "messages/en/report.json": "{\n  \"tabLabel\": \"Overview\"\n}\n"
+      },
+      "expect": []
+    }
+  ]
+}

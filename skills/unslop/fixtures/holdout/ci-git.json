@@ -1,0 +1,31 @@
+{
+  "domain": "ci-git",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "strategy-option",
+      "rule": "ci.blanket-merge-side",
+      "kind": "slop",
+      "note": "long form of -X",
+      "files": {
+        ".github/workflows/sync.yml": "jobs:\n  sync:\n    steps:\n      - run: git merge --strategy-option=ours origin/main\n"
+      },
+      "expect": [
+        {
+          "path": ".github/workflows/sync.yml",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "docs-flag",
+      "rule": "ci.skip-hooks",
+      "kind": "near-miss",
+      "note": "a flag in prose",
+      "files": {
+        "README.md": "Never pass --no-verify.\n"
+      },
+      "expect": []
+    }
+  ]
+}

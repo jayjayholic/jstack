@@ -1,0 +1,31 @@
+{
+  "domain": "data-privacy",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "add-column",
+      "rule": "data.ddl-not-idempotent",
+      "kind": "slop",
+      "note": "ADD COLUMN without a guard",
+      "files": {
+        "migrations/0042_total.sql": "ALTER TABLE invoices ADD COLUMN total int;\n"
+      },
+      "expect": [
+        {
+          "path": "migrations/0042_total.sql",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "drop-in-test-docs",
+      "rule": "data.destructive-db-command",
+      "kind": "near-miss",
+      "note": "a markdown doc is not a script",
+      "files": {
+        "docs/db.md": "Never run `dropdb` on the shared database.\n"
+      },
+      "expect": []
+    }
+  ]
+}

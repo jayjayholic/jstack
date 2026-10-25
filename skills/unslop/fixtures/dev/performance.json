@@ -1,0 +1,146 @@
+{
+  "domain": "performance",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "transition-all",
+      "rule": "perf.transition-all",
+      "kind": "slop",
+      "note": "animates every property, including layout",
+      "files": {
+        "src/ui/card.css": ".card {\n  transition: all 200ms;\n}\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/card.css",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "named-props",
+      "rule": "perf.transition-all",
+      "kind": "near-miss",
+      "note": "compositor-only properties",
+      "files": {
+        "src/ui/card.css": ".card {\n  transition: transform 200ms, opacity 200ms;\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "tailwind-colors",
+      "rule": "perf.transition-all",
+      "kind": "near-miss",
+      "note": "a narrow utility",
+      "files": {
+        "src/ui/Button.tsx": "const Button = (p) => <button className=\"transition-colors\" {...p} />\nexport { Button }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "forced-any",
+      "rule": "perf.forced-tool-choice",
+      "kind": "slop",
+      "note": "forces a tool call every turn, so the loop never answers",
+      "files": {
+        "src/agent/loop.ts": "const params = { model, tools, tool_choice: { type: 'any' } }\nexport { params }\n"
+      },
+      "expect": [
+        {
+          "path": "src/agent/loop.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "auto",
+      "rule": "perf.forced-tool-choice",
+      "kind": "near-miss",
+      "note": "the model decides",
+      "files": {
+        "src/agent/loop.ts": "const params = { model, tools, tool_choice: { type: 'auto' } }\nexport { params }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "unrelated-type",
+      "rule": "perf.forced-tool-choice",
+      "kind": "near-miss",
+      "note": "a type field elsewhere",
+      "files": {
+        "src/agent/blocks.ts": "const block = { type: 'any', value: 1 }\nexport { block }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "log-body",
+      "rule": "perf.log-whole-payload",
+      "kind": "slop",
+      "note": "logs every request body",
+      "files": {
+        "src/api/handler.ts": "function handle(req) {\n  console.log(JSON.stringify(req.body))\n  return route(req)\n}\nexport { handle }\n"
+      },
+      "expect": [
+        {
+          "path": "src/api/handler.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "log-fields",
+      "rule": "perf.log-whole-payload",
+      "kind": "near-miss",
+      "note": "logs the fields that matter",
+      "files": {
+        "src/api/handler.ts": "function handle(req) {\n  console.log('request', { id: req.id, bytes: req.headers['content-length'] })\n  return route(req)\n}\nexport { handle }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "small-summary",
+      "rule": "perf.log-whole-payload",
+      "kind": "near-miss",
+      "note": "a small derived object",
+      "files": {
+        "src/api/handler.ts": "function done(summary) {\n  logger.debug(JSON.stringify(summary))\n}\nexport { done }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "findmany-all",
+      "rule": "perf.unbounded-findmany",
+      "kind": "slop",
+      "note": "loads the whole table",
+      "files": {
+        "src/api/users.ts": "async function listUsers() {\n  return await db.user.findMany()\n}\nexport { listUsers }\n"
+      },
+      "expect": [
+        {
+          "path": "src/api/users.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "paged",
+      "rule": "perf.unbounded-findmany",
+      "kind": "near-miss",
+      "note": "paged query",
+      "files": {
+        "src/api/users.ts": "async function listUsers(cursor) {\n  return await db.user.findMany({ take: 50, cursor })\n}\nexport { listUsers }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "find-first",
+      "rule": "perf.unbounded-findmany",
+      "kind": "near-miss",
+      "note": "one row",
+      "files": {
+        "src/api/users.ts": "async function firstUser() {\n  return await db.user.findFirst()\n}\nexport { firstUser }\n"
+      },
+      "expect": []
+    }
+  ]
+}

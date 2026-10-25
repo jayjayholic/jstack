@@ -1,0 +1,21 @@
+{
+  "domain": "data-quality",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "unsupported-mime",
+      "rule": "dq.unknown-type-throw",
+      "kind": "slop",
+      "note": "unsupported mime fails ingestion",
+      "files": {
+        "src/etl/load.ts": "function load(file) {\n  if (!PARSERS[file.mime]) throw new TypeError(`Unsupported mime type ${file.mime}`)\n  return PARSERS[file.mime](file)\n}\nexport { load }\n"
+      },
+      "expect": [
+        {
+          "path": "src/etl/load.ts",
+          "line": 2
+        }
+      ]
+    }
+  ]
+}

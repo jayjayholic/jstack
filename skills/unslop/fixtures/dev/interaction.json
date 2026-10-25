@@ -1,0 +1,111 @@
+{
+  "domain": "interaction",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "height-100vh",
+      "rule": "ix.vh-shell",
+      "kind": "slop",
+      "note": "mobile browser bars cover the bottom of a 100vh shell",
+      "files": {
+        "src/app/shell.css": ".shell {\n  height: 100vh;\n}\n"
+      },
+      "expect": [
+        {
+          "path": "src/app/shell.css",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "dvh",
+      "rule": "ix.vh-shell",
+      "kind": "near-miss",
+      "note": "dynamic viewport unit",
+      "files": {
+        "src/app/shell.css": ".shell {\n  height: 100dvh;\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "tailwind-dvh",
+      "rule": "ix.vh-shell",
+      "kind": "near-miss",
+      "note": "the dynamic utility",
+      "files": {
+        "src/app/Shell.tsx": "const Shell = ({ children }) => <div className=\"h-dvh\">{children}</div>\nexport { Shell }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "z-9999",
+      "rule": "ix.magic-z-index",
+      "kind": "slop",
+      "note": "a magic stacking number",
+      "files": {
+        "src/ui/toast.css": ".toast {\n  z-index: 9999;\n}\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/toast.css",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "token",
+      "rule": "ix.magic-z-index",
+      "kind": "near-miss",
+      "note": "a named layer",
+      "files": {
+        "src/ui/toast.css": ".toast {\n  z-index: var(--z-toast);\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "small",
+      "rule": "ix.magic-z-index",
+      "kind": "near-miss",
+      "note": "a small local value",
+      "files": {
+        "src/ui/card.css": ".card-badge {\n  z-index: 10;\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "scroll-mount",
+      "rule": "ix.scroll-on-mount",
+      "kind": "slop",
+      "note": "scrolls on every mount, fighting the user",
+      "files": {
+        "src/ui/Thread.tsx": "function Thread() {\n  useEffect(() => { ref.current?.scrollIntoView({ behavior: 'smooth' }) }, [])\n  return null\n}\nexport { Thread }\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/Thread.tsx",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "conditional",
+      "rule": "ix.scroll-on-mount",
+      "kind": "near-miss",
+      "note": "scrolls only when a new item arrived",
+      "files": {
+        "src/ui/Thread.tsx": "function Thread({ isNew }) {\n  useEffect(() => { if (isNew) ref.current?.scrollIntoView() }, [isNew])\n  return null\n}\nexport { Thread }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "on-click",
+      "rule": "ix.scroll-on-mount",
+      "kind": "near-miss",
+      "note": "scroll on an explicit user action",
+      "files": {
+        "src/ui/Jump.tsx": "const Jump = ({ target }) => <button onClick={() => target.current?.scrollIntoView()}>Latest</button>\nexport { Jump }\n"
+      },
+      "expect": []
+    }
+  ]
+}

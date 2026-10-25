@@ -1,0 +1,31 @@
+{
+  "domain": "ui-visual",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "tailwind-arbitrary",
+      "rule": "ui.hardcoded-color",
+      "kind": "slop",
+      "note": "arbitrary color utility",
+      "files": {
+        "src/ui/Badge.tsx": "const Badge = () => <span className=\"bg-[#ff6600] text-white\">New</span>\nexport { Badge }\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/Badge.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "svg-href",
+      "rule": "ui.hardcoded-color",
+      "kind": "near-miss",
+      "note": "an id reference, not a color",
+      "files": {
+        "src/ui/Icon.tsx": "const Icon = () => <svg><use href=\"#icon-check\" /></svg>\nexport { Icon }\n"
+      },
+      "expect": []
+    }
+  ]
+}

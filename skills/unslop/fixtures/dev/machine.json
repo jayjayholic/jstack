@@ -1,0 +1,76 @@
+{
+  "domain": "machine",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "taskkill-im",
+      "rule": "mach.kill-by-name",
+      "kind": "slop",
+      "note": "kills every node process, including other agents and the CLI",
+      "files": {
+        "scripts/clean.sh": "#!/usr/bin/env bash\ntaskkill //F //IM node.exe\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/clean.sh",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "by-pid",
+      "rule": "mach.kill-by-name",
+      "kind": "near-miss",
+      "note": "kills one known process",
+      "files": {
+        "scripts/clean.sh": "#!/usr/bin/env bash\ntaskkill //F //PID \"$PID\"\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "by-port",
+      "rule": "mach.kill-by-name",
+      "kind": "near-miss",
+      "note": "frees one port",
+      "files": {
+        "scripts/clean.sh": "#!/usr/bin/env bash\nnpx kill-port 3000\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "poll-forever",
+      "rule": "mach.while-true-sleep",
+      "kind": "slop",
+      "note": "an unbounded poll loop",
+      "files": {
+        "scripts/wait.sh": "#!/usr/bin/env bash\nwhile true; do\n  curl -sf localhost:3000/health && break\n  sleep 5\ndone\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/wait.sh",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "bounded",
+      "rule": "mach.while-true-sleep",
+      "kind": "near-miss",
+      "note": "a bounded wait",
+      "files": {
+        "scripts/wait.sh": "#!/usr/bin/env bash\nfor i in $(seq 1 30); do\n  curl -sf localhost:3000/health && break\n  sleep 2\ndone\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "read-loop",
+      "rule": "mach.while-true-sleep",
+      "kind": "near-miss",
+      "note": "a read loop ends with its input",
+      "files": {
+        "scripts/each.sh": "#!/usr/bin/env bash\nwhile read -r line; do\n  echo \"$line\"\n  sleep 1\ndone < list.txt\n"
+      },
+      "expect": []
+    }
+  ]
+}

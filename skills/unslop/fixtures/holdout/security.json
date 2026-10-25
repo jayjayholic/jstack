@@ -1,0 +1,21 @@
+{
+  "domain": "security",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "stringify-error",
+      "rule": "sec.raw-error-log",
+      "kind": "slop",
+      "note": "serialising the whole error",
+      "files": {
+        "src/api/hook.ts": "function onFail(error) {\n  logger.error(JSON.stringify(error))\n}\nexport { onFail }\n"
+      },
+      "expect": [
+        {
+          "path": "src/api/hook.ts",
+          "line": 2
+        }
+      ]
+    }
+  ]
+}

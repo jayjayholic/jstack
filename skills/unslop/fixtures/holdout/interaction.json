@@ -1,0 +1,21 @@
+{
+  "domain": "interaction",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "min-h-screen",
+      "rule": "ix.vh-shell",
+      "kind": "slop",
+      "note": "tailwind screen height",
+      "files": {
+        "src/app/Layout.tsx": "const Layout = ({ children }) => <main className=\"min-h-screen\">{children}</main>\nexport { Layout }\n"
+      },
+      "expect": [
+        {
+          "path": "src/app/Layout.tsx",
+          "line": 1
+        }
+      ]
+    }
+  ]
+}

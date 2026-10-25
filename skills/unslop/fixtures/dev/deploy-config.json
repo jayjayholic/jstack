@@ -1,0 +1,146 @@
+{
+  "domain": "deploy-config",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "opt-in-flag",
+      "rule": "deploy.flag-default-off",
+      "kind": "slop",
+      "note": "a finished feature that is off unless someone remembers the variable",
+      "files": {
+        "src/search/flags.ts": "const NEW_SEARCH = process.env.NEW_SEARCH === 'true'\nexport { NEW_SEARCH }\n"
+      },
+      "expect": [
+        {
+          "path": "src/search/flags.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "kill-switch",
+      "rule": "deploy.flag-default-off",
+      "kind": "near-miss",
+      "note": "on by default, env var only turns it off",
+      "files": {
+        "src/search/flags.ts": "const NEW_SEARCH = process.env.NEW_SEARCH !== 'false'\nexport { NEW_SEARCH }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "node-env",
+      "rule": "deploy.flag-default-off",
+      "kind": "near-miss",
+      "note": "an environment name check",
+      "files": {
+        "src/search/flags.ts": "const IS_PROD = process.env.NODE_ENV === 'production'\nexport { IS_PROD }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "empty-fallback",
+      "rule": "deploy.env-silent-empty",
+      "kind": "slop",
+      "note": "a missing secret becomes an empty string and fails later",
+      "files": {
+        "src/lib/client.ts": "const API_KEY = process.env.API_KEY ?? ''\nexport { API_KEY }\n"
+      },
+      "expect": [
+        {
+          "path": "src/lib/client.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "required",
+      "rule": "deploy.env-silent-empty",
+      "kind": "near-miss",
+      "note": "fails at startup with the variable name",
+      "files": {
+        "src/lib/client.ts": "const API_KEY = requireEnv('API_KEY')\nexport { API_KEY }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "real-default",
+      "rule": "deploy.env-silent-empty",
+      "kind": "near-miss",
+      "note": "a meaningful default",
+      "files": {
+        "src/lib/client.ts": "const REGION = process.env.REGION ?? 'us-east-1'\nexport { REGION }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "not-strict",
+      "rule": "deploy.dotenvx-not-strict",
+      "kind": "slop",
+      "note": "a missing env file injects nothing and exits 0",
+      "files": {
+        "package.json": "{\n  \"scripts\": {\n    \"dev\": \"dotenvx run -f .env -- next dev\"\n  }\n}\n"
+      },
+      "expect": [
+        {
+          "path": "package.json",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "strict",
+      "rule": "deploy.dotenvx-not-strict",
+      "kind": "near-miss",
+      "note": "strict mode fails on a missing file",
+      "files": {
+        "package.json": "{\n  \"scripts\": {\n    \"dev\": \"dotenvx run --strict -f .env -- next dev\"\n  }\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "set",
+      "rule": "deploy.dotenvx-not-strict",
+      "kind": "near-miss",
+      "note": "setting a value is not loading",
+      "files": {
+        "package.json": "{\n  \"scripts\": {\n    \"env:set\": \"dotenvx set KEY value\"\n  }\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "ngrok-callback",
+      "rule": "deploy.tunnel-host",
+      "kind": "slop",
+      "note": "a personal tunnel host committed as config",
+      "files": {
+        "src/config.ts": "const CALLBACK = 'https://brave-otter-12.ngrok-free.app/callback'\nexport { CALLBACK }\n"
+      },
+      "expect": [
+        {
+          "path": "src/config.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "env-callback",
+      "rule": "deploy.tunnel-host",
+      "kind": "near-miss",
+      "note": "the host comes from config",
+      "files": {
+        "src/config.ts": "const CALLBACK = `${process.env.PUBLIC_URL}/callback`\nexport { CALLBACK }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "docs-mention",
+      "rule": "deploy.tunnel-host",
+      "kind": "near-miss",
+      "note": "docs explaining tunnels",
+      "files": {
+        "docs/setup.md": "# Setup\nRun a tunnel such as abc.ngrok-free.app for local webhooks.\n"
+      },
+      "expect": []
+    }
+  ]
+}

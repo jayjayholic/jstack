@@ -1,0 +1,162 @@
+{
+  "domain": "data-privacy",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "edited-applied",
+      "rule": "data.migration-edited",
+      "kind": "slop",
+      "note": "a committed migration was edited in place",
+      "files": {
+        "db/migrations/20260101120000_init/migration.sql": "CREATE TABLE IF NOT EXISTS invoices (id text primary key, total int);\n"
+      },
+      "expect": [
+        {
+          "path": "db/migrations/20260101120000_init/migration.sql",
+          "line": 1
+        }
+      ],
+      "diffStatus": {
+        "db/migrations/20260101120000_init/migration.sql": "M"
+      }
+    },
+    {
+      "id": "new-migration",
+      "rule": "data.migration-edited",
+      "kind": "near-miss",
+      "note": "a new migration is how a schema changes",
+      "files": {
+        "db/migrations/20261025120000_add_total/migration.sql": "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total int;\n"
+      },
+      "expect": [],
+      "diffStatus": {
+        "db/migrations/20261025120000_add_total/migration.sql": "A"
+      }
+    },
+    {
+      "id": "seed-edited",
+      "rule": "data.migration-edited",
+      "kind": "near-miss",
+      "note": "editing a seed file is not editing a migration",
+      "files": {
+        "db/seed.sql": "INSERT INTO plans (id) VALUES ('free') ON CONFLICT DO NOTHING;\n"
+      },
+      "expect": [],
+      "diffStatus": {
+        "db/seed.sql": "M"
+      }
+    },
+    {
+      "id": "same-stamp",
+      "rule": "data.migration-stamp-dup",
+      "kind": "slop",
+      "note": "two migrations share a timestamp",
+      "files": {
+        "db/migrations/20261025120000_add_a/migration.sql": "ALTER TABLE t ADD COLUMN IF NOT EXISTS a int;\n",
+        "db/migrations/20261025120000_add_b/migration.sql": "ALTER TABLE t ADD COLUMN IF NOT EXISTS b int;\n"
+      },
+      "expect": [
+        {
+          "path": "db/migrations/20261025120000_add_a/migration.sql",
+          "line": 1
+        },
+        {
+          "path": "db/migrations/20261025120000_add_b/migration.sql",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "distinct-stamps",
+      "rule": "data.migration-stamp-dup",
+      "kind": "near-miss",
+      "note": "unique stamps",
+      "files": {
+        "db/migrations/20261025120000_add_a/migration.sql": "ALTER TABLE t ADD COLUMN IF NOT EXISTS a int;\n",
+        "db/migrations/20261025120100_add_b/migration.sql": "ALTER TABLE t ADD COLUMN IF NOT EXISTS b int;\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "separate-folders",
+      "rule": "data.migration-stamp-dup",
+      "kind": "near-miss",
+      "note": "the same stamp in two independent migration folders",
+      "files": {
+        "svc-a/migrations/20261025120000_init/migration.sql": "SELECT 1;\n",
+        "svc-b/migrations/20261025120000_init/migration.sql": "SELECT 1;\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "create-table",
+      "rule": "data.ddl-not-idempotent",
+      "kind": "slop",
+      "note": "DDL that fails on a second run",
+      "files": {
+        "db/migrations/20261025130000_x/migration.sql": "CREATE TABLE invoices (\n  id text primary key\n);\n"
+      },
+      "expect": [
+        {
+          "path": "db/migrations/20261025130000_x/migration.sql",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "if-not-exists",
+      "rule": "data.ddl-not-idempotent",
+      "kind": "near-miss",
+      "note": "guarded DDL",
+      "files": {
+        "db/migrations/20261025130000_x/migration.sql": "CREATE TABLE IF NOT EXISTS invoices (\n  id text primary key\n);\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "commented",
+      "rule": "data.ddl-not-idempotent",
+      "kind": "near-miss",
+      "note": "a comment about DDL",
+      "files": {
+        "db/migrations/20261025130000_x/migration.sql": "-- CREATE TABLE invoices lived here before the split\nSELECT 1;\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "accept-data-loss",
+      "rule": "data.destructive-db-command",
+      "kind": "slop",
+      "note": "a script that can drop data on a shared database",
+      "files": {
+        "package.json": "{\n  \"scripts\": {\n    \"db:sync\": \"prisma db push --accept-data-loss\"\n  }\n}\n"
+      },
+      "expect": [
+        {
+          "path": "package.json",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "migrate-deploy",
+      "rule": "data.destructive-db-command",
+      "kind": "near-miss",
+      "note": "applying migrations forward",
+      "files": {
+        "package.json": "{\n  \"scripts\": {\n    \"db:migrate\": \"prisma migrate deploy\"\n  }\n}\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "migrate-status",
+      "rule": "data.destructive-db-command",
+      "kind": "near-miss",
+      "note": "read-only status",
+      "files": {
+        "package.json": "{\n  \"scripts\": {\n    \"db:status\": \"prisma migrate status\"\n  }\n}\n"
+      },
+      "expect": []
+    }
+  ]
+}

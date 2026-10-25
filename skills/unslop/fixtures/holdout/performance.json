@@ -1,0 +1,16 @@
+{
+  "domain": "performance",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "findmany-where",
+      "rule": "perf.unbounded-findmany",
+      "kind": "near-miss",
+      "note": "a filtered query (the static rule only sees the empty call)",
+      "files": {
+        "src/api/team.ts": "const members = (teamId) => db.member.findMany({ where: { teamId }, take: 100 })\nexport { members }\n"
+      },
+      "expect": []
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "domain": "agent-discipline",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "stash-in-script",
+      "rule": "agent.git-stash",
+      "kind": "slop",
+      "note": "git stash in an agent script clobbers other worktrees (refs/stash is shared)",
+      "files": {
+        "scripts/sync.sh": "#!/usr/bin/env bash\ngit stash\ngit pull --rebase\ngit stash pop\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/sync.sh",
+          "line": 2
+        },
+        {
+          "path": "scripts/sync.sh",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "stash-list",
+      "rule": "agent.git-stash",
+      "kind": "near-miss",
+      "note": "listing stashes reads, never writes",
+      "files": {
+        "scripts/check.sh": "#!/usr/bin/env bash\ngit stash list\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "worktree-instead",
+      "rule": "agent.git-stash",
+      "kind": "near-miss",
+      "note": "a private worktree is the clean alternative",
+      "files": {
+        "scripts/sync.sh": "#!/usr/bin/env bash\ngit worktree add ../wt-fix origin/main\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "hedged-report",
+      "rule": "agent.hedged-claim",
+      "kind": "slop",
+      "note": "a READY report that hopes instead of proving",
+      "files": {
+        ".agent/report.md": "# Report\n\nThe retry bug should now work after this change.\n"
+      },
+      "expect": [
+        {
+          "path": ".agent/report.md",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "proved-report",
+      "rule": "agent.hedged-claim",
+      "kind": "near-miss",
+      "note": "a claim with its evidence",
+      "files": {
+        ".agent/report.md": "# Report\n\nRetry fixed: tests/retry.test.ts failed before (exit 1) and passes now (exit 0).\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "docs-not-report",
+      "rule": "agent.hedged-claim",
+      "kind": "near-miss",
+      "note": "the same words in a user guide are not a claim about this change",
+      "files": {
+        "docs/guide.md": "# Guide\n\nIf the token is valid the import should work on the first try.\n"
+      },
+      "expect": []
+    }
+  ]
+}

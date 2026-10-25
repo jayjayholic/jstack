@@ -1,0 +1,31 @@
+{
+  "domain": "deploy-config",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "non-null-assert",
+      "rule": "deploy.env-silent-empty",
+      "kind": "slop",
+      "note": "non-null assertion on env",
+      "files": {
+        "src/lib/db.ts": "const url = process.env.DATABASE_URL!\nexport { url }\n"
+      },
+      "expect": [
+        {
+          "path": "src/lib/db.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "string-compare-other",
+      "rule": "deploy.flag-default-off",
+      "kind": "near-miss",
+      "note": "compares to a value that is not a boolean word",
+      "files": {
+        "src/lib/mode.ts": "const shadow = process.env.MODE === 'shadow'\nexport { shadow }\n"
+      },
+      "expect": []
+    }
+  ]
+}

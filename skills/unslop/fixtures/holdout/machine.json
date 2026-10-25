@@ -1,0 +1,21 @@
+{
+  "domain": "machine",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "pkill-node",
+      "rule": "mach.kill-by-name",
+      "kind": "slop",
+      "note": "pkill by name",
+      "files": {
+        "scripts/reset.sh": "#!/usr/bin/env bash\npkill -9 node\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/reset.sh",
+          "line": 2
+        }
+      ]
+    }
+  ]
+}

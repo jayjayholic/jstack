@@ -1,0 +1,31 @@
+{
+  "domain": "eval-testing",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "pytest-skip",
+      "rule": "test.focus-skip",
+      "kind": "slop",
+      "note": "a skipped Python test",
+      "files": {
+        "tests/test_sync.py": "import pytest\n@pytest.mark.skip\ndef test_sync():\n    assert sync() == 1\n"
+      },
+      "expect": [
+        {
+          "path": "tests/test_sync.py",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "to-be-null",
+      "rule": "test.weak-assert",
+      "kind": "near-miss",
+      "note": "asserting exactly null",
+      "files": {
+        "src/a.test.ts": "it('x', () => {\n  expect(find()).toBeNull()\n})\n"
+      },
+      "expect": []
+    }
+  ]
+}

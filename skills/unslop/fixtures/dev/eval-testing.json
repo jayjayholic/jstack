@@ -1,0 +1,111 @@
+{
+  "domain": "eval-testing",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "it-only",
+      "rule": "test.focus-skip",
+      "kind": "slop",
+      "note": "a focused test silently skips the rest of the suite",
+      "files": {
+        "src/sum.test.ts": "import { sum } from './sum'\nit.only('adds', () => {\n  expect(sum(1, 2)).toBe(3)\n})\n"
+      },
+      "expect": [
+        {
+          "path": "src/sum.test.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "plain-it",
+      "rule": "test.focus-skip",
+      "kind": "near-miss",
+      "note": "a normal test",
+      "files": {
+        "src/sum.test.ts": "import { sum } from './sum'\nit('adds', () => {\n  expect(sum(1, 2)).toBe(3)\n})\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "it-each",
+      "rule": "test.focus-skip",
+      "kind": "near-miss",
+      "note": "a parameterised test",
+      "files": {
+        "src/sum.test.ts": "import { sum } from './sum'\nit.each([[1, 2, 3]])('adds %s + %s', (a, b, c) => {\n  expect(sum(a, b)).toBe(c)\n})\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "wait-for-timeout",
+      "rule": "test.sleep-wait",
+      "kind": "slop",
+      "note": "a fixed sleep instead of waiting for the condition",
+      "files": {
+        "e2e/login.spec.ts": "test('logs in', async ({ page }) => {\n  await page.click('text=Sign in')\n  await page.waitForTimeout(2000)\n  expect(await page.title()).toBe('Home')\n})\n"
+      },
+      "expect": [
+        {
+          "path": "e2e/login.spec.ts",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "web-first",
+      "rule": "test.sleep-wait",
+      "kind": "near-miss",
+      "note": "waits on the condition itself",
+      "files": {
+        "e2e/login.spec.ts": "test('logs in', async ({ page }) => {\n  await page.click('text=Sign in')\n  await expect(page).toHaveTitle('Home')\n})\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "wait-for",
+      "rule": "test.sleep-wait",
+      "kind": "near-miss",
+      "note": "polling a condition",
+      "files": {
+        "src/queue.test.ts": "it('drains', async () => {\n  await waitFor(() => expect(queue.size).toBe(0))\n})\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "truthy",
+      "rule": "test.weak-assert",
+      "kind": "slop",
+      "note": "an assertion that passes for almost any value",
+      "files": {
+        "src/job.test.ts": "it('fails the job', async () => {\n  const result = await run()\n  expect(result).toBeTruthy()\n})\n"
+      },
+      "expect": [
+        {
+          "path": "src/job.test.ts",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "exact",
+      "rule": "test.weak-assert",
+      "kind": "near-miss",
+      "note": "asserts the exact outcome",
+      "files": {
+        "src/job.test.ts": "it('fails the job', async () => {\n  const result = await run()\n  expect(result).toEqual({ status: 'FAILED' })\n})\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "assert-ok-expression",
+      "rule": "test.weak-assert",
+      "kind": "near-miss",
+      "note": "assert.ok on a comparison names the condition",
+      "files": {
+        "src/job.test.ts": "it('fails the job', async () => {\n  const result = await run()\n  assert.ok(result.status === 'FAILED')\n})\n"
+      },
+      "expect": []
+    }
+  ]
+}

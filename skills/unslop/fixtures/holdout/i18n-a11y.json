@@ -1,0 +1,21 @@
+{
+  "domain": "i18n-a11y",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "split-t",
+      "rule": "i18n.utc-today",
+      "kind": "slop",
+      "note": "split on T is the same UTC date",
+      "files": {
+        "src/ui/day.ts": "const day = new Date().toISOString().split('T')[0]\nexport { day }\n"
+      },
+      "expect": [
+        {
+          "path": "src/ui/day.ts",
+          "line": 1
+        }
+      ]
+    }
+  ]
+}

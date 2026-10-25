@@ -1,0 +1,31 @@
+{
+  "domain": "copy",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "seamlessly",
+      "rule": "copy.filler-words",
+      "kind": "slop",
+      "note": "filler in a locale folder",
+      "files": {
+        "locales/en.json": "{\n  \"sync\": \"Your files sync seamlessly\"\n}\n"
+      },
+      "expect": [
+        {
+          "path": "locales/en.json",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "summary-key",
+      "rule": "copy.generic-heading",
+      "kind": "near-miss",
+      "note": "a summary field that is data, not a heading",
+      "files": {
+        "locales/en.json": "{\n  \"summaryCount\": \"{count} items\"\n}\n"
+      },
+      "expect": []
+    }
+  ]
+}

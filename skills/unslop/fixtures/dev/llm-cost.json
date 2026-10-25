@@ -1,0 +1,115 @@
+{
+  "domain": "llm-cost",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "raw-sdk",
+      "rule": "cost.direct-sdk",
+      "kind": "slop",
+      "note": "a provider SDK used outside the metered client",
+      "files": {
+        "src/features/summary.ts": "import Anthropic from '@anthropic-ai/sdk'\nconst client = new Anthropic()\nexport { client }\n"
+      },
+      "expect": [
+        {
+          "path": "src/features/summary.ts",
+          "line": 1
+        },
+        {
+          "path": "src/features/summary.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "metered",
+      "rule": "cost.direct-sdk",
+      "kind": "near-miss",
+      "note": "goes through the metered client",
+      "files": {
+        "src/features/summary.ts": "import { metered } from '../lib/llm-client'\nconst summarize = (text) => metered.complete({ feature: 'summary', text })\nexport { summarize }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "the-client-itself",
+      "rule": "cost.direct-sdk",
+      "kind": "near-miss",
+      "note": "the metered client is the one place allowed to import the SDK",
+      "files": {
+        "src/lib/llm-client.ts": "import Anthropic from '@anthropic-ai/sdk'\nconst raw = new Anthropic()\nexport { raw }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "catch-allow",
+      "rule": "cost.fail-open-gate",
+      "kind": "slop",
+      "note": "the spend gate allows everything when its check fails",
+      "files": {
+        "src/billing/quota-check.ts": "async function canSpend(orgId) {\n  try {\n    return await ledger.hasCredit(orgId)\n  } catch (err) {\n    return true\n  }\n}\nexport { canSpend }\n"
+      },
+      "expect": [
+        {
+          "path": "src/billing/quota-check.ts",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "catch-deny",
+      "rule": "cost.fail-open-gate",
+      "kind": "near-miss",
+      "note": "fails closed",
+      "files": {
+        "src/billing/quota-check.ts": "async function canSpend(orgId) {\n  try {\n    return await ledger.hasCredit(orgId)\n  } catch (err) {\n    return false\n  }\n}\nexport { canSpend }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "not-a-gate",
+      "rule": "cost.fail-open-gate",
+      "kind": "near-miss",
+      "note": "the same shape in UI code",
+      "files": {
+        "src/ui/toggle.ts": "function readPref() {\n  try {\n    return JSON.parse(localStorage.getItem('pref'))\n  } catch (err) {\n    return true\n  }\n}\nexport { readPref }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "allow-default",
+      "rule": "cost.allow-default",
+      "kind": "slop",
+      "note": "missing plan data means unlimited spend",
+      "files": {
+        "src/billing/limits.ts": "const allowOverage = (plan) => plan.allowOverage ?? true\nexport { allowOverage }\n"
+      },
+      "expect": [
+        {
+          "path": "src/billing/limits.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "deny-default",
+      "rule": "cost.allow-default",
+      "kind": "near-miss",
+      "note": "missing data denies",
+      "files": {
+        "src/billing/limits.ts": "const allowOverage = (plan) => plan.allowOverage ?? false\nexport { allowOverage }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "ui-default",
+      "rule": "cost.allow-default",
+      "kind": "near-miss",
+      "note": "a UI default",
+      "files": {
+        "src/ui/panel.ts": "const visible = (opts) => opts.show ?? true\nexport { visible }\n"
+      },
+      "expect": []
+    }
+  ]
+}

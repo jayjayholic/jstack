@@ -1,0 +1,146 @@
+{
+  "domain": "security",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "regexp-input",
+      "rule": "sec.regexp-from-input",
+      "kind": "slop",
+      "note": "user text compiled as a regex (ReDoS, wrong matches)",
+      "files": {
+        "src/api/search.ts": "const matcher = (req) => new RegExp(req.query.q, 'i')\nexport { matcher }\n"
+      },
+      "expect": [
+        {
+          "path": "src/api/search.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "escaped",
+      "rule": "sec.regexp-from-input",
+      "kind": "near-miss",
+      "note": "escaped first",
+      "files": {
+        "src/api/search.ts": "const matcher = (req) => new RegExp(escapeRegExp(req.query.q), 'i')\nexport { matcher }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "literal",
+      "rule": "sec.regexp-from-input",
+      "kind": "near-miss",
+      "note": "a literal pattern",
+      "files": {
+        "src/api/slug.ts": "const SLUG = new RegExp('^[a-z0-9-]+$')\nexport { SLUG }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "password-in-url",
+      "rule": "sec.password-in-command",
+      "kind": "slop",
+      "note": "a password in a committed command line",
+      "files": {
+        "scripts/backup.sh": "#!/usr/bin/env bash\npg_dump postgres://admin:hunter2pass@db.internal:5432/app > dump.sql\n"
+      },
+      "expect": [
+        {
+          "path": "scripts/backup.sh",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "env-url",
+      "rule": "sec.password-in-command",
+      "kind": "near-miss",
+      "note": "the URL comes from the environment",
+      "files": {
+        "scripts/backup.sh": "#!/usr/bin/env bash\npg_dump \"$DATABASE_URL\" > dump.sql\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "placeholder",
+      "rule": "sec.password-in-command",
+      "kind": "near-miss",
+      "note": "a variable placeholder in the URL",
+      "files": {
+        "scripts/backup.sh": "#!/usr/bin/env bash\npg_dump \"postgres://admin:${PGPASSWORD}@db.internal:5432/app\" > dump.sql\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "log-error-object",
+      "rule": "sec.raw-error-log",
+      "kind": "slop",
+      "note": "the whole error object (with request config and headers) goes to the logs",
+      "files": {
+        "src/api/pay.ts": "async function pay(order) {\n  try {\n    return await gateway.charge(order)\n  } catch (err) {\n    console.error(err)\n    throw err\n  }\n}\nexport { pay }\n"
+      },
+      "expect": [
+        {
+          "path": "src/api/pay.ts",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "id": "log-code",
+      "rule": "sec.raw-error-log",
+      "kind": "near-miss",
+      "note": "logs a code and a message",
+      "files": {
+        "src/api/pay.ts": "async function pay(order) {\n  try {\n    return await gateway.charge(order)\n  } catch (err) {\n    console.error('charge failed', { code: err.code })\n    throw err\n  }\n}\nexport { pay }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "log-result",
+      "rule": "sec.raw-error-log",
+      "kind": "near-miss",
+      "note": "logging a computed value",
+      "files": {
+        "src/api/count.ts": "function report(count) {\n  console.log(count)\n}\nexport { report }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "all-interfaces",
+      "rule": "sec.public-port-bind",
+      "kind": "slop",
+      "note": "the database port is published on every interface",
+      "files": {
+        "docker-compose.yml": "services:\n  db:\n    image: postgres:16\n    ports:\n      - \"5432:5432\"\n"
+      },
+      "expect": [
+        {
+          "path": "docker-compose.yml",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "id": "loopback",
+      "rule": "sec.public-port-bind",
+      "kind": "near-miss",
+      "note": "bound to loopback",
+      "files": {
+        "docker-compose.yml": "services:\n  db:\n    image: postgres:16\n    ports:\n      - \"127.0.0.1:5432:5432\"\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "expose",
+      "rule": "sec.public-port-bind",
+      "kind": "near-miss",
+      "note": "container network only",
+      "files": {
+        "docker-compose.yml": "services:\n  db:\n    image: postgres:16\n    expose:\n      - \"5432\"\n"
+      },
+      "expect": []
+    }
+  ]
+}
