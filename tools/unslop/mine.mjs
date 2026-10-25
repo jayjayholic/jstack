@@ -151,9 +151,12 @@ function main(argv) {
   const repo = path.resolve(get('--repo') ?? '.')
   let res
   try { res = mine({ repo, since: get('--since') ?? '14.days', transcripts, min: Number(get('--min') ?? 3) }) } catch (e) { console.error(e.message); return 2 }
-  const out = get('--out') ?? path.join(repo, '.jstack', 'local', 'retro', `${new Date().toISOString().slice(0, 10)}.json`)
+  const d = new Date()
+  const localDay = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const out = get('--out') ?? path.join(repo, '.jstack', 'local', 'retro', `${localDay}.json`)
   fs.mkdirSync(path.dirname(out), { recursive: true })
   fs.writeFileSync(out, JSON.stringify(res, null, 2) + '\n')
+  // unslop-ignore: perf.log-whole-payload --json prints the result on purpose; it is redacted gists and counts
   if (argv.includes('--json')) { console.log(JSON.stringify(res, null, 2)); return 0 }
   const m = res.metrics
   console.log(`since ${res.since}: ${m.fixes} fix / ${m.feats} feat commit(s), late-fix ratio ${m.lateFixRatio == null ? 'n/a' : m.lateFixRatio.toFixed(2)}, median ${m.medianEscapeDays == null ? 'n/a' : m.medianEscapeDays.toFixed(1)} day(s) from change to fix, ${m.transcriptReports} report(s) from transcripts`)
