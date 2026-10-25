@@ -2,6 +2,19 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25 (evening): cleanup by owner, forgotten browsers get closed, and hooks that can't crash a session
+
+**What:**
+- Cleanup now kills by ownership, not by worktree. New `hooks/jstack-calls.mjs` records every Bash/PowerShell call per agent (PreToolUse opens a window, a new PostToolUse hook closes it). Claude starts one shell per call as a direct child of the CLI, and a Bash shell's command line carries the command text, so each shell belongs to exactly one call; everything under it belongs to that agent. Processes whose launcher died count only when no other agent's call could have started them, and never the lock/RAM helpers. Unknown or ambiguous means nobody's.
+- An agent that stops with its own background work in flight (the stop payload's `background_tasks`, or its background shells still alive) is paused, not done: nothing is cleaned until it stops with nothing in flight. Logged as `cleanup-skip`.
+- New `hooks/jstack-browsers.mjs`: on SubagentStop/Stop, closes the Playwright/automation browsers the agent's own calls started (CDP `Browser.close` when there's a debugging port, else WM_CLOSE/SIGTERM, then the tree after 5 s). Only a browser with a debugging pipe/port on a non-default profile counts: your own Chrome and the Claude in Chrome browser are out of reach. Opt in per project with `"browsers": { "enabled": true }`.
+- Keep one open on purpose: `jstack-guards.mjs keep-browser [pid] --reason "..."` writes `~/.jstack/keep-browser/<pid>` (the browser's or its launcher's pid); markers expire after 1 hour.
+- `jstack-guards.mjs browser-watch` (`--install` for the Windows Startup folder, `"browsers": { "watch": true }` to switch it on): every 60 s, closes orphaned automation browsers and those of agents that already stopped, after a 10 min grace.
+- `hooks/run-hook.mjs`: every hook goes through it. It imports the guards dynamically, so any crash, even a syntax error, exits 0 silently and logs a `hook-crash` line.
+- `hook-report.mjs` shows waits, browser closures (and kept ones) and hook crashes.
+
+**Why:** the old cleanup matched any process whose command line named the agent's worktree. It killed an agent's own `next build`, its `run-capped.ps1` and the RAM clean while the agent was only waiting on that background build (twice, and the build had to start over), and an Explore subagent that stopped took its parent's shells in the shared worktree down with it. Separately, an agent left a Playwright window open after it had seen what it needed, and the windows kept piling up. And a half-written hook file broke every Stop hook on the machine for a minute, because the plugin runs straight from the checkout. Measured on this machine: attribution by shell text picked the right agent in every live run; Chrome for Testing ignores WM_CLOSE, so pipe browsers end up force-closed after 5 s, while port browsers close cleanly over CDP. Unverified: Linux/macOS process groups. The 32 GB laptop would like it noted that it never asked for twelve tabs of "about:blank".
+
 ## 2026-10-25: the RAM clean runs itself, worktrees opt out with one command, and a night of train lessons
 
 **What:**

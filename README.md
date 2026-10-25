@@ -154,8 +154,12 @@ skills/research/         skills/prototype/         | what /wayfinder calls, also
 skills/domain-modeling/   | so nothing else needs installing. setup-matt-pocock-skills
 skills/setup-matt-pocock-skills/ /  tells wayfinder where your issue tracker lives
 hooks/
-  hooks.json             the guard hooks (PreToolUse, SubagentStop, Stop); no-ops until ~/.jstack/guards.json names your project
-  jstack-guards.mjs      heavy commands only through the lock, no recursive scans over the repo, cleanup when a subagent stops
+  hooks.json             the guard hooks (PreToolUse, PostToolUse, SubagentStop, Stop); no-ops until ~/.jstack/guards.json names your project
+  run-hook.mjs           fail-safe entry: any crash in the hooks (even a syntax error) exits 0 and lands in the guard log
+  jstack-guards.mjs      heavy commands only through the lock, no recursive scans over the repo, cleanup when a subagent stops;
+                         CLI: keep-browser, browser-watch
+  jstack-calls.mjs       which agent's tool call started a process (call windows + the command text in the shell's command line)
+  jstack-browsers.mjs    finds the Playwright/automation browsers an agent left open and closes them (CDP, then the tree)
 skills/simplify/
   README.md              /simplify is built into Claude Code, so this is only a pointer (its licence doesn't allow a copy)
 plugins/jay-claude-switcher/
@@ -189,17 +193,18 @@ Every agent gets its own worktree from `new-worktree.sh`, so eight of them can e
 
 ## Guard hooks (opt-in, per project)
 
-Rules in a skill get read. Rules in a hook get followed. The plugin ships three guards that run inside Claude Code, and they do nothing at all until `~/.jstack/guards.json` lists your project (copy `tools/guards.example.json`). That file lives in your home folder, not in any repo, so your teammates never get them unless they install jstack and write their own.
+Rules in a skill get read. Rules in a hook get followed. The plugin ships four guards that run inside Claude Code, and they do nothing at all until `~/.jstack/guards.json` lists your project (copy `tools/guards.example.json`). That file lives in your home folder, not in any repo, so your teammates never get them unless they install jstack and write their own.
 
 | Guard | When | What it does |
 |---|---|---|
 | heavy-lock | PreToolUse on Bash and PowerShell | Denies `tsc`, `tsgo`, `next build`, `bun/npm/pnpm/yarn run typecheck` or `build`, `turbo build`, and `bun/npm install` unless the command goes through `tc_run`, `heavy_capped` or `heavy_acquire` (your list). The denial tells the agent the exact command to retry with. |
 | scan | PreToolUse on Bash and PowerShell | Denies recursive `grep -r`, `find`, `du`, `ls -R`, `tree` and `Get-ChildItem -Recurse` over a repo root, a `.worktrees` folder, anything above the repo, or `node_modules`. Points to the Grep/Glob tools, `git grep` or LSP. `grep -rn foo src/lib/chat` is fine. |
-| cleanup | SubagentStop (Stop only with `"onStop": true`) | Kills the node, bun, bash, tail and friends whose command line names a worktree the agent worked in and that started after the agent's first command. Never the main checkout, never older processes, never the Claude CLI. |
+| cleanup | SubagentStop (Stop only with `"onStop": true`) | Kills the node, bun, bash, tail and friends that the stopping agent's OWN tool calls started and whose command line names a worktree it worked in. Ownership comes from the process tree: each Bash/PowerShell call is recorded (PreToolUse opens a window, PostToolUse closes it), and the shell Claude starts for that call carries the command text in its command line, so a shell belongs to exactly one call. A parent or sibling agent in the same worktree is never touched; neither is anything that can't be attributed. An agent that stops while its own background work is still in flight (the stop payload's `background_tasks`) is paused, not done, so nothing is cleaned until it stops again with nothing in flight. Lock and RAM-clean helpers are never killed as orphans. |
+| browsers | SubagentStop and Stop (opt in with `"browsers": { "enabled": true }`) | Closes the Playwright/automation browsers the stopping agent's own calls started: CDP `Browser.close` when the browser has a debugging port, else WM_CLOSE/SIGTERM, then the whole tree after 5 s. Only browsers with a debugging pipe/port on a non-default profile count, so your own Chrome and the Claude in Chrome extension's browser are never touched. To leave one open on purpose: `node hooks/jstack-guards.mjs keep-browser [pid] --reason "..."` (or write `~/.jstack/keep-browser/<pid of the browser or its launcher>`); markers expire after 1 hour. A watcher (`browser-watch`, `--install` puts it in the Windows Startup folder; `"browsers": { "watch": true }` at the top of guards.json) closes orphans, browsers whose launcher died, and browsers of agents that already stopped, after a 10 min grace. |
 
-Every block goes to `~/.jstack/guard-log.jsonl` with the agent, the command, the suggested retry, and whether the agent's next call took it. `node tools/hook-report.mjs` (that's `jstack hook-report`) turns it into blocks per day, agents blocked twice or more (a sign one is struggling), and the calls that ignored the advice. The orchestrator reads it once a day.
+Every block, kill, browser closure, wait and hook crash goes to `~/.jstack/guard-log.jsonl`, with the agent, the command, the suggested retry, and whether the agent's next call took it. Hooks run through `run-hook.mjs`: a bug in a guard exits 0 silently and logs a `hook-crash` line instead of erroring in every session on the machine. Develop the hooks in a copy that `hooks.json` doesn't point at, and swap only after `node --check` and the tests pass: the hooks are live in every session the moment the file changes. `node tools/hook-report.mjs` (that's `jstack hook-report`) turns it into blocks per day, agents blocked twice or more (a sign one is struggling), and the calls that ignored the advice. The orchestrator reads it once a day.
 
-Why: one stray `tsc` is 5 to 8 GB, two at once and my laptop is a space heater. A `grep -r` over 185 worktrees with their `node_modules` filled the file cache and nobody owned it. And agents end, their `next start` and `tail -f` don't.
+Why: one stray `tsc` is 5 to 8 GB, two at once and my laptop is a space heater. A `grep -r` over 185 worktrees with their `node_modules` filled the file cache and nobody owned it. And agents end, their `next start` and `tail -f` don't. Neither did their Playwright windows, which I kept finding behind my editor like socks behind a radiator. The first cleanup also matched by worktree path instead of by owner, so it killed a build an agent was waiting on (twice) and an Explore subagent took out its parent's shells on the way out. Hence the ownership rewrite.
 
 Needs `node` on the PATH. The cleanup's Linux/macOS branch is UNVERIFIED; only Windows has run it. Tests: `node --test hooks/jstack-guards.test.mjs`.
 
