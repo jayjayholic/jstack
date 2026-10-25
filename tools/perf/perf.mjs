@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Machine performance monitor: install the collector, query the store, draw the panel, run the optimize loop.
 //   perf.mjs install [--interval 60] [--task JstackPerf] [--lock-dirs a;b] [--queue file] [--mem-map file]
+//                    [--warden-mode act|dry|off] [--ram-clean-task T] [--docker-project P --docker-busy regex] [--protect regex]
 //   perf.mjs uninstall [--purge]          remove the task and stop the collector (--purge also deletes the data)
 //   perf.mjs status [--json]              collector alive?, last tick, its own measured cost, store size
 //   perf.mjs top [--since 60m] [--until t] [--by name|agent|wt|kind|both] [--sort cpu|mem] [--limit 15] [--json]
@@ -10,9 +11,15 @@
 //   perf.mjs patterns [--since 24h]       grep storms, duplicate typechecks, parallel builds, long-lived browsers, idle servers
 //   perf.mjs panel [--since 24h] [--out file] [--open]
 //   perf.mjs bench --consumer X --a "<cmd>" --b "<cmd>" [--runs 3] [--same output|exit] [--cwd dir] [--alt name] [--source url] [--record]
-//   perf.mjs ledger [list|add --consumer X --verdict adopt|reject|in-progress-elsewhere|no-alternative ...] [--json]
+//   perf.mjs ledger [list|add --consumer X --verdict adopt|reject|at-floor|human-decision|in-progress-elsewhere|no-alternative ...]
 //   perf.mjs csv [--since 24h]            per tick and group, for Grafana's CSV data source or a spreadsheet
 //   perf.mjs finalize                     compress past days, write rollups, apply retention (the collector does it daily)
+//   perf.mjs ensure                       idempotent: collector + warden running, else start (or install) it; one line
+//   perf.mjs actions [--since 24h]        what the warden did (kills, RAM cleans, notices, docker stops, optimizer runs)
+//   perf.mjs notices                      hung tests the warden flagged and left running
+//   perf.mjs optimizer due|start|finish   at most one optimizer agent: due on a pending trigger or every 30 min
+//   perf.mjs floor [--since 24h] [--write]   the load floor with the agents' legitimate work, and how far above it we are
+//   perf.mjs search-exclude [--add a;b] [--dry-run]   keep dev roots out of Windows Search indexing
 // Times: 15m, 2h, 7d (ago) or anything Date.parse reads. Store: ~/.jstack/perf (JSTACK_PERF_DIR).
 import fs from 'node:fs'
 import path from 'node:path'
@@ -22,6 +29,7 @@ import { fileURLToPath } from 'node:url'
 import { top, spikes, patterns, localDay } from './lib.mjs'
 import { storeDir, loadConfig, saveConfig, readFrames, readLines, finalizeDays, loadAgents, labeler, appendLedger, readLedger, dirSizeMb } from './store.mjs'
 import { buildPanelData, renderPanel } from './panel.mjs'
+import { cmdActions, cmdNotices, cmdOptimizer, cmdFloor, cmdEnsure, cmdSearchExclude } from './ops.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIR = storeDir()
@@ -276,6 +284,12 @@ function cmdInstall(args) {
   if (args.task) cfg.taskName = args.task
   if (args['lock-dirs']) cfg.lockDirs = String(args['lock-dirs']).split(/[;,]/).filter(Boolean)
   if (args.queue) cfg.queueFile = args.queue
+  const w = cfg.warden = { ...(cfg.warden ?? {}) }
+  if (args['warden-mode']) w.mode = args['warden-mode']
+  if (args['ram-clean-task']) w.ramCleanTask = args['ram-clean-task']
+  if (args['docker-project']) w.docker = { ...(w.docker ?? {}), project: args['docker-project'] }
+  if (args['docker-busy']) w.docker = { ...(w.docker ?? {}), busyPattern: args['docker-busy'] }
+  if (args.protect) w.protect = args.protect
   for (const k of ['raw-days', 'five-min-days', 'hour-days']) if (args[k]) cfg[{ 'raw-days': 'rawDays', 'five-min-days': 'fiveMinDays', 'hour-days': 'hourDays' }[k]] = +args[k]
   const app = path.join(DIR, 'app')
   fs.mkdirSync(path.join(app, 'perf'), { recursive: true })
@@ -297,6 +311,8 @@ function cmdInstall(args) {
   const exe = path.join(DIR, 'bin', 'perf-snap.exe')
   const c = spawnSync(csc, ['-nologo', '-optimize+', '-platform:x64', `-out:${exe}`, path.join(HERE, 'perf-snap.cs')], { encoding: 'utf8', windowsHide: true })
   if (c.status !== 0) throw new Error(`csc failed: ${c.stdout}${c.stderr}`)
+  const c2 = spawnSync(csc, ['-nologo', '-optimize+', '-platform:x64', `-out:${path.join(DIR, 'bin', 'search-scope.exe')}`, path.join(HERE, 'search-scope.cs')], { encoding: 'utf8', windowsHide: true })
+  if (c2.status !== 0) throw new Error(`csc failed: ${c2.stdout}${c2.stderr}`)
   const launcher = path.join(app, 'launch.vbs')
   const vb = s => s.replace(/"/g, '""')
   fs.writeFileSync(launcher, [
@@ -327,6 +343,7 @@ const COMMANDS = {
   top: a => cmdTop(a), agents: a => cmdTop(a, 'agent'), spikes: cmdSpikes, at: cmdAt, patterns: cmdPatterns, status: cmdStatus, panel: cmdPanel,
   csv: cmdCsv, bench: cmdBench, ledger: cmdLedger, install: cmdInstall, uninstall: cmdUninstall,
   finalize: () => console.log(JSON.stringify(finalizeDays(Date.now(), DIR))),
+  ensure: a => cmdEnsure(a, cmdInstall), actions: cmdActions, notices: cmdNotices, optimizer: cmdOptimizer, floor: cmdFloor, 'search-exclude': cmdSearchExclude,
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
@@ -334,7 +351,7 @@ if (isMain) {
   const args = parseArgs(process.argv.slice(2))
   const fn = COMMANDS[args._[0]]
   if (!fn) {
-    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 17).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 23).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
     process.exit(args._[0] ? 2 : 0)
   }
   try { fn(args) } catch (e) { console.error(`perf: ${e.message}`); process.exit(1) }
