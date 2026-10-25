@@ -174,6 +174,14 @@ test('act mode kills and logs what, why and the metric before', () => {
   assert.deepEqual(k.killed, [80])
 })
 
+test('the same orphan killed three times in 2 h raises a respawning-orphan trigger', () => {
+  const state = {}
+  const triggers = () => runOnce({ state, procs: [proc(90 + Object.keys(state.killedCmds ?? {}).length, 'grep.exe', { cmd: 'grep -r loop' })] }).written.filter(([f, r]) => f === 'triggers.jsonl' && r.type === 'respawning-orphan')
+  assert.equal(triggers().length, 0)
+  assert.equal(triggers().length, 0)
+  assert.equal(triggers().length, 1)
+})
+
 test('dry mode logs the same decision without killing; off does nothing', () => {
   const dry = runOnce({ warden: { mode: 'dry' } })
   assert.deepEqual(dry.killed, [])

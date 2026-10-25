@@ -243,6 +243,11 @@ function runWarden({ now, procs, parent, record, cfg, state, dir, io = {} }) {
       const killed = act ? (io.kill ?? killTree)(k.tree) : []
       const r = log({ action: 'kill', id: `k${now}-${k.pid}`, target: { pid: k.pid, name: k.name, kind: k.kind, wt: k.wt, ageMin: k.ageMin, cmd: (k.cmd ?? '').slice(0, 200) }, tree: k.tree, killed, why: k.why, before: { availMb: record.m.availMb, treePrivMb: k.privMb, treeCpu: k.cpu } })
       if (act && killed.length) (state.pendingEffects = state.pendingEffects ?? []).push({ id: r.id, of: 'kill', availMb: record.m.availMb })
+      // The same command orphaned again and again: something keeps launching it, and killing it only caps the damage.
+      const ck = `${k.name}|${(k.cmd ?? '').slice(0, 120)}`
+      const times = [...((state.killedCmds ?? {})[ck] ?? []), now].filter(t => now - t < 2 * 3600000)
+      state.killedCmds = { ...(state.killedCmds ?? {}), [ck]: times }
+      if (times.length >= 3) trigger({ type: 'respawning-orphan', key: ck, detail: `${k.name} killed ${times.length} times in 2 h, its launcher keeps starting it: ${(k.cmd ?? '').slice(0, 160)}` })
     }
   })
 
