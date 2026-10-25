@@ -5,7 +5,8 @@
 //   node scan.mjs --root <dir>                  every file in a small folder (fixtures)
 // Options: --domain a,b  --rule id[,id]  --repo <dir>  --json (JSONL)  --out <file>  --fail-on-find (exit 1 on hits)
 // Rules come from skills/eng-*/checks.json and .jstack/unslop.json. Engines: regex and script run here; eyes rules
-// go to review agents; measure rules need a running target; anything else is printed as "not checked", never skipped.
+// go to review agents; measure rules need a running target; semgrep and ast-grep rules run through adapters.mjs when
+// the tool is installed; anything else is printed as "not checked", never skipped.
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -13,6 +14,7 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { loadRules, loadProjectConfig, loadProjectConfigAt, baseCommit, readAtRef, matchAny, ignoreGlobs } from './rules.mjs'
 import { SCRIPTS } from './scripts.mjs'
+import { runAdapter, ADAPTED } from './adapters.mjs'
 import { enclosingSymbol, normalize, hashText, langOf } from '../memory/symbols.mjs'
 
 const MAX_BYTES = 1 << 20
@@ -241,14 +243,23 @@ function scan(opts = {}) {
   const candidates = [], suppressed = [], notChecked = [], eyesRules = []
   for (const rule0 of rules) {
     let rule = rule0
-    if (!['regex', 'script', 'eyes', 'measure'].includes(rule.engine)) {
+    let adapted = null
+    if (ADAPTED.has(rule.engine)) {
+      adapted = runAdapter(rule, ctx, f => ruleApplies(rule, f, ignore), opts.adapterOptions)
+      if (adapted.notChecked) {
+        if (rule.fallback?.engine === 'regex' || rule.fallback?.engine === 'eyes') { rule = { ...rule, ...rule.fallback }; adapted = null }
+        else { notChecked.push({ rule: rule.id, reason: adapted.notChecked }); continue }
+      }
+    }
+    if (!adapted && !['regex', 'script', 'eyes', 'measure'].includes(rule.engine)) {
       if (rule.fallback?.engine === 'regex' || rule.fallback?.engine === 'eyes') rule = { ...rule, ...rule.fallback }
       else { notChecked.push({ rule: rule.id, reason: `not checked: ${rule.engine} engine has no adapter here; run it in CI` }); continue }
     }
-    if (rule.engine === 'eyes') { eyesRules.push(rule.id); continue }
+    if (!adapted && rule.engine === 'eyes') { eyesRules.push(rule.id); continue }
     if (rule.engine === 'measure') { notChecked.push({ rule: rule.id, reason: 'measure rule: needs a running target, only in /unslop' }); continue }
     let raw = []
-    if (rule.engine === 'regex') {
+    if (adapted) raw = adapted.hits
+    else if (rule.engine === 'regex') {
       try { new RegExp(rule.pattern, (rule.flags ?? '').replace(/[gm]/g, '')) } catch (e) { notChecked.push({ rule: rule.id, reason: `not checked: bad pattern (${e.message})` }); continue }
       for (const f of ctx.files) if (ruleApplies(rule, f.path, ignore)) for (const h of regexHits(rule, f)) raw.push({ ...h, path: f.path, text: f.text })
     } else {
