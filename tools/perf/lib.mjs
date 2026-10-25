@@ -238,6 +238,8 @@ function buildTick(prev, cur, { at, procs, machine, locks = [], self = null, not
     const cpu = prev ? cpuPct(prev.cpu.get(key), p.cpu, dt, { createdAfterPrev, cores }) : 0
     const prevIo = prev?.io.get(key)
     const io = prev && dt > 0 ? (prevIo === undefined ? (createdAfterPrev ? p.rd + p.wr : 0) : Math.max(0, p.rd + p.wr - prevIo)) / dt / 1024 : 0
+    p.cpuNow = cpu
+    p.ageMin = Number.isFinite(startedMs) ? Math.max(0, Math.round((at - startedMs) / 60000)) : null
     if (p.pid === 0 || /^(idle|system idle process)$/i.test(p.name)) continue
     sumCpu += cpu
     const gk = `${p.name}\u0000${p.kind}\u0000${p.wt}`
@@ -245,7 +247,7 @@ function buildTick(prev, cur, { at, procs, machine, locks = [], self = null, not
     if (!g) { g = { name: p.name, kind: p.kind, wt: p.wt, n: 0, cpu: 0, priv: 0, ws: 0, io: 0, born: 0 }; groups.set(gk, g) }
     g.n++; g.cpu += cpu; g.priv += p.priv; g.ws += p.ws; g.io += io
     if (createdAfterPrev) g.born++
-    const ageMin = Number.isFinite(startedMs) ? Math.max(0, Math.round((at - startedMs) / 60000)) : null
+    const ageMin = p.ageMin
     if (cpu >= notableCpu || p.priv >= notableMb * MB) notable.push([p.pid, p.name, p.kind, p.wt, r1(cpu), Math.round(p.priv / MB), ageMin, redactCmd(p.cmd, 200)])
   }
   const g = []

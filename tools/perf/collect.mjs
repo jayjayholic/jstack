@@ -11,6 +11,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { parseSnap, parsePs, buildParents, attribute, buildTick, localDay, redactCmd } from './lib.mjs'
 import { storeDir, loadConfig, appendTick, finalizeDays, loadAgents, saveAgents } from './store.mjs'
+import { runWarden } from './warden.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIR = storeDir()
@@ -140,6 +141,21 @@ function refreshAgents(cfg, seenWts) {
   child.on('error', e => { agentsBusy = false; log(`agents: ${e.message}`) })
 }
 
+const WARDEN_STATE = () => path.join(DIR, 'warden-state.json')
+function loadWardenState() {
+  try {
+    const s = JSON.parse(fs.readFileSync(WARDEN_STATE(), 'utf8'))
+    return { ...s, noticed: new Set(s.noticed ?? []), knownNames: s.knownNames ? new Set(s.knownNames) : null, activity: new Map() }
+  } catch { return {} }
+}
+function saveWardenState(w) {
+  // activity, the rolling windows, startedAt and the docker observation restart with the process: an idle verdict
+  // must come from what this run saw.
+  const { activity, window, machineWindow, startedAt, docker, pendingEffects, ...rest } = w
+  void activity; void window; void machineWindow; void startedAt; void docker; void pendingEffects
+  try { fs.writeFileSync(WARDEN_STATE(), JSON.stringify({ ...rest, noticed: [...(w.noticed ?? [])].slice(-500), knownNames: w.knownNames ? [...w.knownNames] : null })) } catch (e) { log(`warden state: ${e.message}`) }
+}
+
 async function main() {
   let cfg = loadConfig(DIR)
   if (!claimInstance(cfg.intervalSec)) return
@@ -147,6 +163,7 @@ async function main() {
   if (IS_WIN && !fs.existsSync(snapExe())) { log(`missing ${snapExe()}: run perf.mjs install`); process.exit(1) }
   try { finalizeDays(Date.now(), DIR, cfg) } catch (e) { log(`finalize: ${e.message}`) }
   let state = null
+  const warden = loadWardenState()
   let details = new Map()
   let day = localDay(Date.now())
   let cpu0 = process.cpuUsage()
@@ -155,6 +172,7 @@ async function main() {
   const tick = async () => {
     const started = Date.now()
     try {
+      cfg = loadConfig(DIR)
       if (+fs.readFileSync(pidFile, 'utf8').trim() !== process.pid) { log('another collector took over; exiting'); process.exit(0) }
       const snap = IS_WIN ? await snapshotWindows(new Set(details.keys())) : snapshotPosix(new Set(details.keys()))
       const at = Date.now()
@@ -165,7 +183,8 @@ async function main() {
         if (d) live.set(key, d.redacted ? d : { cwd: d.cwd, cmd: redactCmd(d.cmd, 400), redacted: true })
       }
       details = live
-      const procs = attribute(snap.procs, details, buildParents(snap.procs))
+      const parents = buildParents(snap.procs)
+      const procs = attribute(snap.procs, details, parents)
       const me = snap.procs.find(p => p.pid === process.pid)
       const u = process.cpuUsage(cpu0)
       const wall = (at - wall0) / 1000
@@ -177,7 +196,15 @@ async function main() {
         tickMs: at - started,
       } : null
       const { record, state: next } = buildTick(state, null, { at, procs, machine: snap.machine, locks: readLocks(lockDirs(cfg), at), self })
-      if (state) appendTick(record, DIR)
+      if (state) {
+        appendTick(record, DIR)
+        // The warden acts on this tick; a failure there is logged and never stops the collector.
+        const w0 = process.cpuUsage()
+        try { runWarden({ now: at, procs, parent: parents, record, cfg, state: warden, dir: DIR }) } catch (e) { log(`warden: ${e.message}`) }
+        const wu = process.cpuUsage(w0)
+        warden.cpuMs = Math.round((wu.user + wu.system) / 1000)
+        saveWardenState(warden)
+      }
       state = next
       fs.utimesSync(pidFile, new Date(), new Date())
       refreshAgents(cfg, new Set(procs.map(p => p.wt)))
