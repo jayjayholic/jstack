@@ -5,6 +5,8 @@
 //
 //   node scripts/worktree-deps.mjs deps [--base <ref>]   link node_modules to the shared store, or install its own
 //   node scripts/worktree-deps.mjs generated              link the generated folder to the shared store, or generate
+//   node scripts/worktree-deps.mjs own <deps|generated>   opt this worktree out: its own copy, kept on later runs
+//   node scripts/worktree-deps.mjs share <deps|generated> opt back in and link the shared store again
 //   node scripts/worktree-deps.mjs detach <path>          turn a linked path back into an own, empty one
 //   node scripts/worktree-deps.mjs status                 what this worktree links to
 //   node scripts/worktree-deps.mjs prune                  delete stores no worktree links to any more
@@ -14,7 +16,9 @@
 // NEVER remove a linked worktree with a bare `git worktree remove` or `rm -rf` on Windows: Git for Windows 2.40
 // followed the junctions and deleted the shared store's files (seen 2026-10-25). `remove` unlinks them first.
 //
-// Shared by default; an own copy only when this branch changed the input versus its merge-base with <base>:
+// Shared by default, and each agent decides: `own <thing>` gives this worktree its own copy (the store is only read,
+// never written) and every later `deps`/`generated` run keeps it, until `share <thing>`. Without that choice an own
+// copy is made only when this branch changed the input versus its merge-base with <base>:
 // dependency fields of every package.json, lockfiles, bunfig.toml, patches/ for node_modules; uncommitted edits
 // under the codegen inputs for the generated folder. Stores are built once, under a lock, and never edited.
 // Workspace packages always link to THIS worktree's own sources, never the store's.
@@ -289,8 +293,30 @@ const linkDeps = (root, store, hash) => {
 	}
 }
 
+const ownFile = (root) => path.join(git(root, 'rev-parse', '--absolute-git-dir').trim(), 'worktree-deps-own')
+const ownedThings = (root) => (fs.existsSync(ownFile(root)) ? lines(fs.readFileSync(ownFile(root), 'utf8')) : [])
+const setOwned = (root, thing, owned) => {
+	const things = new Set(ownedThings(root))
+	if (owned) things.add(thing)
+	else things.delete(thing)
+	fs.writeFileSync(ownFile(root), [...things].map((item) => `${item}\n`).join(''))
+}
+
+const ownDeps = (root) => {
+	const linked = nodeModulesDirs(root).filter((dir) => isLinkedNodeModules(path.join(root, dir)))
+	if (linked.length === 0 && fs.existsSync(path.join(root, 'node_modules'))) return console.log("worktree-deps: node_modules is already this worktree's own")
+	for (const dir of linked) removeLinkedTree(path.join(root, dir))
+	run(CONFIG.install, root)
+	ramClean('after install')
+	console.log("worktree-deps: node_modules is this worktree's own now (the shared store was not touched)")
+}
+
 const deps = (base) => {
 	const root = worktreeRoot()
+	if (ownedThings(root).includes('deps')) {
+		console.log('worktree-deps: this worktree chose its own node_modules (worktree-deps share deps to link the store again)')
+		return ownDeps(root)
+	}
 	if (samePath(root, mainCheckout(root))) {
 		console.log('worktree-deps: the main checkout keeps its own install')
 		run(CONFIG.install, root)
@@ -343,9 +369,27 @@ const generatedMatches = (worktree, key) => {
 	return fs.statSync(dir).mtimeMs > lastInputChange
 }
 
+const ownGenerated = (root) => {
+	const local = path.join(root, CONFIG.generatedDir)
+	if (isLink(local)) {
+		const source = fs.realpathSync(local)
+		const copy = `${local}.own-${process.pid}`
+		fs.cpSync(source, copy, { recursive: true })
+		fs.rmSync(local, { force: true })
+		fs.renameSync(copy, local)
+		return console.log(`worktree-deps: ${CONFIG.generatedDir} is this worktree's own copy now (copied from the store, which was not touched)`)
+	}
+	if (!fs.existsSync(local) || !isCompleteGenerated(root, local)) run(CONFIG.codegen, root)
+	console.log(`worktree-deps: ${CONFIG.generatedDir} is this worktree's own`)
+}
+
 const generated = () => {
 	const root = worktreeRoot()
 	if (!CONFIG.codegen) return console.log('worktree-deps: no codegen command configured')
+	if (CONFIG.generatedDir && ownedThings(root).includes('generated')) {
+		console.log(`worktree-deps: this worktree chose its own ${CONFIG.generatedDir} (worktree-deps share generated to link the store again)`)
+		return ownGenerated(root)
+	}
 	if (!CONFIG.generatedDir || CONFIG.codegenInputs.length === 0) return run(CONFIG.codegen, root)
 	const local = path.join(root, CONFIG.generatedDir)
 	const key = codegenKey(root)
@@ -393,6 +437,8 @@ const status = () => {
 	const gen = CONFIG.generatedDir ? path.join(root, CONFIG.generatedDir) : null
 	const nmState = isLinkedNodeModules(nm) ? `shared ${fs.readFileSync(path.join(nm, MARKER), 'utf8').split('\n')[0]}` : fs.existsSync(nm) ? 'own install' : 'missing'
 	const genState = !gen ? 'not shared (no JSTACK_CODEGEN_REUSE_PATHS)' : isLink(gen) ? `shared ${path.basename(fs.realpathSync(gen))}` : fs.existsSync(gen) ? 'own' : 'missing'
+	const owned = ownedThings(root)
+	console.log(`own by choice: ${owned.length ? owned.join(', ') : 'nothing'}`)
 	console.log(`node_modules: ${nmState} (wants ${hashOf(depInputs(workingTreeReader(root), root))})`)
 	console.log(`${CONFIG.generatedDir ?? 'generated'}: ${genState} (wants ${codegenKey(root) ?? 'own: inputs edited'})`)
 }
@@ -457,12 +503,16 @@ const base = baseIndex >= 0 ? rest[baseIndex + 1] : CONFIG.base
 
 if (command === 'deps') deps(base)
 else if (command === 'generated') generated()
-else if (command === 'detach' && rest[0]) detach(rest[0])
+else if ((command === 'own' || command === 'share') && ['deps', 'generated'].includes(rest[0])) {
+	setOwned(worktreeRoot(), rest[0], command === 'own')
+	if (rest[0] === 'deps') deps(base)
+	else generated()
+} else if (command === 'detach' && rest[0]) detach(rest[0])
 else if (command === 'status') status()
 else if (command === 'prune') prune()
 else if (command === 'remove' && rest[0]) remove(rest[0], rest.includes('--delete-branch'))
 else if (command === 'plan') console.log(changedDepFiles(worktreeRoot(), base))
 else {
-	console.error('usage: node worktree-deps.mjs deps [--base <ref>] | generated | detach <path> | status | plan | prune | remove <worktree> [--delete-branch]')
+	console.error('usage: node worktree-deps.mjs deps [--base <ref>] | generated | own <deps|generated> | share <deps|generated> | detach <path> | status | plan | prune | remove <worktree> [--delete-branch]')
 	process.exit(2)
 }

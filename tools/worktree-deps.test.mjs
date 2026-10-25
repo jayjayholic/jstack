@@ -86,6 +86,26 @@ test('detach turns a linked folder back into an empty own one without touching t
 	assert.ok(fs.existsSync(storeFile))
 })
 
+test('own deps gives the worktree its own install, keeps it on later runs, and leaves the store alone', () => {
+	const g = addWorktree('g')
+	deps(g, 'deps', '--base', 'stage')
+	const storeFile = fs.realpathSync(path.join(g, 'node_modules', 'left-pad', 'index.js'))
+	assert.match(deps(g, 'own', 'deps'), /own now/)
+	assert.match(deps(g, 'status'), /own by choice: deps/)
+	assert.match(deps(g, 'status'), /node_modules: own install/)
+	assert.match(deps(g, 'deps', '--base', 'stage'), /chose its own node_modules/)
+	assert.match(deps(g, 'status'), /node_modules: own install/)
+	assert.ok(fs.existsSync(storeFile))
+	assert.match(deps(g, 'share', 'deps', '--base', 'stage'), /linked to shared store/)
+	assert.match(deps(g, 'status'), /own by choice: nothing/)
+})
+
+test('own and share refuse anything but deps or generated', () => {
+	const h = addWorktree('h')
+	assert.throws(() => deps(h, 'own', 'node_modules'), /usage/)
+	assert.throws(() => deps(h, 'share'), /usage/)
+})
+
 test('remove unlinks every junction before git deletes the worktree, so the shared store survives', () => {
 	const f = addWorktree('f')
 	deps(f, 'deps', '--base', 'stage')
