@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// jstack hook-report: what the guard hooks blocked and how agents took it.
+// jstack hook-report: what the guard hooks blocked, what they cleaned up or closed, and how agents took it.
 // Usage: node hook-report.mjs [--days 7] [--log <file>] [--json]
 // Reads the JSONL the hooks write (default ~/.jstack/guard-log.jsonl, or "log" in ~/.jstack/guards.json).
 import fs from 'node:fs'
@@ -28,34 +28,46 @@ const who = r => `${r.agentType ?? 'agent'}:${String(r.agent).slice(0, 8)}`
 const perDay = {}
 const perAgent = {}
 for (const r of rows) {
-  const d = (perDay[day(r)] ??= { blocks: 0, heavy: 0, scan: 0, followed: 0, ignored: 0, agents: new Set(), cleanups: 0, killed: 0 })
+  const d = (perDay[day(r)] ??= { blocks: 0, heavy: 0, scan: 0, followed: 0, ignored: 0, agents: new Set(), cleanups: 0, killed: 0, skips: 0, browsers: 0, kept: 0, crashes: 0 })
   if (r.type === 'block') {
     d.blocks++; d[r.guard === 'scan' ? 'scan' : 'heavy']++; d.agents.add(r.session + r.agent)
     const a = (perAgent[r.session + r.agent] ??= { who: who(r), cwd: r.cwd, blocks: 0, guards: new Set(), last: '' })
     a.blocks++; a.guards.add(r.guard); a.last = r.command
   } else if (r.type === 'next') d[r.followed ? 'followed' : 'ignored']++
   else if (r.type === 'cleanup') { d.cleanups++; d.killed += r.killed?.length ?? 0 }
+  else if (r.type === 'cleanup-skip') d.skips++
+  else if (r.type === 'browser-close') d.browsers++
+  else if (r.type === 'browser-kept' || r.type === 'browser-keep') d.kept++
+  else if (r.type === 'hook-crash') d.crashes++
 }
 const struggling = Object.values(perAgent).filter(a => a.blocks >= 2).sort((a, b) => b.blocks - a.blocks)
 const ignored = rows.filter(r => r.type === 'next' && !r.followed).slice(-10)
+const closures = rows.filter(r => r.type === 'browser-close').slice(-10)
+const crashes = rows.filter(r => r.type === 'hook-crash').slice(-5)
 
 if (args.includes('--json')) {
   console.log(JSON.stringify({
     file, days,
     perDay: Object.fromEntries(Object.entries(perDay).map(([k, v]) => [k, { ...v, agents: v.agents.size }])),
     struggling: struggling.map(a => ({ ...a, guards: [...a.guards] })),
-    ignored,
+    ignored, closures, crashes,
   }, null, 2))
   process.exit(0)
 }
 
 const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '-')
 console.log(`Guard report, last ${days} days (${file})\n`)
-console.log('day         blocks  heavy  scan  agents  next=advice  cleanups(killed)')
+console.log('day         blocks  heavy  scan  agents  next=advice  cleanups(killed)  waited  browsers(kept)  crashes')
 for (const [k, v] of Object.entries(perDay).sort()) {
-  console.log(`${k}  ${String(v.blocks).padStart(6)}  ${String(v.heavy).padStart(5)}  ${String(v.scan).padStart(4)}  ${String(v.agents.size).padStart(6)}  ${pct(v.followed, v.followed + v.ignored).padStart(11)}  ${v.cleanups}(${v.killed})`)
+  console.log(`${k}  ${String(v.blocks).padStart(6)}  ${String(v.heavy).padStart(5)}  ${String(v.scan).padStart(4)}  ${String(v.agents.size).padStart(6)}  ${pct(v.followed, v.followed + v.ignored).padStart(11)}  ${`${v.cleanups}(${v.killed})`.padEnd(16)}  ${String(v.skips).padStart(6)}  ${`${v.browsers}(${v.kept})`.padStart(14)}  ${String(v.crashes).padStart(7)}`)
 }
 console.log(`\nRepeat blocks (same agent blocked 2+ times, a sign it's struggling): ${struggling.length}`)
 for (const a of struggling.slice(0, 15)) console.log(`  ${a.blocks}x ${a.who} [${[...a.guards].join(',')}] ${a.cwd}\n     last: ${String(a.last).slice(0, 140)}`)
 console.log(`\nNext call after a block that did NOT take the advice: ${rows.filter(r => r.type === 'next' && !r.followed).length}`)
 for (const r of ignored) console.log(`  ${r.t.slice(5, 16)} ${who(r)} [${r.guard}] -> ${r.tool}: ${String(r.command ?? '').slice(0, 120)}`)
+console.log(`\nBrowsers closed (last 10): ${rows.filter(r => r.type === 'browser-close').length}`)
+for (const r of closures) console.log(`  ${r.t.slice(5, 16)} ${who(r)} pid ${r.pid} ${r.reason} ${r.how ?? ''} ${String(r.profile ?? '').slice(-60)}`)
+if (crashes.length) {
+  console.log(`\nHook crashes (exited 0, nothing shown to agents): ${rows.filter(r => r.type === 'hook-crash').length}`)
+  for (const r of crashes) console.log(`  ${r.t.slice(5, 16)} [${r.mode}] ${String(r.error).split('\n')[0].slice(0, 140)}`)
+}
