@@ -39,6 +39,10 @@
         "nudge": true,
         "extraRoots": []
       },
+      "branchDelete": {
+        "enabled": true,
+        "protected": []
+      },
       "cleanup": {
         "enabled": true,
         "onStop": false,

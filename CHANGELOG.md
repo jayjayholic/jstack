@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (13): an agent deletes only the branches it created
+
+**What:**
+- `tools/new-worktree.sh`: a branch it creates (the `-b <branch> <base>` path) gets `git config branch.<name>.jstackCreatedBy` (`JSTACK_AGENT`, else `CLAUDE_AGENT_ID`, else `unknown`) and `jstackCreatedAt`. A branch that already exists, locally or on the remote, gets no record.
+- `tools/worktree-deps.mjs` `remove --delete-branch`: deletes the branch only when it has that record and, when the caller's id is known, the record names the caller; on top of the protected list. Otherwise the worktree goes, the branch stays, and it prints `keeping branch <b>: <why>` with the command a human can run.
+- `hooks/jstack-guards.mjs`, new `branch-delete` guard: denies `git branch -d/-D/--delete`, `git push <remote> --delete <b>` / `-d` / `:<b>`, `git update-ref -d refs/heads/<b>` and `worktree-deps.mjs remove <wt> --delete-branch` for a protected branch, a branch without the record, or another agent's branch when both ids are known. The denial says how a human deletes it. Off per project with `"branchDelete": { "enabled": false }`; extra protected names in `"branchDelete": { "protected": [...] }`. Any git error lets the call through; git runs from the hook folder.
+- Tests: `hooks/jstack-guards.test.mjs` +7 (38/38): owned allowed (also with no caller id), unrecorded refused in every form, another agent's refused, protected refused despite a record, the worktree-deps form, non-deletes pass, fails open and opts out. `tools/worktree-deps.test.mjs` +4 (14/14): owned deleted, unrecorded kept, another agent's kept (`JSTACK_AGENT` and `CLAUDE_AGENT_ID`), protected kept despite a record, and `new-worktree.sh` records new branches only.
+
+**Why:** owner rule of 2026-10-26: an agent may only delete branches it created. Before this, any agent could delete any branch that was not on the protected list, including another agent's work in progress or a human's branch.
+
+**Known gap:** `git branch -d` drops the whole `branch.<name>` config section, record included, so delete an owned branch's remote copy first (or both in one command).
+
 ## 2026-10-26 (12): protected branches follow your repo, not ours
 
 - `worktree-deps remove --delete-branch` now protects `main`, `master`, `production`, `develop`, your integration branch (`JSTACK_INTEGRATION_BRANCH`), the remote's default branch and the main checkout's branch, plus anything in `JSTACK_PROTECTED_BRANCHES` (comma list). No more hardcoded branch names from one project.

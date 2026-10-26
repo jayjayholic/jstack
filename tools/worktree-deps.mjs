@@ -11,7 +11,8 @@
 //   node scripts/worktree-deps.mjs status                 what this worktree links to
 //   node scripts/worktree-deps.mjs prune                  delete stores no worktree links to any more
 //   node scripts/worktree-deps.mjs remove <worktree> [--delete-branch]
-//                                                         unlink every junction, then git worktree remove
+//                                                         unlink every junction, then git worktree remove; the branch
+//                                                         goes only when jstack created it for this caller
 //
 // NEVER remove a linked worktree with a bare `git worktree remove` or `rm -rf` on Windows: Git for Windows 2.40
 // followed the junctions and deleted the shared store's files (seen 2026-10-25). `remove` unlinks them first.
@@ -22,6 +23,9 @@
 // dependency fields of every package.json, lockfiles, bunfig.toml, patches/ for node_modules; uncommitted edits
 // under the codegen inputs for the generated folder. Stores are built once, under a lock, and never edited.
 // Workspace packages always link to THIS worktree's own sources, never the store's.
+// An agent may only delete branches it created: new-worktree.sh records `branch.<name>.jstackCreatedBy` (the
+// JSTACK_AGENT or CLAUDE_AGENT_ID of the creator, else `unknown`) and `jstackCreatedAt` when it creates a branch.
+// `remove --delete-branch` deletes only a branch with that record, created by the caller when the caller's id is known.
 // Settings (env, all optional): JSTACK_INTEGRATION_BRANCH (stage), JSTACK_PROTECTED_BRANCHES (comma list, never deleted by remove), JSTACK_INSTALL_CMD (bun install),
 // WORKTREE_DEPS_STORE_INSTALL (bun install --frozen-lockfile), JSTACK_CODEGEN_CMD (bun run db:generate),
 // JSTACK_CODEGEN_INPUTS (schema bun.lock: the generator version lives in the lockfile), JSTACK_CODEGEN_REUSE_PATHS (first entry: .generated), JSTACK_CODEGEN_REQUIRED,
@@ -482,6 +486,17 @@ const unlinkEveryLink = (dir) => {
 	}
 }
 
+const callerId = () => env.JSTACK_AGENT || env.CLAUDE_AGENT_ID || null
+
+// Why `branch` may not be deleted by this caller, or null when it may: jstack created it, for this caller when known.
+const notOwnedReason = (repo, branch) => {
+	const createdBy = gitOrNull(repo, 'config', '--get', `branch.${branch}.jstackCreatedBy`)?.trim()
+	if (!createdBy) return `${branch} was not created through jstack (no branch.${branch}.jstackCreatedBy record)`
+	const caller = callerId()
+	if (caller && createdBy !== caller) return `${branch} was created by ${createdBy}, not by this caller (${caller})`
+	return null
+}
+
 const remove = (target, deleteBranch) => {
 	const dir = path.resolve(target)
 	if (samePath(dir, mainCheckout(dir))) throw new Error('refusing to remove the main checkout')
@@ -499,8 +514,11 @@ const remove = (target, deleteBranch) => {
 			...(env.JSTACK_PROTECTED_BRANCHES || '').split(',').map((b) => b.trim()),
 		].filter(Boolean),
 	)
-	const branch = headBranch && !protectedBranches.has(headBranch) ? headBranch : null
-	if (deleteBranch && headBranch && !branch) console.error(`worktree-deps: not deleting protected branch ${headBranch}`)
+	const notOwned = headBranch && !protectedBranches.has(headBranch) ? notOwnedReason(main, headBranch) : null
+	const branch = headBranch && !protectedBranches.has(headBranch) && !notOwned ? headBranch : null
+	if (deleteBranch && headBranch && protectedBranches.has(headBranch)) console.error(`worktree-deps: not deleting protected branch ${headBranch}`)
+	else if (deleteBranch && notOwned)
+		console.error(`worktree-deps: keeping branch ${headBranch}: ${notOwned}. An agent may only delete branches it created; a human can delete it with git branch -D ${headBranch}`)
 	unlinkEveryLink(dir)
 	if (spawnSync('git', ['-C', main, '-c', 'core.longpaths=true', 'worktree', 'remove', '--force', dir], { stdio: 'inherit' }).status !== 0) {
 		fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 })

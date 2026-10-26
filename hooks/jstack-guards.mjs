@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // jstack guard hooks. One file, entry points (see hooks.json):
-//   pre      PreToolUse on Bash|PowerShell|Grep|Glob|LSP: heavy-lock guard, recursive-scan guard, block log
+//   pre      PreToolUse on Bash|PowerShell|Grep|Glob|LSP: heavy-lock, scan, stash and branch-delete guards, block log
 //   post     PostToolUse on Bash|PowerShell: ends the call's time window (process ownership, jstack-calls.mjs)
 //   cleanup  SubagentStop (and Stop when opted in): kills what the agent's own tool calls left running in its
 //            worktrees and closes the automation browsers it left open; waits while its background work runs
@@ -494,6 +494,127 @@ function stashCheck(cmd, project, cwd) {
   } catch { return null }
 }
 
+// ---------- guard 4: an agent deletes only the branches it created ----------
+// new-worktree.sh records `branch.<name>.jstackCreatedBy` when it creates a branch. Without that record (or with
+// another agent's id, when the caller's JSTACK_AGENT / CLAUDE_AGENT_ID is known) `git branch -d/-D`, `git push
+// <remote> --delete <b>` / `:<b>`, `git update-ref -d refs/heads/<b>` and `worktree-deps.mjs remove --delete-branch`
+// are denied. Protected branches are denied even with a record. A git error (no git, timeout) lets the call through.
+
+const BASE_PROTECTED = ['main', 'master', 'production', 'develop']
+const WORKTREE_DEPS_HOW = 'worktree-deps.mjs remove --delete-branch'
+
+function gitIn(cwd, args) {
+  const r = spawnSync('git', ['-C', cwd, ...args], { cwd: HOOK_DIR, encoding: 'utf8', timeout: 5000, windowsHide: true })
+  if (r.error || r.status === null) throw r.error ?? new Error('git timed out')
+  return r
+}
+
+// The value of branch.<b>.jstackCreatedBy, or null when there is none (git config exits 1 for a missing key).
+function createdByOf(repo, branch) {
+  const r = gitIn(repo, ['config', '--get', `branch.${branch}.jstackCreatedBy`])
+  if (r.status === 0) return r.stdout.trim() || null
+  if (r.status === 1) return null
+  throw new Error(`git config exited ${r.status}`)
+}
+
+function protectedBranches(project, repo, env) {
+  const remoteHead = gitIn(repo, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
+  return new Set([
+    ...BASE_PROTECTED,
+    env.JSTACK_INTEGRATION_BRANCH || 'stage',
+    remoteHead.status === 0 ? remoteHead.stdout.trim().replace(/^origin\//, '') : '',
+    ...(env.JSTACK_PROTECTED_BRANCHES || '').split(','),
+    ...(project.branchDelete?.protected ?? []),
+  ].map(b => b.trim()).filter(Boolean))
+}
+
+const shortBranch = ref => ref.replace(/^\+/, '').replace(/^refs\/heads\//, '')
+
+// What a git segment would delete, and the folder it runs in (`git -C <dir>`).
+function gitDeletions(toks, cwd) {
+  let i = 1, dir = cwd
+  while (i < toks.length && toks[i].startsWith('-')) {
+    if (toks[i] === '-C') { dir = resolveFrom(dir, toks[i + 1] ?? '.'); i += 2 } else i += toks[i] === '-c' ? 2 : 1
+  }
+  const sub = toks[i], args = toks.slice(i + 1)
+  const out = []
+  if (sub === 'branch') {
+    const flags = args.filter(a => a.startsWith('-'))
+    const short = f => /^-[a-zA-Z]+$/.test(f)
+    const del = flags.some(f => f === '--delete' || (short(f) && /[dD]/.test(f)))
+    const remotes = flags.some(f => f === '--remotes' || (short(f) && f.includes('r')))
+    if (del && !remotes) for (const a of args) if (!a.startsWith('-')) out.push({ branch: a, how: 'git branch -d/-D', where: 'local' })
+  } else if (sub === 'push') {
+    const del = args.some(a => a === '--delete' || a === '-d')
+    const pos = []
+    for (let k = 0; k < args.length; k++) {
+      if (/^(?:-o|--push-option|--repo|--receive-pack|--exec)$/.test(args[k])) { k++; continue }
+      if (!args[k].startsWith('-')) pos.push(args[k])
+    }
+    for (const ref of pos.slice(1)) {
+      if (del) out.push({ branch: shortBranch(ref), how: 'git push --delete', where: 'remote' })
+      else if (/^\+?:./.test(ref)) out.push({ branch: shortBranch(ref.replace(/^\+?:/, '')), how: 'git push :<branch>', where: 'remote' })
+    }
+  } else if (sub === 'update-ref' && args.some(a => a === '-d' || a === '--delete')) {
+    for (const a of args) if (a.startsWith('refs/heads/')) out.push({ branch: shortBranch(a), how: 'git update-ref -d', where: 'local' })
+  }
+  return { dir, out }
+}
+
+// `worktree-deps.mjs remove <worktree> --delete-branch`: the branch checked out in that worktree.
+function worktreeDepsDeletion(toks, cwd) {
+  const at = toks.findIndex(t => /(?:^|[\\/])worktree-deps\.mjs$/.test(t))
+  if (at < 0 || toks[at + 1] !== 'remove' || !toks.includes('--delete-branch')) return null
+  const target = toks.slice(at + 2).find(t => !t.startsWith('-'))
+  if (!target) return null
+  const dir = resolveFrom(cwd, target)
+  if (gitTop(dir)?.root !== norm(dir)) return null
+  const r = gitIn(dir, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  const branch = r.status === 0 ? r.stdout.trim() : ''
+  return branch ? { dir, out: [{ branch, how: WORKTREE_DEPS_HOW, where: 'local' }] } : null
+}
+
+function deletionRefusal(d, project, caller, env) {
+  if (protectedBranches(project, d.dir, env).has(d.branch)) return `${d.branch} is a protected branch`
+  const by = createdByOf(d.dir, d.branch)
+  if (!by) return `no agent created ${d.branch} through jstack (git config has no branch.${d.branch}.jstackCreatedBy)`
+  if (caller && by !== caller) return `${d.branch} was created by ${by}, not by you (${caller})`
+  return null
+}
+
+function branchDeleteCheck(cmd, project, cwd, env = process.env) {
+  if (project?.branchDelete?.enabled === false || !/\b(?:branch|push|update-ref|worktree-deps)\b/.test(cmd)) return null
+  try {
+    const found = []
+    let here = cwd
+    walkSegments(cmd, seg => {
+      const toks = tokens(seg)
+      while (toks.length && PREFIX.test(toks[0])) toks.shift()
+      if (!toks.length) return
+      const prog = toks[0].replace(/^.*[\\/]/, '').replace(/\.exe$/i, '').toLowerCase()
+      if (/^(?:cd|pushd|set-location|sl|chdir)$/.test(prog) && toks[1]) { here = resolveFrom(here, toks[1]); return }
+      const hit = prog === 'git' ? gitDeletions(toks, here) : worktreeDepsDeletion(toks, here)
+      if (hit?.out.length) found.push(...hit.out.map(d => ({ ...d, dir: hit.dir })))
+    })
+    const caller = env.JSTACK_AGENT || env.CLAUDE_AGENT_ID || null
+    for (const d of found) {
+      const why = deletionRefusal(d, project, caller, env)
+      if (!why) continue
+      const instead = d.how === WORKTREE_DEPS_HOW
+        ? 'Run the same remove without --delete-branch: the worktree goes, the branch stays.'
+        : 'Leave the branch and say in your report that it can go.'
+      const reason = [
+        `jstack branch guard: ${d.how} would delete ${d.where === 'remote' ? 'the remote branch' : 'branch'} ${d.branch}, and ${why}. An agent may only delete branches it created.`,
+        instead,
+        `If it really should go, a human deletes it from their own terminal (\`git branch -D ${d.branch}\`, \`git push origin --delete ${d.branch}\`), or turns this guard off for the project with "branchDelete": { "enabled": false } in ~/.jstack/guards.json.`,
+        d.where === 'remote' ? 'Deleting the local branch drops its record, so delete the remote branch first, or both in one command.' : '',
+      ].filter(Boolean).join('\n')
+      return { guard: 'branch-delete', reason, suggestion: instead }
+    }
+    return null
+  } catch { return null }
+}
+
 // ---------- entry points ----------
 
 function pre(payload, env = process.env) {
@@ -513,7 +634,7 @@ function pre(payload, env = process.env) {
       const wts = linkedWorktreesIn(cmd, cwd)
       state.worktrees = [...new Set([...(state.worktrees ?? []), ...wts])].slice(-20)
     }
-    verdict = heavyCheck(cmd, project, cwd, env) ?? scanCheck(cmd, project, cwd) ?? stashCheck(cmd, project, cwd)
+    verdict = branchDeleteCheck(cmd, project, cwd, env) ?? heavyCheck(cmd, project, cwd, env) ?? scanCheck(cmd, project, cwd) ?? stashCheck(cmd, project, cwd)
     if (verdict) {
       const repeats = (state.blocks ?? 0) + 1
       state.blocks = repeats
@@ -781,4 +902,4 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
 
-export { norm, segments, tokens, head, heavyHeads, heavyCheck, scanCheck, pre, post, cleanup, listProcesses, pickOwned, runHook, crashLog, loadProject, linkedWorktreesIn, gitTop, stashCheck }
+export { norm, segments, tokens, head, heavyHeads, heavyCheck, scanCheck, pre, post, cleanup, listProcesses, pickOwned, runHook, crashLog, loadProject, linkedWorktreesIn, gitTop, stashCheck, branchDeleteCheck }

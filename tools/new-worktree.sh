@@ -11,6 +11,9 @@
 #   --base     base for a new branch (default origin/$JSTACK_INTEGRATION_BRANCH)
 #   --dir      worktree path (default $JSTACK_WORKTREES_DIR/<branch with / replaced by ->)
 #   --install  also install dependencies and run codegen
+# A branch this script creates gets git config branch.<name>.jstackCreatedBy (JSTACK_AGENT, else CLAUDE_AGENT_ID, else
+# unknown) and jstackCreatedAt: agents may only delete branches with that record (worktree-deps remove, guard hook).
+# An existing local or remote branch gets no record.
 set -euo pipefail
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/jstack-env.sh"
@@ -24,12 +27,12 @@ while [ $# -gt 0 ]; do
 		--base) base="$2"; shift 2 ;;
 		--dir) dir="$2"; shift 2 ;;
 		--install) install=1; shift ;;
-		-h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+		-h|--help) sed -n '2,14p' "$0"; exit 0 ;;
 		-*) echo "unknown option: $1" >&2; exit 2 ;;
 		*) branch="$1"; shift ;;
 	esac
 done
-[ -n "$branch" ] || { sed -n '2,11p' "$0"; exit 2; }
+[ -n "$branch" ] || { sed -n '2,14p' "$0"; exit 2; }
 [ -n "$dir" ] || dir="$JSTACK_WORKTREES_DIR/${branch//\//-}"
 [ -e "$dir" ] && { echo "already exists: $dir" >&2; exit 1; }
 
@@ -40,6 +43,8 @@ elif git -C "$REPO" show-ref --verify --quiet "refs/remotes/origin/$branch"; the
 	git -C "$REPO" worktree add --track -b "$branch" "$dir" "origin/$branch"
 else
 	git -C "$REPO" worktree add -b "$branch" "$dir" "$base"
+	git -C "$REPO" config "branch.$branch.jstackCreatedBy" "${JSTACK_AGENT:-${CLAUDE_AGENT_ID:-unknown}}"
+	git -C "$REPO" config "branch.$branch.jstackCreatedAt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 
 for file in $JSTACK_LOCAL_ENV_FILES; do

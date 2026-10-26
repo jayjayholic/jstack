@@ -16,6 +16,7 @@ const sh = (cwd, cmd, args) => execFileSync(cmd, args, { cwd, encoding: 'utf8', 
 const deps = (cwd, ...args) =>
 	sh(cwd, process.execPath, [SCRIPT, ...args]).trim()
 const writeJson = (file, value) => fs.writeFileSync(file, `${JSON.stringify(value, null, '\t')}\n`)
+const claim = (branch, by) => sh(main, 'git', ['config', `branch.${branch}.jstackCreatedBy`, by])
 const addWorktree = (name) => {
 	const dir = path.join(sandbox, name)
 	sh(main, 'git', ['worktree', 'add', '-q', '-b', name, dir, 'stage'])
@@ -39,6 +40,8 @@ before(() => {
 	process.env.WORKTREE_DEPS_STORE_INSTALL = FAKE_INSTALL
 	process.env.JSTACK_INSTALL_CMD = FAKE_INSTALL
 	process.env.JSTACK_RAM_CLEAN_TASK = ''
+	delete process.env.JSTACK_AGENT
+	delete process.env.CLAUDE_AGENT_ID
 })
 
 after(() => fs.rmSync(sandbox, { recursive: true, force: true }))
@@ -114,6 +117,7 @@ test('remove unlinks every junction before git deletes the worktree, so the shar
 	fs.mkdirSync(outside)
 	fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep')
 	fs.symlinkSync(outside, path.join(f, '.generated'), 'junction')
+	claim('f', 'unknown')
 	deps(main, 'remove', f, '--delete-branch')
 	assert.equal(fs.existsSync(f), false)
 	assert.ok(fs.existsSync(storeFile))
@@ -121,8 +125,8 @@ test('remove unlinks every junction before git deletes the worktree, so the shar
 	assert.equal(sh(main, 'git', ['branch', '--list', 'f']).trim(), '')
 })
 
-const removeOutput = (...args) => {
-	const run = spawnSync(process.execPath, [SCRIPT, 'remove', ...args], { cwd: main, encoding: 'utf8' })
+const removeOutput = (target, extraEnv = {}) => {
+	const run = spawnSync(process.execPath, [SCRIPT, 'remove', target, '--delete-branch'], { cwd: main, encoding: 'utf8', env: { ...process.env, ...extraEnv } })
 	return `${run.stdout}${run.stderr}`
 }
 const branchExists = (name) => sh(main, 'git', ['branch', '--list', name]).trim() !== ''
@@ -131,25 +135,78 @@ test('remove on a half-deleted worktree never reads or deletes the main checkout
 	const g = path.join(main, '.worktrees', 'half')
 	sh(main, 'git', ['worktree', 'add', '-q', '-b', 'half', g, 'stage'])
 	fs.rmSync(path.join(g, '.git'), { force: true })
-	const out = removeOutput(g, '--delete-branch')
+	const out = removeOutput(g)
 	assert.doesNotMatch(out, /and branch/)
 	assert.doesNotMatch(out, /branch -D|Deleted branch|cannot delete/i)
 	assert.ok(branchExists('stage'))
 	assert.equal(fs.existsSync(g), false)
 })
 
-test('remove refuses to delete a protected branch and says so', () => {
+test('remove refuses to delete a protected branch and says so, even with a jstack record', () => {
 	const h = path.join(sandbox, 'h-master')
 	sh(main, 'git', ['worktree', 'add', '-q', '-b', 'master', h, 'stage'])
-	const out = removeOutput(h, '--delete-branch')
+	claim('master', 'agent-1')
+	const out = removeOutput(h)
 	assert.match(out, /not deleting protected branch master/)
 	assert.ok(branchExists('master'))
 	assert.equal(fs.existsSync(h), false)
 })
 
-test('remove deletes the branch of a normal worktree', () => {
+test('remove deletes a branch jstack created for this caller', () => {
 	const k = addWorktree('k')
-	const out = removeOutput(k, '--delete-branch')
+	claim('k', 'agent-1')
+	const out = removeOutput(k, { JSTACK_AGENT: 'agent-1' })
 	assert.match(out, /and branch k/)
 	assert.equal(branchExists('k'), false)
+})
+
+test('remove deletes a recorded branch when the caller has no id', () => {
+	const m = addWorktree('m')
+	claim('m', 'agent-1')
+	assert.match(removeOutput(m), /and branch m/)
+	assert.equal(branchExists('m'), false)
+})
+
+test('remove keeps a branch jstack did not create and says why', () => {
+	const n = addWorktree('n')
+	const out = removeOutput(n, { JSTACK_AGENT: 'agent-1' })
+	assert.match(out, /keeping branch n: n was not created through jstack/)
+	assert.match(out, /git branch -D n/)
+	assert.doesNotMatch(out, /and branch n/)
+	assert.ok(branchExists('n'))
+	assert.equal(fs.existsSync(n), false)
+})
+
+test("remove keeps another agent's branch when both ids are known", () => {
+	const o = addWorktree('o')
+	claim('o', 'agent-2')
+	assert.match(removeOutput(o, { JSTACK_AGENT: 'agent-1' }), /keeping branch o: o was created by agent-2, not by this caller \(agent-1\)/)
+	assert.ok(branchExists('o'))
+	const p = addWorktree('p')
+	claim('p', 'agent-2')
+	assert.match(removeOutput(p, { CLAUDE_AGENT_ID: 'agent-3' }), /created by agent-2, not by this caller \(agent-3\)/)
+	assert.ok(branchExists('p'))
+})
+
+const newWorktree = (branch, extraEnv = {}) =>
+	spawnSync('bash', [path.resolve(import.meta.dirname, 'new-worktree.sh'), branch, '--base', 'stage'], {
+		cwd: main,
+		encoding: 'utf8',
+		env: { ...process.env, JSTACK_CONFIG: path.join(sandbox, 'no-config.sh'), JSTACK_REPO_ROOT: main, JSTACK_WORKTREES_DIR: path.join(sandbox, 'nw'), JSTACK_LOCAL_ENV_FILES: '', ...extraEnv },
+	})
+const configOf = (key) => spawnSync('git', ['-C', main, 'config', '--get', key], { encoding: 'utf8' }).stdout.trim()
+
+test('new-worktree.sh records the creator of a branch it creates, and nothing for an existing branch', () => {
+	if (!spawnSync('git', ['-C', main, 'remote', 'get-url', 'origin']).stdout?.length) sh(main, 'git', ['remote', 'add', 'origin', main])
+	const fresh = newWorktree('nw-fresh', { JSTACK_AGENT: 'agent-7' })
+	assert.equal(fresh.status, 0, fresh.stderr)
+	assert.equal(configOf('branch.nw-fresh.jstackCreatedBy'), 'agent-7')
+	assert.match(configOf('branch.nw-fresh.jstackCreatedAt'), /^\d{4}-\d\d-\d\dT/)
+	const anon = newWorktree('nw-anon', { JSTACK_AGENT: '', CLAUDE_AGENT_ID: '' })
+	assert.equal(anon.status, 0, anon.stderr)
+	assert.equal(configOf('branch.nw-anon.jstackCreatedBy'), 'unknown')
+	sh(main, 'git', ['branch', 'nw-existing', 'stage'])
+	const existing = newWorktree('nw-existing', { JSTACK_AGENT: 'agent-7' })
+	assert.equal(existing.status, 0, existing.stderr)
+	assert.equal(configOf('branch.nw-existing.jstackCreatedBy'), '')
 })

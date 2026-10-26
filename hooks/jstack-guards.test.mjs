@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { pre, post, cleanup, norm, stashCheck } from './jstack-guards.mjs'
+import { pre, post, cleanup, norm, stashCheck, branchDeleteCheck } from './jstack-guards.mjs'
 import * as B from './jstack-browsers.mjs'
 import * as calls from './jstack-calls.mjs'
 
@@ -434,4 +434,79 @@ test('stash: a repo with a single worktree is allowed, and the guard fails open'
   assert.equal(stashCheck('git stash pop', {}, path.join(tmp, 'missing-dir')), null)
   assert.equal(stashCheck('git stash pop', { stash: { enabled: false } }, wt), null)
   assert.ok(stashCheck('git stash pop', {}, wt))
+})
+
+// ---------- branch-delete guard ----------
+
+const gitRepo = (...a) => spawnSync('git', a, { cwd: repo, encoding: 'utf8' })
+const record = (branch, by) => gitRepo('config', `branch.${branch}.jstackCreatedBy`, by)
+const asAgent = (command, agentId, extra = {}) =>
+  pre({ session_id: 's1', agent_id: `b${++n}`, cwd: extra.cwd ?? wt, tool_name: 'Bash', tool_input: { command } }, agentId ? { ...env, JSTACK_AGENT: agentId } : env)
+const branchProject = { name: 'test', roots: [repo] }
+
+test('branch-delete: a branch jstack created for this caller can be deleted', () => {
+  gitRepo('branch', 'own-a')
+  record('own-a', 'agent-1')
+  for (const c of ['git branch -D own-a', 'git branch -d own-a', 'git branch --delete --force own-a', 'git push origin --delete own-a', 'git push origin :own-a', 'git update-ref -d refs/heads/own-a', `git -C ${repo.replace(/\\/g, '/')} branch -D own-a`])
+    assert.ok(!denied(asAgent(c, 'agent-1')), c)
+  assert.ok(!denied(asAgent('git branch -D own-a', null)), 'caller id unknown: the record is enough')
+})
+
+test('branch-delete: a branch without a jstack record is refused, with how a human deletes it', () => {
+  for (const c of ['git branch -D feat-a', 'git branch -d feat-a', 'git push origin --delete feat-a', 'git push -d origin feat-a', 'git push origin :feat-a', 'git push origin +:refs/heads/feat-a', 'git update-ref -d refs/heads/feat-a', 'git branch -D own-a feat-a', 'bash -c "git branch -D feat-a"']) {
+    const out = asAgent(c, 'agent-1')
+    assert.ok(denied(out), c)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /may only delete branches it created/, c)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /a human deletes it from their own terminal/, c)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /"branchDelete": \{ "enabled": false \}/, c)
+  }
+  const log = fs.readFileSync(logFile, 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  assert.ok(log.some(e => e.type === 'block' && e.guard === 'branch-delete'))
+})
+
+test('branch-delete: another agent\'s branch is refused when both ids are known', () => {
+  gitRepo('branch', 'own-b')
+  record('own-b', 'agent-2')
+  const out = asAgent('git branch -D own-b', 'agent-1')
+  assert.ok(denied(out))
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /created by agent-2, not by you \(agent-1\)/)
+  assert.ok(denied(pre({ session_id: 's1', agent_id: 'x', cwd: wt, tool_name: 'Bash', tool_input: { command: 'git push origin --delete own-b' } }, { ...env, CLAUDE_AGENT_ID: 'agent-3' })), 'CLAUDE_AGENT_ID counts too')
+  assert.ok(!denied(asAgent('git branch -D own-b', 'agent-2')))
+})
+
+test('branch-delete: protected branches are refused even with a record', () => {
+  for (const b of ['develop', 'stage', 'release-x', 'keep-me']) { gitRepo('branch', b); record(b, 'agent-1') }
+  const project = { ...branchProject, branchDelete: { protected: ['keep-me'] } }
+  const e = { ...env, JSTACK_AGENT: 'agent-1', JSTACK_PROTECTED_BRANCHES: 'release-x, other' }
+  for (const b of ['develop', 'stage', 'release-x', 'keep-me', 'main']) {
+    const v = branchDeleteCheck(`git branch -D ${b}`, project, wt, e)
+    assert.ok(v, b)
+    assert.match(v.reason, new RegExp(`${b} is a protected branch`), b)
+  }
+  assert.equal(branchDeleteCheck('git branch -D own-a', project, wt, e), null)
+})
+
+test('branch-delete: worktree-deps remove --delete-branch follows the worktree\'s branch', () => {
+  const owned = path.join(repo, '.worktrees', 'own-wt')
+  gitRepo('worktree', 'add', '-q', owned, '-b', 'own-wt')
+  record('own-wt', 'agent-1')
+  const p = owned.replace(/\\/g, '/')
+  assert.ok(!denied(asAgent(`node /x/worktree-deps.mjs remove ${p} --delete-branch`, 'agent-1')))
+  assert.ok(!denied(asAgent(`node /x/worktree-deps.mjs remove ${wt.replace(/\\/g, '/')}`, 'agent-1')), 'no --delete-branch: nothing to check')
+  const out = asAgent(`node /x/worktree-deps.mjs remove ${wt.replace(/\\/g, '/')} --delete-branch`, 'agent-1')
+  assert.ok(denied(out))
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /without --delete-branch/)
+  assert.ok(denied(asAgent(`node /x/worktree-deps.mjs remove ${p} --delete-branch`, 'agent-9')), 'another agent\'s worktree branch')
+})
+
+test('branch-delete: commands that delete no local branch pass', () => {
+  for (const c of ['git branch -a', 'git branch new-one', 'git branch --list', 'git branch -dr origin/feat-a', 'git push origin feat-a', 'git push origin HEAD:feat-a', 'git push -u origin feat-a', 'echo git branch -D feat-a', 'git log --branches', 'git update-ref refs/heads/x HEAD'])
+    assert.ok(!denied(asAgent(c, 'agent-1')), c)
+})
+
+test('branch-delete: fails open on a git error and turns off per project', () => {
+  assert.equal(branchDeleteCheck('git -C /definitely/missing/repo branch -D feat-a', branchProject, wt, env), null)
+  assert.equal(branchDeleteCheck('git branch -D feat-a', { ...branchProject, branchDelete: { enabled: false } }, wt, env), null)
+  assert.equal(branchDeleteCheck('git branch -D feat-a', branchProject, path.join(tmp, 'missing-dir'), env), null)
+  assert.ok(branchDeleteCheck('git branch -D feat-a', branchProject, wt, env))
 })
