@@ -5,6 +5,12 @@
   python switch.py use <n|email>   save the current login back, then switch (n = number from `list`)
   python switch.py next            rotate to the next stored account
   python switch.py import <dir>    store the login of another config folder (a CLAUDE_CONFIG_DIR)
+  python switch.py least-used --from <store> [--min-valid-min 45]
+                                   read every account's usage in <store> (another folder's logins/accounts.json),
+                                   activate the least-used one in THIS config folder; no token is refreshed or printed
+  python switch.py give-back --to <store>
+                                   after a run: if Claude Code rotated the borrowed login here, put the new tokens
+                                   back into <store>, unless that row changed meanwhile
 
 Accounts are keyed by email#organizationUuid: one email can hold several organizations.
 Paths follow Claude Code: CLAUDE_CONFIG_DIR when set, else ~/.claude (and ~/.claude.json).
@@ -12,9 +18,13 @@ The store is <config>/logins/accounts.json. It holds tokens, so it is written ow
 A running Claude Code picks up a switch on its next request; /status may show the old email until restart.
 """
 import datetime
+import hashlib
 import json
 import os
 import sys
+import time
+import urllib.error
+import urllib.request
 
 HOME = os.path.expanduser('~')
 CONFIG_DIR = os.environ.get('CLAUDE_CONFIG_DIR', '').rstrip('/\\')
@@ -97,6 +107,144 @@ def activate(entry):
     print('now using', label(entry))
 
 
+USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
+OAUTH_BETA = 'oauth-2025-04-20'
+USER_AGENT = 'jay-claude-switcher/0.9'
+BORROWED = os.path.join(CONFIG, 'logins', 'borrowed.json')
+
+
+def fetch_usage(token):
+    req = urllib.request.Request(USAGE_URL, headers={'Authorization': f'Bearer {token}', 'anthropic-beta': OAUTH_BETA, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status, json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        return e.code, None
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        print('usage read failed:', type(e).__name__)
+        return 0, None
+
+
+# The binding windows' percents, read like hooks/accounts.ts parseUsage: `limits` (session, weekly_all) first, the
+# older five_hour / seven_day fields as a fallback. A window whose reset has passed counts as empty.
+def usage_percents(body, now=None):
+    now = time.time() if now is None else now
+    out = {}
+
+    def live(pct, resets_at):
+        if resets_at:
+            try:
+                if datetime.datetime.fromisoformat(resets_at.replace('Z', '+00:00')).timestamp() <= now:
+                    return 0
+            except ValueError:
+                return pct
+        return pct
+
+    limits = [l for l in (body or {}).get('limits') or [] if isinstance(l.get('percent'), (int, float))]
+    for l in limits:
+        if l.get('kind') in ('session', 'weekly_all'):
+            out['5h' if l['kind'] == 'session' else 'week'] = live(l['percent'], l.get('resets_at'))
+    if not limits:
+        for key, name in (('five_hour', '5h'), ('seven_day', 'week')):
+            w = (body or {}).get(key)
+            if isinstance(w, dict) and isinstance(w.get('utilization'), (int, float)):
+                out[name] = live(w['utilization'], w.get('resets_at'))
+    return out
+
+
+def plan_of(a):
+    tier = str((a.get('claudeAiOauth') or {}).get('rateLimitTier') or '')
+    for part in tier.split('_'):
+        if part.endswith('x') and part[:-1].isdigit():
+            return int(part[:-1])
+    return 1 if 'pro' in tier.lower() else 0
+
+
+def borrowable(a, now, min_valid_s):
+    oauth = a.get('claudeAiOauth') or {}
+    return bool(oauth.get('accessToken')) and (oauth.get('expiresAt') or 0) / 1000 - now >= min_valid_s
+
+
+# Least used = the lowest peak over its binding windows; ties go to the larger plan (more room), then store order.
+# A token expiring within min_valid_s is never borrowed: the run must not need a refresh, because a refresh here
+# rotates the refresh token away from the store the switcher reads.
+def pick_least_used(accounts, readings, now, min_valid_s):
+    best = None
+    for i, a in enumerate(accounts):
+        r = readings.get(stored_key(a))
+        if not r or not borrowable(a, now, min_valid_s):
+            continue
+        rank = (max(r.values()), -plan_of(a), i)
+        if best is None or rank < best[0]:
+            best = (rank, a, r)
+    return best
+
+
+def sha(s):
+    return hashlib.sha256((s or '').encode('utf-8')).hexdigest()
+
+
+def arg_after(flag, default=''):
+    i = sys.argv.index(flag) if flag in sys.argv else -1
+    return sys.argv[i + 1] if 0 <= i < len(sys.argv) - 1 else default
+
+
+def pct_text(r):
+    return ' '.join(f'{k}={v}%' for k, v in r.items())
+
+
+def least_used():
+    src = os.path.expanduser(arg_after('--from'))
+    if not src:
+        print('least-used --from <logins/accounts.json of the switcher store>')
+        sys.exit(2)
+    if os.path.abspath(src) == os.path.abspath(STORE):
+        print("least-used: --from must be another config folder's store, not this one")
+        sys.exit(2)
+    min_valid_s = int(arg_after('--min-valid-min', '45')) * 60
+    accounts = load(src, {'accounts': []})['accounts']
+    now = time.time()
+    readings = {}
+    for a in accounts:
+        if not borrowable(a, now, min_valid_s):
+            print('skip', label(a), '(token expires too soon to borrow)')
+            continue
+        status, body = fetch_usage(a['claudeAiOauth']['accessToken'])
+        r = usage_percents(body, now) if status == 200 else {}
+        print('read', label(a), f'HTTP {status}', pct_text(r))
+        if r:
+            readings[stored_key(a)] = r
+    best = pick_least_used(accounts, readings, now, min_valid_s)
+    if not best:
+        print('least-used: no account with a usage reading and a token valid long enough')
+        sys.exit(1)
+    _, a, r = best
+    activate(a)
+    dump(BORROWED, {'key': stored_key(a), 'from': src, 'refreshSha': sha(a['claudeAiOauth'].get('refreshToken')), 'at': stamp(), 'usage': r})
+    print('picked', label(a), pct_text(r))
+
+
+def give_back():
+    dest = os.path.expanduser(arg_after('--to'))
+    b = load(BORROWED, None)
+    if not dest or not b:
+        print('give-back --to <store>' if not dest else 'give-back: nothing borrowed')
+        return
+    _, _, oauth = current()
+    if not oauth or sha(oauth.get('refreshToken')) == b['refreshSha']:
+        print('give-back: login not rotated, nothing to return')
+        return
+    store = load(dest, {'accounts': []})
+    row = next((a for a in store['accounts'] if stored_key(a) == b['key']), None)
+    if not row or sha((row.get('claudeAiOauth') or {}).get('refreshToken')) != b['refreshSha']:
+        print('give-back: the store row changed meanwhile; left as it is')
+        return
+    row['claudeAiOauth'] = oauth
+    row['savedAt'] = stamp()
+    dump(dest, store)
+    print('give-back: rotated tokens returned for', label(row))
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'list'
     arg = sys.argv[2] if len(sys.argv) > 2 else ''
@@ -141,6 +289,10 @@ def main():
             print('unknown account:', arg, '| stored:', [label(a) for a in accts])
             sys.exit(1)
         activate(accts[idx])
+    elif cmd == 'least-used':
+        least_used()
+    elif cmd == 'give-back':
+        give_back()
     else:
         print(__doc__)
 

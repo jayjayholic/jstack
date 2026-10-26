@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { parseSnap, parsePs, buildParents, attribute, buildTick, localDay, redactCmd } from './lib.mjs'
+import { firstSnap, parseSnap, parsePs, buildParents, attribute, buildTick, localDay, redactCmd } from './lib.mjs'
 import { storeDir, loadConfig, appendTick, finalizeDays, loadAgents, saveAgents } from './store.mjs'
 import { runWarden } from './warden.mjs'
 
@@ -41,22 +41,37 @@ function claimInstance(intervalSec) {
 
 function snapExe() { return process.env.JSTACK_PERF_SNAP || path.join(DIR, 'bin', 'perf-snap.exe') }
 
-function snapshotWindows(knownKeys) {
+// A full snap reads the command line and cwd of every new process; under heavy paging that can take longer than the
+// timeout (the 2026-10-26 "exited null" ticks were this kill) or fail to start .NET at all. The light retry skips them.
+function snapshotWindows(knownKeys, { light = false, timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(snapExe(), ['snap'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(snapExe(), light ? ['snap', 'light'] : ['snap'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     const chunks = []
     let err = ''
-    const timer = setTimeout(() => child.kill(), 30000)
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; child.kill() }, timeoutMs)
     child.stdout.on('data', c => chunks.push(c))
     child.stderr.on('data', c => { err += c })
-    child.on('error', reject)
-    child.on('close', code => {
+    child.stdin.on('error', () => { /* it died before reading the keys; close reports why */ })
+    child.on('error', e => { clearTimeout(timer); reject(e) })
+    child.on('close', (code, signal) => {
       clearTimeout(timer)
-      if (code !== 0) return reject(new Error(`perf-snap exited ${code}: ${err.trim()}`))
+      if (timedOut) return reject(new Error(`perf-snap${light ? ' light' : ''} killed after ${timeoutMs / 1000} s (timeout)`))
+      if (code !== 0) return reject(new Error(`perf-snap${light ? ' light' : ''} exited ${code ?? signal}: ${err.trim()}`))
       resolve(parseSnap(Buffer.concat(chunks).toString('utf8')))
     })
-    child.stdin.end([...knownKeys].join('\n'))
+    child.stdin.end(light ? '' : [...knownKeys].join('\n'))
   })
+}
+
+async function snapshotWindowsRetrying(knownKeys) {
+  const t0 = Date.now()
+  const { snap, attempt } = await firstSnap(
+    [() => snapshotWindows(knownKeys), () => snapshotWindows(knownKeys, { light: true, timeoutMs: 20000 })],
+    (i, e) => log(`snap: ${i ? 'light retry' : 'full snap'} failed: ${e.message}${i ? '' : '; retrying light'}`),
+  )
+  if (attempt) log(`snap: light retry ok, tick kept (${Date.now() - t0} ms)`)
+  return snap
 }
 
 // UNVERIFIED outside Windows: written against the ps(1) man pages for macOS and procps, never run here.
@@ -174,7 +189,7 @@ async function main() {
     try {
       cfg = loadConfig(DIR)
       if (+fs.readFileSync(pidFile, 'utf8').trim() !== process.pid) { log('another collector took over; exiting'); process.exit(0) }
-      const snap = IS_WIN ? await snapshotWindows(new Set(details.keys())) : snapshotPosix(new Set(details.keys()))
+      const snap = IS_WIN ? await snapshotWindowsRetrying(new Set(details.keys())) : snapshotPosix(new Set(details.keys()))
       const at = Date.now()
       const live = new Map()
       for (const p of snap.procs) {

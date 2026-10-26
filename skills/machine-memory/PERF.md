@@ -7,10 +7,11 @@ Part of the `machine-memory` skill. `mem_map` answers "who holds memory right no
 ```bash
 node {{JSTACK_TOOLS}}/perf/perf.mjs install --task JstackPerf --interval 60 \
   --lock-dirs "<heavy lock dir>;<tc lock 1>;<tc lock 2>" --queue <train queue file>
-node {{JSTACK_TOOLS}}/perf/perf.mjs status      # collector alive, last tick, its own measured cost
+node {{JSTACK_TOOLS}}/perf/perf.mjs status      # one line: last tick, failed ticks 24 h, last optimizer run, next due
 ```
 
-- Windows: compiles `perf-snap.cs` with the C# compiler that ships with Windows (no binary in git), copies the scripts to `~/.jstack/perf/app`, registers a scheduled task (at logon, and every 5 minutes it restarts the collector if it died; battery-safe; no admin, no UAC). Run `install` again after pulling jstack. `uninstall [--purge]` removes it.
+- Windows: compiles `perf-snap.cs` with the C# compiler that ships with Windows (no binary in git), copies the scripts to `~/.jstack/perf/app`, registers a scheduled task (at logon, and every 5 minutes it restarts the collector if it died; battery-safe; no admin, no UAC), and a second one for the headless optimizer (section 6, `--optimizer-task`, default `JayPerfOptimizer`; `--optimizer off` removes it). Run `install` again after pulling jstack. `uninstall [--purge]` removes both.
+- A tick whose full snapshot fails (killed at its 30 s timeout or out of memory: under heavy paging, reading every new process's command line and cwd stalls) is retried at once with `perf-snap snap light`, which skips those reads; the new processes get their details on the next tick. `collector.log` says `snap: light retry ok` for a saved tick and `tick: Error` for a lost one; `status` counts both over 24 h.
 - macOS/Linux: the collector falls back to `ps` (UNVERIFIED, never run on a Mac here); start `collect.mjs` from launchd or a systemd user unit yourself.
 - Store: `~/.jstack/perf` (`JSTACK_PERF_DIR`). One JSON line per tick in `raw/<day>.jsonl`, past days gzipped, 5-minute rollups kept 90 days, hourly 400 days, raw 14 days (config.json). Command lines are redacted before they're written (tokens, `--token=`, `KEY=value`, Bearer, URL credentials, long random strings) and cut to 200 characters.
 
@@ -38,7 +39,7 @@ Limits: a process born and gone between two ticks is invisible except through `u
 
 On each watch tick (the orchestrator's, or a `/loop 15m` agent):
 
-1. `$P status`: the collector is running and its last tick is under two intervals old. If not, `schtasks /Run /TN <task>` (or `install` again) and say so.
+1. `$P status`: its first line says the last tick (under two intervals old), lost ticks in 24 h, the last optimizer run and the next due time. If the collector is not running, `schtasks /Run /TN <task>` (or `install` again) and say so.
 2. `$P spikes --since 30m` and `$P patterns --since 2h`. A spike or a pattern gets one or two lines to the human: what, which agent, the fix from the pattern table in `SKILL.md` step 2.
 3. Once a day: `$P top --since 24h` and `$P top --since 24h --sort mem`, then step 4 on the top 10 of each.
 
@@ -78,7 +79,14 @@ One-time changes the owner approved, done by command, logged as actions: `perf.m
 
 ## 6. The optimizer agent: the loop the warden can't do
 
-The warden only does what needs no judgment. Finding a cheaper way to run the same work needs reading, research and a benchmark, so an agent does it, in the background, one at a time: the orchestrator's watch runs `perf.mjs optimizer due` every round and launches one when it exits 0 (a pending trigger, or 30 minutes since the last run).
+The warden only does what needs no judgment. Finding a cheaper way to run the same work needs reading, research and a benchmark, so an agent does it, in the background, one at a time, with no chat session involved: the `JayPerfOptimizer` scheduled task runs `tools/perf/optimizer-run.mjs` every 5 minutes (battery-safe, no UAC). When `optimizer due` says so (a pending trigger, or 30 minutes since the last run) and at least 1.5 GB is free, it:
+
+- takes the optimizer lock (`optimizer start`), so a watch-launched agent and the task never run two at once;
+- borrows the least-used Claude account into its own `CLAUDE_CONFIG_DIR` (`~/.jstack/perf/claude`) with `switch.py least-used --from ~/.claude/logins/accounts.json`: every stored account's usage is read, the lowest peak of its 5-hour and weekly windows wins, and a token that expires before the cap + 20 min is never borrowed (a refresh there would rotate it away from the switcher's store). `~/.claude` is never written; `switch.py give-back` returns rotated tokens to the store afterwards, unless that row changed meanwhile. No token is printed;
+- runs one `claude -p` with section 7's prompt (step 1 replaced by the lock it already holds), `--model sonnet --effort low`, `--permission-mode dontAsk` with the shell (Bash or PowerShell) limited to commands starting with `node` or `git`, no API key or token variable in its environment;
+- kills the process tree at the wall-clock cap (`--optimizer-cap-min`, default 25) and records the run: `optimizer.log` (start, account, end with minutes, cost and turns), `optimizer-runs/<time>.json` (the final message), `actions.jsonl` (`optimizer-run` from the agent's `finish`, or from the runner when it was killed, plus `optimizer-headless` with the run's numbers) and `notices.jsonl` (`optimizer-proposal`, one per line of the final message after the summary). A run that ends without `optimizer finish` and was not killed at the cap (no account, login refused, a tool denied) counts as a failed start: the lock is released, nothing goes to the ledger or the notices, and it backs off 30 minutes. The prompt writes `node <app>/perf/perf.mjs` out in every command, since the shell permission allows only commands that start with `node` or `git` (Bash or PowerShell).
+
+A chat session's watch may still launch one by hand when `optimizer due` exits 0; the lock keeps it to one.
 
 **There is a floor.** 32 GB, 20 threads and N agents doing real builds, typechecks and tests: much of the load is the work itself. `perf.mjs floor --write` estimates it (the p25 of 15-minute windows with agent work running, over 24 h) and says how far above it the last 15 minutes are. Report gains against the floor, not against zero. A consumer that is the legitimate work (a build in the slot, a typecheck in its lane, the agent CLI) is `at-floor` in the ledger with the evidence, and nobody benchmarks it again until the workload changes (new tool version, new kind of job, a jump in its share).
 

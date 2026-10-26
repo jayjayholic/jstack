@@ -33,7 +33,7 @@ function cmdActions(args) {
 function cmdNotices(args) {
   const rows = readLog('notices.jsonl', since(args, '24h'))
   if (args.json) return console.log(JSON.stringify(rows, null, 1))
-  for (const r of rows) console.log(`${r.at.slice(0, 19)} ${r.type} pid ${r.pid} ${r.name} ${r.wt} ${r.minutes} min: ${r.cmd}`)
+  for (const r of rows) console.log(r.pid != null ? `${r.at.slice(0, 19)} ${r.type} pid ${r.pid} ${r.name} ${r.wt ?? ''} ${r.minutes ?? ''} min: ${r.cmd ?? ''}` : `${r.at.slice(0, 19)} ${r.type}: ${r.text ?? r.why ?? ''}`)
   if (!rows.length) console.log('no notices')
 }
 
@@ -53,6 +53,51 @@ function optimizerDue(now = Date.now(), { everyMin = 30, staleMin = 90 } = {}) {
   return { due: false, reason: `last run ${Math.round((now - last) / 60000)} min ago, no trigger` }
 }
 
+// Takes the lock when a run is due (or forced). Returns { started, reason, pending }.
+function startOptimizer({ now = Date.now(), force = false, by = 'agent' } = {}) {
+  const d = optimizerDue(now, { everyMin: 0 })
+  if (!d.due && !force) return { started: false, reason: d.reason }
+  saveOpt({ ...optState(), runningSince: iso(now), runningBy: by })
+  return { started: true, reason: d.reason, pending: d.pending ?? [] }
+}
+
+// Closes a run: the lock goes, lastFinishedAt moves, and one optimizer-run line lands in actions.jsonl.
+function finishOptimizer(summary = '', extra = {}, now = Date.now()) {
+  const s = optState()
+  const why = String(summary).slice(0, 500)
+  saveOpt({ lastFinishedAt: iso(now), lastStartedAt: s.runningSince ?? null, lastSummary: why })
+  fs.appendFileSync(path.join(DIR(), 'actions.jsonl'), `${JSON.stringify({ at: iso(now), mode: 'act', action: 'optimizer-run', why, startedAt: s.runningSince ?? null, ...extra })}
+`)
+}
+
+// Drops the lock without counting a run (nothing was looked at), so the next check may start again.
+function releaseOptimizer() {
+  const { runningSince, runningBy, ...rest } = optState()
+  void runningSince; void runningBy
+  saveOpt(rest)
+}
+
+const hhmm = ms => `${iso(ms).slice(11, 16)}Z`
+
+// One line that says the monitor is alive: the last tick, ticks lost or saved in 24 h, the last optimizer run and
+// when the next one is due. health = tickHealth(); due = optimizerDue(); o = the optimizer settings.
+function aliveSummary({ now, lastTickSec, health, opt, due, o }) {
+  const backoffUntil = opt.lastFailedAt ? Date.parse(opt.lastFailedAt) + o.failBackoffMin * 60000 : 0
+  let next
+  if (!o.enabled) next = 'never (optimizer disabled)'
+  else if (opt.runningSince) next = `running since ${hhmm(Date.parse(opt.runningSince))}`
+  else if (backoffUntil > now) next = `${hhmm(backoffUntil)} (backing off after a failed start: ${opt.lastFailure ?? ''})`
+  else if (due.due) next = `now, ${due.reason} (checked every 5 min)`
+  else next = hhmm((opt.lastFinishedAt ? Date.parse(opt.lastFinishedAt) : now) + o.everyMin * 60000)
+  const last = opt.lastFinishedAt ? `${hhmm(Date.parse(opt.lastFinishedAt))} "${String(opt.lastSummary ?? '').slice(0, 90)}"` : 'never'
+  const tick = lastTickSec == null ? 'collector NOT running' : `last tick ${lastTickSec}s ago`
+  return {
+    line: `${tick} | failed ticks 24h: ${health.lost} lost, ${health.recovered} saved by retry | optimizer last run ${last} | next due ${next}`,
+    lastTickSec, failedTicks24h: health.lost, recoveredTicks24h: health.recovered, lastLostTickAt: health.lastLostAt,
+    lastOptimizerRun: opt.lastFinishedAt ?? null, lastOptimizerSummary: opt.lastSummary ?? null, nextOptimizerDue: next,
+  }
+}
+
 function cmdOptimizer(args) {
   const sub = args._[1] ?? 'due'
   if (sub === 'due') {
@@ -62,16 +107,13 @@ function cmdOptimizer(args) {
     return
   }
   if (sub === 'start') {
-    const d = optimizerDue(Date.now(), { everyMin: 0 })
-    if (!d.due && !args.force) { console.log(JSON.stringify({ started: false, reason: d.reason })); process.exitCode = 1; return }
-    saveOpt({ ...optState(), runningSince: iso(Date.now()) })
-    console.log(JSON.stringify({ started: true, pending: d.pending ?? [] }))
+    const r = startOptimizer({ force: !!args.force })
+    console.log(JSON.stringify(r.started ? { started: true, pending: r.pending } : { started: false, reason: r.reason }))
+    if (!r.started) process.exitCode = 1
     return
   }
   if (sub === 'finish') {
-    const s = optState()
-    saveOpt({ lastFinishedAt: iso(Date.now()), lastStartedAt: s.runningSince ?? null, lastSummary: args.summary && args.summary !== true ? String(args.summary).slice(0, 500) : '' })
-    fs.appendFileSync(path.join(DIR(), 'actions.jsonl'), `${JSON.stringify({ at: iso(Date.now()), mode: 'act', action: 'optimizer-run', why: args.summary && args.summary !== true ? String(args.summary).slice(0, 500) : '', startedAt: s.runningSince ?? null })}\n`)
+    finishOptimizer(args.summary && args.summary !== true ? args.summary : '')
     console.log('finished')
     return
   }
@@ -158,4 +200,4 @@ function cmdSearchExclude(args) {
   console.log(JSON.stringify(rec, null, 1))
 }
 
-export { cmdActions, cmdNotices, cmdOptimizer, cmdFloor, cmdEnsure, cmdSearchExclude, optimizerDue, computeFloor, defaultSearchRoots }
+export { cmdActions, cmdNotices, cmdOptimizer, cmdFloor, cmdEnsure, cmdSearchExclude, optimizerDue, optState, aliveSummary, startOptimizer, finishOptimizer, releaseOptimizer, computeFloor, defaultSearchRoots }

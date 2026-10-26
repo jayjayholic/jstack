@@ -3,6 +3,8 @@
 //   perf-snap.exe snap        stdin: known "pid:createTime" keys, one per line. stdout (tab separated):
 //                             M machine line, P one line per process, D cwd + command line for keys not in stdin,
 //                             S this run's own CPU and memory.
+//   perf-snap.exe snap light  the same without D lines: no process memory is read, so a machine that is paging hard
+//                             still gets its tick (the collector's retry when a full snap fails or times out).
 //   perf-snap.exe run <out> <command line>
 //                             runs the command line inside a Job Object, stdout+stderr to <out>, waits for the whole
 //                             tree, prints JSON: wall, CPU (user+kernel of every process in the tree), peak job memory.
@@ -37,8 +39,8 @@ static class PerfSnap {
 	static int Main(string[] args) {
 		try {
 			if (args.Length >= 3 && args[0] == "run") return Run(args[1], args[2]);
-			if (args.Length >= 1 && args[0] == "snap") { Snap(); return 0; }
-			Console.Error.WriteLine("usage: perf-snap snap | perf-snap run <outfile> <command line>");
+			if (args.Length >= 1 && args[0] == "snap") { Snap(args.Length >= 2 && args[1] == "light"); return 0; }
+			Console.Error.WriteLine("usage: perf-snap snap [light] | perf-snap run <outfile> <command line>");
 			return 2;
 		} catch (Exception e) { Console.Error.WriteLine("perf-snap: " + e.Message); return 1; }
 	}
@@ -58,7 +60,7 @@ static class PerfSnap {
 
 	static string Clean(string s) { return s == null ? "" : s.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' '); }
 
-	static void Snap() {
+	static void Snap(bool light) {
 		var known = new HashSet<string>();
 		if (Console.IsInputRedirected) { string line; while ((line = Console.In.ReadLine()) != null) { line = line.Trim(); if (line.Length > 0) known.Add(line); } }
 		var o = new StringBuilder(1 << 16);
@@ -122,7 +124,7 @@ static class PerfSnap {
 					o.Append("P\t").Append(pid).Append('\t').Append(ppid).Append('\t').Append(create).Append('\t').Append(Clean(name)).Append('\t')
 						.Append(cpu).Append('\t').Append(priv).Append('\t').Append(ws).Append('\t').Append(rd).Append('\t').Append(wr).Append('\t')
 						.Append(threads).Append('\t').Append(handles).Append('\n');
-					if (!known.Contains(pid + ":" + create)) detail.Add(new KeyValuePair<int, long>((int)pid, create));
+					if (!light && !known.Contains(pid + ":" + create)) detail.Add(new KeyValuePair<int, long>((int)pid, create));
 				}
 				if (next == 0) break; off += next;
 			}

@@ -2,8 +2,11 @@
 // Machine performance monitor: install the collector, query the store, draw the panel, run the optimize loop.
 //   perf.mjs install [--interval 60] [--task JstackPerf] [--lock-dirs a;b] [--queue file] [--mem-map file]
 //                    [--warden-mode act|dry|off] [--ram-clean-task T] [--docker-project P --docker-busy regex] [--protect regex]
+//                    [--optimizer on|off] [--optimizer-task JayPerfOptimizer] [--optimizer-model sonnet] [--optimizer-effort low]
+//                    [--optimizer-cap-min 25]
 //   perf.mjs uninstall [--purge]          remove the task and stop the collector (--purge also deletes the data)
-//   perf.mjs status [--json]              collector alive?, last tick, its own measured cost, store size
+//   perf.mjs status [--json]              first line: last tick, failed ticks in 24 h, last optimizer run, next due;
+//                                         then the collector's own measured cost and store size
 //   perf.mjs top [--since 60m] [--until t] [--by name|agent|wt|kind|both] [--sort cpu|mem] [--limit 15] [--json]
 //   perf.mjs agents [--since 60m]         = top --by agent
 //   perf.mjs spikes [--since 24h] [--cpu 85] [--mem 90] [--json]
@@ -17,7 +20,8 @@
 //   perf.mjs ensure                       idempotent: collector + warden running, else start (or install) it; one line
 //   perf.mjs actions [--since 24h]        what the warden did (kills, RAM cleans, notices, docker stops, optimizer runs)
 //   perf.mjs notices                      hung tests the warden flagged and left running
-//   perf.mjs optimizer due|start|finish   at most one optimizer agent: due on a pending trigger or every 30 min
+//   perf.mjs optimizer due|start|finish   at most one optimizer agent: due on a pending trigger or every 30 min;
+//                                         the optimizer task (optimizer-run.mjs) launches it headless when due
 //   perf.mjs floor [--since 24h] [--write]   the load floor with the agents' legitimate work, and how far above it we are
 //   perf.mjs search-exclude [--add a;b] [--dry-run]   keep dev roots out of Windows Search indexing
 // Times: 15m, 2h, 7d (ago) or anything Date.parse reads. Store: ~/.jstack/perf (JSTACK_PERF_DIR).
@@ -26,10 +30,11 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawnSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { top, spikes, patterns, localDay } from './lib.mjs'
+import { top, spikes, patterns, localDay, tickHealth } from './lib.mjs'
 import { storeDir, loadConfig, saveConfig, readFrames, readLines, finalizeDays, loadAgents, labeler, appendLedger, readLedger, dirSizeMb } from './store.mjs'
 import { buildPanelData, renderPanel } from './panel.mjs'
-import { cmdActions, cmdNotices, cmdOptimizer, cmdFloor, cmdEnsure, cmdSearchExclude } from './ops.mjs'
+import { cmdActions, cmdNotices, cmdOptimizer, cmdFloor, cmdEnsure, cmdSearchExclude, aliveSummary, optimizerDue, optState } from './ops.mjs'
+import { optimizerConfig } from './optimizer-run.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIR = storeDir()
@@ -145,13 +150,18 @@ function cmdStatus(args) {
   const max = k => self.length ? Math.max(...self.map(x => x[k] ?? 0)) : null
   const cores = frames[frames.length - 1]?.m.cores?.[0] ?? 1
   const snapPct = mean('snapCpuMs') == null ? null : Math.round(mean('snapCpuMs') / (cfg.intervalSec * 10) * 100) / 100
+  const logText = ['collector.log.1', 'collector.log'].map(f => { try { return fs.readFileSync(path.join(DIR, f), 'utf8') } catch { return '' } }).join('\n')
+  const o = optimizerConfig(cfg)
+  const alive = aliveSummary({ now: Date.now(), lastTickSec: c?.lastTickSec ?? null, health: tickHealth(logText, Date.now() - 864e5), opt: optState(), due: optimizerDue(Date.now(), { everyMin: o.everyMin }), o })
   const out = {
+    alive: alive.line, ...Object.fromEntries(Object.entries(alive).filter(([k]) => k !== 'line')), optimizerTask: o.task ?? null,
     store: DIR, sizeMb: dirSizeMb(DIR), collector: c ? `running, pid ${c.pid}, last tick ${c.lastTickSec}s ago` : 'NOT running',
     intervalSec: cfg.intervalSec, task: cfg.taskName, ticksLastHour: frames.length,
     overhead: { collectorCpuPctOfOneCore: mean('cpu'), snapCpuPctOfOneCore: snapPct, machinePct: mean('cpu') == null ? null : Math.round(((mean('cpu') ?? 0) + (snapPct ?? 0)) / cores * 1000) / 1000, collectorRssMb: mean('rssMb'), collectorRssMaxMb: max('rssMb'), collectorPrivateMb: mean('privMb'), snapPeakMb: max('snapPeakMb'), tickMs: mean('tickMs') },
     retention: { rawDays: cfg.rawDays, fiveMinDays: cfg.fiveMinDays, hourDays: cfg.hourDays },
   }
   if (args.json) return console.log(JSON.stringify(out, null, 1))
+  console.log(alive.line)
   console.log(JSON.stringify(out, null, 1))
 }
 
@@ -249,14 +259,14 @@ function cscPath() {
   return [path.join(win, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'), path.join(win, 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe')].find(p => fs.existsSync(p))
 }
 
-function taskXml({ launcher, intervalMin }) {
+function taskXml({ launcher, intervalMin, description, atLogon = true, limitMin = 5 }) {
   const user = `${process.env.USERDOMAIN}\\${process.env.USERNAME}`
   const x = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>jstack machine performance collector (tools/perf). Starts at logon; every ${intervalMin} min it restarts the collector if it died (a running one makes the new start exit).</Description></RegistrationInfo>
+  <RegistrationInfo><Description>${x(description ?? `jstack machine performance collector (tools/perf). Starts at logon; every ${intervalMin} min it restarts the collector if it died (a running one makes the new start exit).`)}</Description></RegistrationInfo>
   <Triggers>
-    <LogonTrigger><Enabled>true</Enabled><UserId>${x(user)}</UserId></LogonTrigger>
+${atLogon ? `    <LogonTrigger><Enabled>true</Enabled><UserId>${x(user)}</UserId></LogonTrigger>\n` : ''}
     <TimeTrigger><Repetition><Interval>PT${intervalMin}M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>2020-01-01T00:00:00</StartBoundary><Enabled>true</Enabled></TimeTrigger>
   </Triggers>
   <Principals><Principal id="Author"><UserId>${x(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
@@ -270,7 +280,7 @@ function taskXml({ launcher, intervalMin }) {
     <AllowStartOnDemand>true</AllowStartOnDemand>
     <Enabled>true</Enabled>
     <Hidden>true</Hidden>
-    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT${limitMin}M</ExecutionTimeLimit>
     <Priority>7</Priority>
   </Settings>
   <Actions Context="Author"><Exec><Command>wscript.exe</Command><Arguments>"${x(launcher)}"</Arguments></Exec></Actions>
@@ -296,6 +306,22 @@ function cmdInstall(args) {
   fs.mkdirSync(path.join(app, 'memory'), { recursive: true })
   for (const f of fs.readdirSync(HERE)) if (f.endsWith('.mjs') && !f.endsWith('.test.mjs')) fs.copyFileSync(path.join(HERE, f), path.join(app, 'perf', f))
   fs.copyFileSync(path.join(HERE, '..', 'memory', 'secrets.mjs'), path.join(app, 'memory', 'secrets.mjs'))
+  const repo = path.resolve(HERE, '..', '..')
+  fs.copyFileSync(path.join(repo, 'skills', 'machine-memory', 'PERF.md'), path.join(app, 'PERF.md'))
+  fs.copyFileSync(path.join(repo, 'plugins', 'jay-claude-switcher', 'scripts', 'switch.py'), path.join(app, 'switch.py'))
+  const opt = cfg.optimizer = { ...(cfg.optimizer ?? {}) }
+  if (args['optimizer-task']) opt.task = args['optimizer-task']
+  if (!opt.task) opt.task = 'JayPerfOptimizer'
+  if (args['optimizer'] === 'off') opt.enabled = false
+  if (args['optimizer'] === 'on') opt.enabled = true
+  for (const k of ['model', 'effort']) if (args[`optimizer-${k}`]) opt[k] = args[`optimizer-${k}`]
+  if (args['optimizer-cap-min']) opt.capMin = +args['optimizer-cap-min']
+  opt.repo = repo
+  if (process.platform === 'win32') {
+    const where = cmd => spawnSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'where.exe'), [cmd], { encoding: 'utf8', windowsHide: true }).stdout?.split(/\r?\n/).find(l => /\.exe$/i.test(l.trim()))?.trim()
+    opt.claude = opt.claude && opt.claude !== 'claude' ? opt.claude : (where('claude') ?? 'claude')
+    opt.python = opt.python && opt.python !== 'python' ? opt.python : (where('python') ?? 'python')
+  }
   const memMapSrc = args['mem-map'] && args['mem-map'] !== true ? args['mem-map'] : path.join(HERE, '..', 'mem-map.ps1')
   if (fs.existsSync(memMapSrc)) { fs.copyFileSync(memMapSrc, path.join(app, 'mem-map.ps1')); cfg.memMap = path.join(app, 'mem-map.ps1') }
   saveConfig(cfg, DIR)
@@ -327,11 +353,31 @@ function cmdInstall(args) {
   if (r.status !== 0) throw new Error(`schtasks /Create failed: ${r.stdout}${r.stderr}`)
   spawnSync('schtasks', ['/Run', '/TN', cfg.taskName], { encoding: 'utf8', windowsHide: true })
   console.log(`installed: task ${cfg.taskName} (at logon + every 5 min if it died, battery-safe, no admin), collector every ${cfg.intervalSec}s, store ${DIR}`)
+  const o = optimizerConfig(cfg)
+  if (!o.enabled) {
+    spawnSync('schtasks', ['/Delete', '/TN', o.task, '/F'], { encoding: 'utf8', windowsHide: true })
+    return console.log(`optimizer task ${o.task} removed (--optimizer off)`)
+  }
+  const optLauncher = path.join(app, 'optimizer.vbs')
+  fs.writeFileSync(optLauncher, [
+    'Set sh = CreateObject("WScript.Shell")',
+    `sh.Environment("PROCESS")("JSTACK_PERF_DIR") = "${vb(DIR)}"`,
+    `sh.Run """${vb(process.execPath)}"" ""${vb(path.join(app, 'perf', 'optimizer-run.mjs'))}""", 0, True`,
+    '',
+  ].join('\r\n'))
+  const optXml = path.join(app, 'optimizer-task.xml')
+  fs.writeFileSync(optXml, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(taskXml({
+    launcher: optLauncher, intervalMin: 5, atLogon: false, limitMin: o.capMin + 10,
+    description: `jstack perf optimizer (tools/perf/optimizer-run.mjs). Every 5 min: when perf.mjs optimizer due says so, one headless claude -p run (${o.model}, effort ${o.effort}, least-used subscription account in its own CLAUDE_CONFIG_DIR, no API key), killed at ${o.capMin} min.`,
+  }), 'utf16le')]))
+  const r2 = spawnSync('schtasks', ['/Create', '/TN', o.task, '/XML', optXml, '/F'], { encoding: 'utf8', windowsHide: true })
+  if (r2.status !== 0) throw new Error(`schtasks /Create ${o.task} failed: ${r2.stdout}${r2.stderr}`)
+  console.log(`installed: task ${o.task} (every 5 min, one headless optimizer run when due, cap ${o.capMin} min, battery-safe, no admin)`)
 }
 
 function cmdUninstall(args) {
   const cfg = loadConfig(DIR)
-  if (process.platform === 'win32') spawnSync('schtasks', ['/Delete', '/TN', cfg.taskName, '/F'], { encoding: 'utf8', windowsHide: true })
+  if (process.platform === 'win32') for (const t of [cfg.taskName, cfg.optimizer?.task].filter(Boolean)) spawnSync('schtasks', ['/Delete', '/TN', t, '/F'], { encoding: 'utf8', windowsHide: true })
   const c = collectorPid()
   if (c) { try { process.kill(c.pid) } catch { /* gone */ } }
   fs.rmSync(path.join(DIR, 'collector.pid'), { force: true })
@@ -351,7 +397,7 @@ if (isMain) {
   const args = parseArgs(process.argv.slice(2))
   const fn = COMMANDS[args._[0]]
   if (!fn) {
-    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 23).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 27).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
     process.exit(args._[0] ? 2 : 0)
   }
   try { fn(args) } catch (e) { console.error(`perf: ${e.message}`); process.exit(1) }

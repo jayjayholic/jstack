@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (5): the perf optimizer runs on its own, and a failed snapshot retries in the same tick
+
+**What:**
+- `tools/perf/optimizer-run.mjs` + scheduled task `JayPerfOptimizer` (every 5 min, battery-safe, no UAC): when `perf.mjs optimizer due` says so, it takes the optimizer lock, borrows the least-used Claude account into its own `CLAUDE_CONFIG_DIR` (`~/.jstack/perf/claude`), runs one headless `claude -p` with PERF.md section 7's prompt (`sonnet`, effort `low`, `dontAsk` with Bash limited to node and git, no API key or token variable in its env), kills the tree at a 25-minute cap, and records the run in `optimizer.log`, `optimizer-runs/`, `actions.jsonl` and `notices.jsonl` (one `optimizer-proposal` per line needing the human). A failed start, or a run that ends without `optimizer finish` before the cap, releases the lock, records nothing in the ledger or notices, and backs off 30 min.
+- `switch.py least-used --from <store>`: reads every stored account's usage, activates the lowest-peak one in the current config folder, never borrows a token that would need a refresh during the run, never prints a token. `switch.py give-back --to <store>` returns rotated tokens unless the store row changed meanwhile.
+- `perf-snap snap light` (no command-line/cwd reads) and the collector's retry: a full snap that times out or fails is retried at once in light mode, so the tick is kept. `collector.log` now says `killed after 30 s (timeout)` instead of `exited null`.
+- `perf.mjs status` starts with one line: last tick, failed ticks in 24 h (lost and saved by retry), last optimizer run, next due time.
+- `perf.mjs install` copies PERF.md and switch.py next to the app and registers both tasks (`--optimizer on|off`, `--optimizer-task`, `--optimizer-model`, `--optimizer-effort`, `--optimizer-cap-min`); `uninstall` removes both.
+- Tests: `tools/perf/optimizer.test.mjs` (13), `plugins/jay-claude-switcher/scripts/switch_test.py` (10).
+
+**Why:** 12 ticks were lost overnight with `perf-snap exited null`. Every one landed in a RAM crunch (commit at 88-99% of the limit, a few GB available, successful ticks around them taking 10-26 s): the collector's own 30 s timeout killed perf-snap while it read new processes' memory through a paging machine (exit null = killed), plus one .NET `OutOfMemoryException` and one start failure (-1) at commit exhaustion. And the optimizer only ran when the main chat session's watch launched it, so triggers piled up whenever that session was busy or closed.
+
 ## 2026-10-26 (4): the warden kills hung dev tools, and their launcher when the child won't die
 
 **What:**

@@ -467,7 +467,29 @@ function patterns(frames, { labelOf = x => x } = {}) {
   return found
 }
 
+// Runs each snapshot attempt in order until one succeeds; every failure goes to onFail(index, error) first. Throws the
+// last error when all fail. The collector passes a full snap, then a light one, so a paging machine still gets a tick.
+async function firstSnap(attempts, onFail) {
+  let last
+  for (let i = 0; i < attempts.length; i++) {
+    try { return { snap: await attempts[i](), attempt: i } } catch (e) { last = e; onFail?.(i, e) }
+  }
+  throw last ?? new Error('no snapshot attempt')
+}
+
+// Collector health from collector.log lines ("<iso> <message>") since fromMs: ticks lost (every attempt failed) and
+// ticks saved by the light retry.
+function tickHealth(logText, fromMs) {
+  let lost = 0, recovered = 0, lastLostAt = null
+  for (const line of String(logText).split('\n')) {
+    const m = line.match(/^(\d{4}-\d\d-\d\dT[\d:.]+Z) (.*)$/)
+    if (!m || Date.parse(m[1]) < fromMs) continue
+    if (m[2].startsWith('tick: ')) { lost++; lastLostAt = m[1] } else if (m[2].startsWith('snap: light retry ok')) recovered++
+  }
+  return { lost, recovered, lastLostAt }
+}
+
 export {
-  parseSnap, parsePs, psTimeTo100ns, cpuPct, machineCpuPct, filetimeToMs, kindOf, worktreeOf, repoRootOf, buildParents,
+  firstSnap, tickHealth, parseSnap, parsePs, psTimeTo100ns, cpuPct, machineCpuPct, filetimeToMs, kindOf, worktreeOf, repoRootOf, buildParents,
   appRootOf, attribute, redactCmd, buildTick, tickToFrame, rollup, expired, localDay, top, spikes, patterns, MACHINE_FIELDS,
 }
