@@ -98,6 +98,8 @@ Loaded by `tools/unslop/classify.mjs` when the task says "ram", "memory", "oom",
 | Machine freezes during builds | mem-map + lock slot list | parallel heavy jobs | heavy-lock; cap concurrent agents |
 | RAM never comes back | orphan process tree after the task | servers or browsers not killed | kill what you start; cleanup hooks |
 | An agent waits forever | process list + its log | poll without deadline | deadline + event-driven wait |
+| Typecheck lane eats the RAM | job peak of one `tsc --noEmit` | TypeScript 7 (native) runs 4 checkers by default | keep TS 7 (about 9x faster than 5.9 on a 7.7k-file Next.js repo: 35 s vs 325 s), and pass `--checkers 1` or `2` when several typechecks share the machine (7.7 GB at 4 checkers, 6.0 GB at 2, 5.4 GB at 1; 1 checker took 54 s) |
+| Agents' searches are slow or find nothing | shell calls in transcripts | `grep -r` over big trees; grep patterns pasted into rg | the Grep tool or `git grep`; never alias grep to rg (grep's backslash-pipe is a literal pipe to rg: 39% of agent greps here used it) |
 
 ## Defers to
 
