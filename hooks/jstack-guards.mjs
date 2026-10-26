@@ -16,6 +16,10 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import * as browsers from './jstack-browsers.mjs'
 import * as calls from './jstack-calls.mjs'
 
+// Child processes run from the hook's own folder, never the repo: Windows resolves a bare
+// command name against the current directory first, so a repo could plant git.exe or powershell.exe.
+const HOOK_DIR = path.dirname(fileURLToPath(import.meta.url))
+
 const WIN = process.platform === 'win32'
 const DEFAULT_WRAPPERS = ['tc_run', 'heavy_capped', 'heavy_acquire']
 const DEFAULT_HEAVY = [
@@ -475,7 +479,7 @@ function stashVerb(seg) {
 }
 
 function worktreeCount(cwd) {
-  const r = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8', timeout: 5000, windowsHide: true })
+  const r = spawnSync('git', ['-C', cwd, 'worktree', 'list', '--porcelain'], { cwd: HOOK_DIR, encoding: 'utf8', timeout: 5000, windowsHide: true })
   if (r.status !== 0 || !r.stdout) return 0
   return r.stdout.split('\n').filter(l => l.startsWith('worktree ')).length
 }
@@ -532,11 +536,11 @@ function pre(payload, env = process.env) {
 function listProcesses() {
   if (WIN) {
     const ps = "$ErrorActionPreference='SilentlyContinue'; @(Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{ p=[int]$_.ProcessId; pp=[int]$_.ParentProcessId; n=[string]$_.Name; c=[string]$_.CommandLine; t=$(if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } else { 0 }) } }) | ConvertTo-Json -Compress"
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 20000 })
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { cwd: HOOK_DIR, encoding: 'utf8', maxBuffer: 64 << 20, timeout: 20000 })
     try { return JSON.parse(r.stdout) } catch { return [] }
   }
   // UNVERIFIED on Linux/macOS: nobody has run this branch there yet.
-  const r = spawnSync('ps', ['-eo', 'pid=,ppid=,etimes=,comm=,args='], { encoding: 'utf8', maxBuffer: 64 << 20 })
+  const r = spawnSync('ps', ['-eo', 'pid=,ppid=,etimes=,comm=,args='], { cwd: HOOK_DIR, encoding: 'utf8', maxBuffer: 64 << 20 })
   const now = Date.now()
   return (r.stdout || '').split('\n').filter(Boolean).map(l => {
     const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(l)
@@ -548,7 +552,7 @@ function killTree(pids) {
   if (!pids.length) return
   if (WIN) {
     const ps = `$ErrorActionPreference='SilentlyContinue'; foreach ($i in @(${pids.join(',')})) { Stop-Process -Id $i -Force; if (Get-Process -Id $i) { Invoke-CimMethod -Query "select * from Win32_Process where ProcessId=$i" -MethodName Terminate | Out-Null } }`
-    spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 20000 })
+    spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { cwd: HOOK_DIR, timeout: 20000 })
     return
   }
   for (const p of pids) { try { process.kill(p, 'SIGKILL') } catch {} }
@@ -687,7 +691,7 @@ function installWatcher(args) {
   const vbs = path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'JstackBrowserWatch.vbs')
   const cmd = [`"${process.execPath}"`, `"${self}"`, 'browser-watch', ...args.filter(a => a !== '--install')].join(' ')
   fs.writeFileSync(vbs, `' Starts the jstack browser watcher hidden at logon. Single instance.\r\nCreateObject("WScript.Shell").Run "${cmd.replace(/"/g, '""')}", 0, False\r\n`)
-  spawnSync('wscript.exe', [vbs], { stdio: 'ignore' })
+  spawnSync('wscript.exe', [vbs], { cwd: HOOK_DIR, stdio: 'ignore' })
   console.log(`watcher launcher: ${vbs} (started now, and at every logon)`)
 }
 

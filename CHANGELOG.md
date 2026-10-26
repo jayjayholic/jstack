@@ -2,6 +2,10 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26: hooks no longer run binaries from the repo folder
+
+- **Security fix:** on Windows a bare command name (`git`, `powershell.exe`, `taskkill`, `wscript.exe`) is looked up in the current folder first, so a repo could plant a fake `git.exe` and the guard hooks would run it. Every child process now starts from the hook's own folder (git gets the repo via `-C`).
+
 ## 2026-10-26 (3): stash guard for repos with several worktrees
 
 **What:**

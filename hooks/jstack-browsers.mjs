@@ -113,13 +113,13 @@ function closeBrowsers(targets, waitMs = 5000) {
     const port = debugPort(t.cmd, t.profile)
     if (port) spawnSync(process.execPath, ['-e', CDP_CLOSE, String(port)], { stdio: 'ignore', timeout: 5000 })
     if (!alive(t.pid)) continue
-    if (WIN) spawnSync('taskkill', ['/PID', String(t.pid)], { stdio: 'ignore', timeout: 10000 })
+    if (WIN) spawnSync('taskkill', ['/PID', String(t.pid)], { cwd: os.tmpdir(), stdio: 'ignore', timeout: 10000 })
     else { try { process.kill(t.pid, 'SIGTERM') } catch {} }
   }
   for (let t = 0; t < waitMs && pids.some(alive); t += 250) sleep(250)
   for (const pid of pids) {
     if (!alive(pid)) { res.set(pid, 'graceful'); continue }
-    if (WIN) spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 10000 })
+    if (WIN) spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { cwd: os.tmpdir(), stdio: 'ignore', timeout: 10000 })
     else {
       // UNVERIFIED on Linux/macOS: kills the browser's process group, which Playwright creates per launch.
       try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch {} }
