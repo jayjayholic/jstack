@@ -29,9 +29,13 @@ export JSTACK_CODEGEN_REUSE_PATHS=".generated"           # generated folders a n
 export JSTACK_CODEGEN_REQUIRED=".generated/client .generated/sql" # every one must exist and be non-empty in a sibling before it's copied
 export JSTACK_TC_SLOTS=2                                 # parallel typecheck lanes for worker agents (tc_run); a tsc peaks ~5 GB
 export JSTACK_TC_CAP_GB=8                                # RAM ceiling for each lane's typecheck
-export JSTACK_HEAVY_MIN_AVAIL_GB=12                      # free RAM a build waits for once it holds the slot
-export JSTACK_TC_MIN_AVAIL_GB=10                         # free RAM a typecheck lane waits for
-export JSTACK_MEM_WAIT_MAX_MIN=15                        # after this a memory wait gives up and runs anyway (still capped)
+export JSTACK_HEAVY_MIN_AVAIL_GB=12                      # a build's need when it has no measured peak yet (admission)
+export JSTACK_TC_MIN_AVAIL_GB=10                         # a typecheck's need when it has no measured peak yet
+export JSTACK_JOB_PEAKS="$HOME/.jstack/job-peaks.tsv"    # measured peak per job, written by heavy_capped, read by admission
+export JSTACK_ADMIT_MARGIN_PCT=15                        # need = max of the job's last 5 peaks + this margin
+export JSTACK_ADMIT_MAX_GB=16                            # ceiling on one job's need; a bigger job runs only with nothing else heavy
+export JSTACK_ADMIT_SAY_S=300                            # status line interval while a job waits (it never gives up by itself)
+export JSTACK_MEM_WAIT_MAX_MIN=15                        # mem_guard only: after this a standalone memory wait gives up
 export JSTACK_QUEUE_FILE="$HOME/.jstack/train-queue.md"  # the orchestrator's queue; mem-map reads it to name agents
 export JSTACK_LOCK_SCRIPT="$JSTACK_TOOLS/heavy-lock.sh"   # the lock ready-gate.sh sources for tc_run
 export JSTACK_UNIT_TEST_CMD="bunx vitest run"            # ready-gate.sh runs it with the touched test files; empty = skip

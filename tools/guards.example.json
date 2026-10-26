@@ -12,6 +12,8 @@
       ],
       "heavyLock": {
         "lockScript": "~/jstack-tools/heavy-lock.sh",
+        "lockDir": "~/.jstack/heavy-lock",
+        "holderPasses": true,
         "wrappers": [
           "tc_run",
           "heavy_capped",

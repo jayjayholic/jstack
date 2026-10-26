@@ -9,7 +9,8 @@ param(
 	[double]$LimitGB = 12,
 	[Parameter(Mandatory = $true)][string]$Command,
 	[string]$Exe = "",
-	[string]$WorkingDirectory = (Get-Location).Path
+	[string]$WorkingDirectory = (Get-Location).Path,
+	[string]$PeakFile = ""
 )
 
 Add-Type -TypeDefinition @"
@@ -61,5 +62,8 @@ $proc = [System.Diagnostics.Process]::Start($psi)
 # Children started after this line inherit the job; the shell itself starts in microseconds, so assign at once.
 [JobCap]::Assign($job, $proc.Handle)
 $proc.WaitForExit()
-"run-capped: exit {0}, peak {1:N2} GB of {2} GB" -f $proc.ExitCode, [JobCap]::PeakGB($job), $LimitGB | Write-Host
+$peak = [JobCap]::PeakGB($job)
+"run-capped: exit {0}, peak {1:N2} GB of {2} GB" -f $proc.ExitCode, $peak, $LimitGB | Write-Host
+# heavy_capped reads this to record the job's measured peak for admission (heavy-lock.sh job_need_gb).
+if ($PeakFile) { [IO.File]::WriteAllText($PeakFile, ("{0:N2}" -f $peak).Replace(",", ".")) }
 exit $proc.ExitCode

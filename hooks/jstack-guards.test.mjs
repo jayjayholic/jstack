@@ -14,7 +14,8 @@ const repo = path.join(tmp, 'repo')
 const wt = path.join(repo, '.worktrees', 'feat-a')
 const logFile = path.join(tmp, 'guard-log.jsonl')
 const cfgFile = path.join(tmp, 'guards.json')
-const env = { CLAUDE_PROJECT_DIR: repo }
+const heavyLockDir = path.join(tmp, 'heavy-lock')
+const env = { CLAUDE_PROJECT_DIR: repo, JSTACK_LOCK_DIR: heavyLockDir }
 
 before(() => {
   fs.mkdirSync(path.join(repo, 'src', 'lib'), { recursive: true })
@@ -55,6 +56,74 @@ test('heavy: blocks bare typecheck, build and install', () => {
 test('heavy: allows wrapped, light and unrelated commands', () => {
   for (const c of ['source /x/heavy-lock.sh && tc_run "bun run typecheck"', 'heavy_acquire build && heavy_capped "bunx next build"; heavy_release', 'tsc --version', 'git commit -m "run tsc and next build"', 'grep tsc package.json', 'bun run test', 'echo bun install', 'bun add zod']) {
     assert.equal(call(c), null, c)
+  }
+})
+
+test('heavy: blocks the launcher and wrapper forms that slipped through', () => {
+  for (const c of ['bun x next build --turbopack', 'bun --bun next build', 'bunx --bun next build', 'bun run --bun next build', 'bun next build', 'pnpm next build', 'npx -y next build', 'npx --yes tsc -p .', 'bun x tsc --noEmit', 'npm exec -- tsc', 'bunx tsgo --noEmit', 'timeout 600 bun run typecheck', 'nice -n 10 next build', 'bun run --bun build', 'npx tsc -p . --noEmit src/a.ts']) {
+    const out = call(c)
+    assert.ok(denied(out), c)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /Run it again as: {2}source \/x\/heavy-lock\.sh && (?:tc_run|heavy_acquire)/, c)
+  }
+})
+
+test('heavy: never blocks help, version, a one-file check, test runners, or anything outside a git repo', () => {
+  for (const c of ['tsc --help', 'bunx tsc --version', 'next build --help', 'npx tsc --noEmit src/a.ts', 'tsgo --noEmit --strict lib/one.tsx', 'npx vitest run', 'bunx vitest', 'bun test', 'npm run lint', 'npx next dev']) {
+    assert.equal(call(c), null, c)
+  }
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'jstack-no-repo-'))
+  try {
+    assert.equal(call('bun run build', { cwd: outside }), null, 'outside a git repo')
+    assert.ok(denied(call(`cd ${repo.replace(/\\/g, '/')} && bun run build`, { cwd: outside })), 'cd into the repo still counts')
+  } finally { fs.rmSync(outside, { recursive: true, force: true }) }
+})
+
+test('heavy: the caller already holding the slot for its worktree passes; another worktree does not', () => {
+  fs.mkdirSync(heavyLockDir, { recursive: true })
+  try {
+    fs.writeFileSync(path.join(heavyLockDir, 'owner'), `train-build Sun Oct 26 01:18:00 2026 @ ${wt.replace(/\\/g, '/')}\n`)
+    assert.equal(call('bunx next build --turbopack'), null, 'inside its own slot')
+    assert.equal(call('bun run typecheck', { cwd: path.join(wt, 'src') }), null, 'a subfolder of the same worktree')
+    assert.ok(denied(call('bunx next build', { cwd: repo })), 'the main checkout is another worktree')
+    fs.writeFileSync(path.join(heavyLockDir, 'owner'), `skills-loop-pool Sun Oct 26 01:18:00 2026 @ ${repo.replace(/\\/g, '/')}\n`)
+    assert.ok(denied(call('bunx next build')), 'slot held for someone else')
+  } finally { fs.rmSync(heavyLockDir, { recursive: true, force: true }) }
+})
+
+test('heavy: fail-safe: a garbage or unreadable owner file is "not held", and a broken pattern never blocks', () => {
+  fs.mkdirSync(path.join(heavyLockDir, 'owner'), { recursive: true })
+  try {
+    assert.ok(denied(call('bunx next build')), 'owner is a directory: read fails, guard still decides')
+    fs.rmSync(heavyLockDir, { recursive: true, force: true }); fs.mkdirSync(heavyLockDir)
+    fs.writeFileSync(path.join(heavyLockDir, 'owner'), '\u0000garbage')
+    assert.ok(denied(call('bunx next build')))
+  } finally { fs.rmSync(heavyLockDir, { recursive: true, force: true }) }
+  const badCfg = path.join(tmp, 'guards-bad.json')
+  fs.writeFileSync(badCfg, JSON.stringify({ log: logFile, projects: [{ name: 'bad', roots: [repo], heavyLock: { extraPatterns: [{ re: '([' }] } }] }))
+  const r = spawnSync(process.execPath, [new URL('./run-hook.mjs', import.meta.url).pathname.replace(/^\/([a-zA-Z]:)/, '$1'), 'pre'], {
+    input: JSON.stringify({ session_id: 's1', cwd: wt, tool_name: 'Bash', tool_input: { command: 'bunx next build' } }),
+    encoding: 'utf8', env: { ...process.env, JSTACK_GUARDS_CONFIG: badCfg, CLAUDE_PROJECT_DIR: repo },
+  })
+  assert.equal(r.status, 0)
+  assert.equal(r.stdout, '', 'no deny when the hook itself fails')
+  assert.equal(JSON.parse(fs.readFileSync(logFile, 'utf8').trim().split('\n').at(-1)).type, 'hook-crash')
+})
+
+test('heavy: opt-out per project with heavyLock.enabled false, and holderPasses false keeps the holder blocked', () => {
+  const save = fs.readFileSync(cfgFile, 'utf8')
+  try {
+    const cfg = JSON.parse(save)
+    cfg.projects[0].heavyLock.enabled = false
+    fs.writeFileSync(cfgFile, JSON.stringify(cfg))
+    assert.equal(call('bunx next build'), null)
+    cfg.projects[0].heavyLock = { lockScript: '/x/heavy-lock.sh', holderPasses: false }
+    fs.writeFileSync(cfgFile, JSON.stringify(cfg))
+    fs.mkdirSync(heavyLockDir, { recursive: true })
+    fs.writeFileSync(path.join(heavyLockDir, 'owner'), `t date @ ${wt.replace(/\\/g, '/')}\n`)
+    assert.ok(denied(call('bunx next build')))
+  } finally {
+    fs.writeFileSync(cfgFile, save)
+    fs.rmSync(heavyLockDir, { recursive: true, force: true })
   }
 })
 

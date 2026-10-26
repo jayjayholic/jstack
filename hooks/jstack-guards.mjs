@@ -173,7 +173,68 @@ function walkSegments(cmd, visit, depth = 0) {
 
 // ---------- guard 1: heavy commands only through the lock ----------
 
-function heavyCheck(cmd, project) {
+const HEAVY_BINS = /^(?:next|tsc|tsgo|vue-tsc|turbo)$/
+const LAUNCHERS = /^(?:bunx|npx|pnpx|bun|pnpm|yarn|npm)$/
+const LAUNCHER_WORDS = /^(?:x|exec|dlx|run)$/
+const LAUNCHER_FLAGS = /^(?:--bun|-y|--yes|-s|--silent|--)$/
+
+// Every form a segment's program can take: the plain head, plus the bare tool behind a launcher
+// (`bun x next build`, `npx -y tsc`, `npm exec -- tsc`, `pnpm next build`) and behind `timeout`/`nice`.
+function heavyHeads(seg) {
+  const t = head(seg).split(' ').filter(Boolean)
+  for (let guard = 0; t.length && guard < 6; guard++) {
+    if (t[0] === 'timeout') { t.shift(); while (t[0]?.startsWith('-')) t.shift(); t.shift(); continue }
+    if (t[0] === 'nice') { t.shift(); if (t[0] === '-n') t.splice(0, 2); else if (/^-/.test(t[0] ?? '')) t.shift(); continue }
+    if (t[0] && PREFIX.test(t[0])) { t.shift(); continue }
+    break
+  }
+  if (!t.length) return []
+  t[0] = t[0].replace(/^.*[\\/]/, '').replace(/\.(?:cmd|exe|ps1)$/i, '')
+  const heads = [t.join(' ')]
+  if (LAUNCHERS.test(t[0])) {
+    heads.push([t[0], ...t.slice(1).filter(x => !LAUNCHER_FLAGS.test(x))].join(' '))
+    let i = 1
+    while (i < t.length && (LAUNCHER_WORDS.test(t[i]) || t[i].startsWith('-'))) i++
+    const bin = (t[i] ?? '').replace(/^.*[\\/]/, '')
+    if (HEAVY_BINS.test(bin)) heads.push([bin, ...t.slice(i + 1)].join(' '))
+  }
+  return heads
+}
+
+// `tsc --noEmit src/one.ts`: one explicit source file and no project, a small check, not a full typecheck.
+function singleFileCheck(h) {
+  const t = h.split(' ')
+  if (!/^(?:tsc|tsgo|vue-tsc)$/.test(t[0])) return false
+  if (t.some(x => /^(?:-p|--project|-b|--build)$/.test(x))) return false
+  const files = t.slice(1).filter(x => !x.startsWith('-') && /\.(?:ts|tsx|mts|cts)$/i.test(x))
+  return files.length === 1
+}
+
+function cdTargets(cmd, cwd) {
+  return [...cmd.matchAll(/(?:^|[;&|]\s*)(?:cd|pushd|Set-Location)\s+("[^"]+"|'[^']+'|\S+)/g)].map(m => resolveFrom(cwd, m[1]))
+}
+
+function lockDirs(conf, env) {
+  const d = conf.lockDir ?? env.JSTACK_LOCK_DIR ?? path.join(os.homedir(), '.jstack', 'heavy-lock')
+  return (Array.isArray(d) ? d : [d]).map(x => resolveFrom(os.homedir(), x))
+}
+
+// The heavy slot is already held for this worktree (its owner line ends "@ <cwd>"): the caller is inside its slot,
+// e.g. a train that ran heavy_acquire in an earlier call. Unreadable or missing owner files mean "not held".
+function slotHeldHere(conf, roots, env) {
+  if (!roots.length) return false
+  for (const dir of lockDirs(conf, env)) {
+    let line = ''
+    try { line = fs.readFileSync(path.join(dir, 'owner'), 'utf8') } catch { continue }
+    const m = /@\s+(.+?)\s*$/.exec(line.trim())
+    if (!m) continue
+    const owner = gitTop(resolveFrom(os.homedir(), m[1]))
+    if (owner && roots.includes(owner.root)) return true
+  }
+  return false
+}
+
+function heavyCheck(cmd, project, cwd = process.cwd(), env = process.env) {
   const conf = project.heavyLock ?? {}
   if (conf.enabled === false) return null
   const wrappers = conf.wrappers ?? DEFAULT_WRAPPERS
@@ -182,11 +243,19 @@ function heavyCheck(cmd, project) {
   let hit = null
   walkSegments(cmd, seg => {
     if (hit) return
-    const h = head(seg)
-    if (!h || LIGHT_FLAGS.test(' ' + h + ' ')) return
-    const r = rules.find(x => x.re.test(h))
-    if (r) hit = { kind: r.kind, segment: seg }
+    const heads = heavyHeads(seg)
+    if (heads.some(h => LIGHT_FLAGS.test(' ' + h + ' ') || singleFileCheck(h))) return
+    for (const h of heads) {
+      const r = rules.find(x => x.re.test(h))
+      if (r) { hit = { kind: r.kind, segment: seg }; return }
+    }
   })
+  if (!hit) return null
+  if (hit.kind !== 'worktree-remove') {
+    const roots = [...new Set([cwd, ...cdTargets(cmd, cwd)].map(p => gitTop(p)?.root).filter(Boolean))]
+    if (!roots.length) return null
+    if (conf.holderPasses !== false && slotHeldHere(conf, roots, env)) return null
+  }
   if (!hit) return null
   const lock = conf.lockScript ?? '<jstack tools>/heavy-lock.sh'
   const tools = lock.replace(/[\\/][^\\/]*$/, '')
@@ -358,8 +427,8 @@ function log(project, payload, entry) {
   } catch {}
 }
 
-function followed(pending, tool, cmd, project) {
-  if (pending.guard === 'heavy-lock') return /^(?:Bash|PowerShell)$/.test(tool) && !heavyCheck(cmd, project) && (project.heavyLock?.wrappers ?? DEFAULT_WRAPPERS).some(w => cmd.includes(w))
+function followed(pending, tool, cmd, project, cwd) {
+  if (pending.guard === 'heavy-lock') return /^(?:Bash|PowerShell)$/.test(tool) && !heavyCheck(cmd, project, cwd) && (project.heavyLock?.wrappers ?? DEFAULT_WRAPPERS).some(w => cmd.includes(w))
   if (SEARCH_TOOLS.has(tool)) return true
   return /\bgit\s+(?:grep|ls-files)\b/.test(cmd)
 }
@@ -390,7 +459,7 @@ function pre(payload, env = process.env) {
   const cwd = payload.cwd || process.cwd()
   const state = readState(payload)
   if (state.pending) {
-    log(project, payload, { type: 'next', guard: state.pending.guard, tool, command: cmd || payload.tool_input?.pattern, followed: followed(state.pending, tool, cmd, project) })
+    log(project, payload, { type: 'next', guard: state.pending.guard, tool, command: cmd || payload.tool_input?.pattern, followed: followed(state.pending, tool, cmd, project, cwd) })
     delete state.pending
   }
   let verdict = null
@@ -399,7 +468,7 @@ function pre(payload, env = process.env) {
       const wts = linkedWorktreesIn(cmd, cwd)
       state.worktrees = [...new Set([...(state.worktrees ?? []), ...wts])].slice(-20)
     }
-    verdict = heavyCheck(cmd, project) ?? scanCheck(cmd, project, cwd)
+    verdict = heavyCheck(cmd, project, cwd, env) ?? scanCheck(cmd, project, cwd)
     if (verdict) {
       const repeats = (state.blocks ?? 0) + 1
       state.blocks = repeats
@@ -667,4 +736,4 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
 
-export { norm, segments, tokens, head, heavyCheck, scanCheck, pre, post, cleanup, listProcesses, pickOwned, runHook, crashLog, loadProject, linkedWorktreesIn, gitTop }
+export { norm, segments, tokens, head, heavyHeads, heavyCheck, scanCheck, pre, post, cleanup, listProcesses, pickOwned, runHook, crashLog, loadProject, linkedWorktreesIn, gitTop }
