@@ -485,8 +485,13 @@ const unlinkEveryLink = (dir) => {
 const remove = (target, deleteBranch) => {
 	const dir = path.resolve(target)
 	if (samePath(dir, mainCheckout(dir))) throw new Error('refusing to remove the main checkout')
-	const branch = gitOrNull(dir, 'symbolic-ref', '--quiet', '--short', 'HEAD')?.trim()
 	const main = mainCheckout(dir)
+	// A half-deleted worktree has no .git file, so git would walk up and report the main checkout's branch.
+	const ownsGit = fs.existsSync(path.join(dir, '.git')) && samePath(gitOrNull(dir, 'rev-parse', '--show-toplevel')?.trim() ?? '', dir)
+	const headBranch = ownsGit ? gitOrNull(dir, 'symbolic-ref', '--quiet', '--short', 'HEAD')?.trim() : null
+	const protectedBranches = new Set(['stage', 'production', 'main', 'master', gitOrNull(main, 'symbolic-ref', '--quiet', '--short', 'HEAD')?.trim()].filter(Boolean))
+	const branch = headBranch && !protectedBranches.has(headBranch) ? headBranch : null
+	if (deleteBranch && headBranch && !branch) console.error(`worktree-deps: not deleting protected branch ${headBranch}`)
 	unlinkEveryLink(dir)
 	if (spawnSync('git', ['-C', main, '-c', 'core.longpaths=true', 'worktree', 'remove', '--force', dir], { stdio: 'inherit' }).status !== 0) {
 		fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 })

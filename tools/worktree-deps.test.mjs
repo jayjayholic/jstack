@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -119,4 +119,37 @@ test('remove unlinks every junction before git deletes the worktree, so the shar
 	assert.ok(fs.existsSync(storeFile))
 	assert.ok(fs.existsSync(path.join(outside, 'keep.txt')))
 	assert.equal(sh(main, 'git', ['branch', '--list', 'f']).trim(), '')
+})
+
+const removeOutput = (...args) => {
+	const run = spawnSync(process.execPath, [SCRIPT, 'remove', ...args], { cwd: main, encoding: 'utf8' })
+	return `${run.stdout}${run.stderr}`
+}
+const branchExists = (name) => sh(main, 'git', ['branch', '--list', name]).trim() !== ''
+
+test('remove on a half-deleted worktree never reads or deletes the main checkout branch', () => {
+	const g = path.join(main, '.worktrees', 'half')
+	sh(main, 'git', ['worktree', 'add', '-q', '-b', 'half', g, 'stage'])
+	fs.rmSync(path.join(g, '.git'), { force: true })
+	const out = removeOutput(g, '--delete-branch')
+	assert.doesNotMatch(out, /and branch/)
+	assert.doesNotMatch(out, /branch -D|Deleted branch|cannot delete/i)
+	assert.ok(branchExists('stage'))
+	assert.equal(fs.existsSync(g), false)
+})
+
+test('remove refuses to delete a protected branch and says so', () => {
+	const h = path.join(sandbox, 'h-master')
+	sh(main, 'git', ['worktree', 'add', '-q', '-b', 'master', h, 'stage'])
+	const out = removeOutput(h, '--delete-branch')
+	assert.match(out, /not deleting protected branch master/)
+	assert.ok(branchExists('master'))
+	assert.equal(fs.existsSync(h), false)
+})
+
+test('remove deletes the branch of a normal worktree', () => {
+	const k = addWorktree('k')
+	const out = removeOutput(k, '--delete-branch')
+	assert.match(out, /and branch k/)
+	assert.equal(branchExists('k'), false)
 })

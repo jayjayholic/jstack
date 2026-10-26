@@ -2,6 +2,14 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (11): `worktree-deps remove --delete-branch` never deletes the main checkout's branch
+
+**What:**
+- `tools/worktree-deps.mjs` `remove`: reads the worktree's branch only when the folder still has its own `.git` and is its own `git rev-parse --show-toplevel`; never deletes `stage`, `production`, `main`, `master` or the main checkout's current branch, and prints `not deleting protected branch <name>` instead.
+- `tools/worktree-deps.test.mjs` (+3, 10/10): a half-deleted nested worktree (no `.git`) deletes no branch; a worktree on `master` is removed but its branch kept with the refusal line; a normal worktree's branch is deleted. Both guard tests fail on the old code.
+
+**Why:** on a half-deleted worktree (no `.git` file left) `git -C <dir> symbolic-ref HEAD` walked up to the main repo and returned its branch (`stage`); `remove` then ran `git branch -D stage`, and git refused only because that branch happened to be checked out.
+
 ## 2026-10-26 (10): a job that stalls at the memory cap is killed and reported instead of holding its slot
 
 **What:**
