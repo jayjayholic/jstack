@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-25 (late night, 3): a scan note for scoped grep, and a tip list measured
+
+**What:**
+- Scan guard: a scoped `grep -r` still passes, but the first one per agent gets a note (additionalContext, never a block): the Grep tool or `git grep` is 2-3x faster, and grep's backslash-pipe alternation is a literal pipe to rg. Off with `"scans": { "nudge": false }`. Two new tests.
+- README, RAM section: a collapsed table with the verdict and the numbers for each tip (TypeScript 7, oxfmt, oxlint, ripgrep, cloud checks).
+- `eng-machine`: two known traps (TS 7 checkers vs RAM, grep vs rg) and three dated sources.
+
+**Why:** a LinkedIn post listed ways to cut CPU and RAM with many agents on one machine. Measured on the dashboard instead of believed: TypeScript 7 is 9x faster but uses 1.2 GB more at its default 4 checkers (`--checkers 1` saves 2.4 GB for 19 s); oxfmt is 190x faster at `--check` but disagrees with Prettier on 68 files; agents made about 25k recursive greps in a week (14k scoped, which the guard allows) and 39% of all agent greps use `\|`, so the "symlink grep to rg" tip would have broken them silently. The scan guard had already blocked 271 root-wide scans, and 77% of the next calls took the advice. The 32 GB laptop finally won an argument with LinkedIn.
+
 ## 2026-10-25 (late night, 2): the warden ends an orphaned xargs too
 
 **What:** `xargs` joins the warden's short dev tools (killed when orphaned for 10+ min).

@@ -327,6 +327,22 @@ One Turbopack build eats about 5 GB and ignores `--max-old-space-size`. A full `
 - `heavy-lock.sh`: `heavy_acquire` / `heavy_release`, `heavy_capped` (the RAM ceiling), `tc_run` (typecheck lane), `server_wait` (before any server).
 - `mem-map.ps1` and the `machine-memory` skill: who is eating the RAM, per agent.
 - `ram-clean.ps1` and `node-memory-watch.ps1`: free the file cache, and kill the fattest build before Windows does something worse.
+
+<details>
+
+<summary><b>Cheaper tools</b>: what a LinkedIn tip list was worth, measured</summary>
+
+Measured on a 7.7k-file Bun + Next.js 16 monorepo on the 32 GB laptop, interleaved, median of 3 or more, each run under the RAM ceiling (peak = whole job):
+
+| Tip | Verdict | Numbers |
+|---|---|---|
+| `tsc` → TypeScript 7 (the native Go port, ex-`tsgo`) | **adopt** | 35 s vs 325 s for TS 5.9, same 3 injected errors. It costs more RAM, not less: 7.7 GB vs 6.5 GB at the default 4 checkers. `--checkers 2` is 6.0 GB, `--checkers 1` 5.4 GB in 54 s. Keep `typescript` 5/6 installed for tools that import its API (Next.js, typescript-eslint); TS 7 has no stable API until 7.1. Exit code on errors is 1, not 2. |
+| Prettier → oxfmt | **try, not drop-in** | `--check`: 1.3 s vs 246 s (yes, minutes; the machine was busy, the best Prettier run was 98 s). RAM about the same (0.36 vs 0.28 GB). But it would reformat 68 of 7,727 files that Prettier passes, and Prettier then rejects all 68 (long member chains, arrow callbacks with a return type). Switch only as one formatting commit with CI on the same tool. Pre-1.0 (0.74). |
+| ESLint → oxlint | skip if you have no ESLint | 1.x, 870+ rules; nothing to replace here. |
+| Always ripgrep | **adopt, via tools** | Scoped search: grep 1.1 s, rg 0.46 s, `git grep` 0.35 s. At a repo root with worktrees: grep over 120 s, rg 2.5 s. Do NOT symlink grep to rg: 39% of agent greps used grep's backslash-pipe alternation, which rg reads as a literal pipe and silently finds nothing. The scan guard blocks the expensive case and notes the faster tool once per agent. |
+| Checks, tests, dev boxes in the cloud | already there | CI runs typecheck and tests on a runner; the train builds once per train, not once per branch. |
+
+</details>
 - `perf/perf.mjs`: a performance log that records, every minute, who used the CPU and RAM (per process and per agent), with a panel, a query CLI for agents and an optimize loop.
 
 <details>
