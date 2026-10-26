@@ -1,0 +1,96 @@
+{
+  "domain": "llm-prompting",
+  "set": "holdout",
+  "cases": [
+    {
+      "id": "py-question-then-context",
+      "rule": "prompt.question-before-docs",
+      "kind": "slop",
+      "note": "Python template, question first",
+      "files": {
+        "app/prompt.py": "PROMPT = \"\"\"Question: {question}\n\n<documents>\n{context}\n</documents>\"\"\"\n"
+      },
+      "expect": [
+        {
+          "path": "app/prompt.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "py-context-then-question",
+      "rule": "prompt.question-before-docs",
+      "kind": "near-miss",
+      "note": "Python template, documents first",
+      "files": {
+        "app/prompt.py": "PROMPT = \"\"\"<documents>\n{context}\n</documents>\n\nQuestion: {question}\"\"\"\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "py-prefill-brace",
+      "rule": "prompt.prefill-last-turn",
+      "kind": "slop",
+      "note": "JSON prefill as the last turn",
+      "files": {
+        "app/extract.py": "def extract(client, text):\n    return client.messages.create(model=\"any-model\", max_tokens=512, messages=[{\"role\": \"user\", \"content\": text}, {\"role\": \"assistant\", \"content\": \"{\"}])\n"
+      },
+      "expect": [
+        {
+          "path": "app/extract.py",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "py-assistant-mid",
+      "rule": "prompt.prefill-last-turn",
+      "kind": "near-miss",
+      "note": "an assistant turn followed by a user turn",
+      "files": {
+        "app/chat.py": "MESSAGES = [{\"role\": \"user\", \"content\": \"Capital of France?\"}, {\"role\": \"assistant\", \"content\": \"Paris.\"}, {\"role\": \"user\", \"content\": \"And Spain?\"}]\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "py-sample-examples",
+      "rule": "prompt.shuffled-examples",
+      "kind": "slop",
+      "note": "random subset of examples per call",
+      "files": {
+        "app/shots.py": "def shots():\n    return random.sample(FEW_SHOT_EXAMPLES, 3)\n"
+      },
+      "expect": [
+        {
+          "path": "app/shots.py",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "random-sort-examples",
+      "rule": "prompt.shuffled-examples",
+      "kind": "slop",
+      "note": "sort with a random comparator",
+      "files": {
+        "src/prompts/pick.ts": "function pick(examples) {\n  return [...examples].sort(() => Math.random() - 0.5).slice(0, 4)\n}\nexport { pick }\n"
+      },
+      "expect": [
+        {
+          "path": "src/prompts/pick.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "py-sorted-examples",
+      "rule": "prompt.shuffled-examples",
+      "kind": "near-miss",
+      "note": "a deterministic order",
+      "files": {
+        "app/shots.py": "def shots():\n    return sorted(EXAMPLES, key=lambda e: e[\"id\"])[:3]\n"
+      },
+      "expect": []
+    }
+  ]
+}

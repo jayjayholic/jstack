@@ -44,7 +44,13 @@ function renderBlock(pack) {
   out.push('', '## Confirm recipes', '')
   for (const r of pack.rules ?? []) {
     const fp = r.knownFalsePositives?.length ? ` Known false positives: ${r.knownFalsePositives.join('; ')}.` : ''
-    out.push(`- \`${r.id}\`: ${r.confirm ?? 'build a failing test or a measurement that shows the harm'}${r.fixHint ? ` Fix direction: ${r.fixHint}.` : ''}${fp}`)
+    const sug = r.suggest ? ` Suggest: \`${r.suggest}\`.` : ''
+    out.push(`- \`${r.id}\`: ${r.confirm ?? 'build a failing test or a measurement that shows the harm'}${r.fixHint ? ` Fix direction: ${r.fixHint}.` : ''}${sug}${fp}`)
+  }
+  if (pack.tactics?.length) {
+    out.push('', '## Tactics to suggest', '', 'A finding or a pre-flight answer that matches the "when" names the tactic, its saving and its source. Suggest, never apply silently: the tactic still goes through the verify steps.', '')
+    out.push('| id | tactic | when | saving | source |', '|---|---|---|---|---|')
+    for (const t of pack.tactics) out.push(`| \`${t.id}\` | ${cell(t.tactic)} | ${cell(t.when)} | ${cell(t.saving ?? '-')} | ${cell(t.source ?? '-')} |`)
   }
   if (pack.verify?.length) {
     out.push('', '## Verification steps', '', 'Run in this order after the change; each line is a pass criterion.', '')

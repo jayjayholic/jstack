@@ -11,6 +11,13 @@ import { pathToFileURL } from 'node:url'
 import { states, readEvidence, reproduced, passes, REPORTABLE } from './ledger.mjs'
 import { redact } from '../memory/secrets.mjs'
 import { record as recordMetrics } from './metrics.mjs'
+import { tacticById } from './rules.mjs'
+
+// The tactic a finding names: resolved on a static candidate, or a pack tactic id an eyes agent wrote.
+function suggestionOf(cand) {
+  if (cand.suggest && typeof cand.suggest === 'object' && cand.suggest.tactic) return cand.suggest
+  return tacticById(cand.suggest)
+}
 
 function readJsonl(file) {
   try { return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) } catch { return [] }
@@ -54,6 +61,8 @@ function buildReport(dir, { costUsd = null, minutes = null } = {}) {
       if (t) lines.push('', '```', redact(t).text, '```')
     }
     if (cand.fixHint) lines.push(`- **Fix direction:** ${cand.fixHint}`)
+    const tactic = suggestionOf(cand)
+    if (tactic) lines.push(`- **Suggested tactic:** ${tactic.tactic}${tactic.saving ? ` (${tactic.saving})` : ''}${tactic.source ? `. Source: ${tactic.source}` : ''}`)
     for (const { rel, ev } of after) lines.push(`- **After the fix:** \`${ev?.cmd}\` exit ${ev?.exit} (${passes(ev).ok ? 'passes' : 'STILL FAILING'}). Artifact: \`${rel}\``)
     body.push(lines.join('\n'))
   }
@@ -102,4 +111,4 @@ function main(argv) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)))
 
-export { buildReport, repoOfRun, main }
+export { buildReport, repoOfRun, suggestionOf, main }

@@ -137,7 +137,8 @@ function loadRules({ repo = null, domains = null, ruleIds = null, skillsDir = SK
   const packs = loadPacks(skillsDir)
   const rules = []
   for (const p of packs) {
-    for (const r of p.rules ?? []) rules.push({ ...r, domain: p.domain })
+    const tactics = new Map((p.tactics ?? []).map(x => [x.id, x]))
+    for (const r of p.rules ?? []) rules.push({ ...r, domain: p.domain, ...(r.suggest && tactics.has(r.suggest) ? { tactic: tactics.get(r.suggest) } : {}) })
   }
   for (const r of project?.extraRules ?? []) rules.push({ ...r, domain: r.domain ?? r.id.split('.')[0], project: true })
   rules.push(...houseRules(project))
@@ -149,8 +150,18 @@ function loadRules({ repo = null, domains = null, ruleIds = null, skillsDir = SK
     .filter(r => r.effective.mode !== 'off')
 }
 
+// A pack tactic by id ("cost.t.batches"), so a finding that names one can print what to do and where it comes from.
+function tacticById(id, skillsDir = SKILLS_DIR) {
+  if (!id || typeof id !== 'string') return null
+  for (const p of loadPacks(skillsDir)) {
+    const t = (p.tactics ?? []).find(x => x.id === id)
+    if (t) return t
+  }
+  return null
+}
+
 function ignoreGlobs(project) {
   return [...DEFAULT_IGNORE, ...(project?.paths?.ignore ?? [])]
 }
 
-export { loadPacks, loadRules, loadProjectConfig, loadProjectConfigAt, baseCommit, readAtRef, fieldPrecision, effectiveMode, globToRegExp, matchGlob, matchAny, ignoreGlobs, JSTACK_ROOT, SKILLS_DIR, DEFAULT_IGNORE, CATALOG_GLOBS, PROMOTE, DEMOTE }
+export { loadPacks, loadRules, tacticById, loadProjectConfig, loadProjectConfigAt, baseCommit, readAtRef, fieldPrecision, effectiveMode, globToRegExp, matchGlob, matchAny, ignoreGlobs, JSTACK_ROOT, SKILLS_DIR, DEFAULT_IGNORE, CATALOG_GLOBS, PROMOTE, DEMOTE }

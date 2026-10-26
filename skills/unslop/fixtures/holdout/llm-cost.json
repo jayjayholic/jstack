@@ -121,6 +121,106 @@
         "app/tools.py": "tools = list({\"search\": SEARCH, \"read\": READ}.values())\n"
       },
       "expect": []
+    },
+    {
+      "id": "py-thinking-conditional",
+      "rule": "cost.cache-param-varies",
+      "kind": "slop",
+      "note": "thinking switched on per call",
+      "files": {
+        "app/step.py": "def step(client, history, deep):\n    return client.messages.create(\n        model=\"any-model\",\n        max_tokens=2048,\n        thinking={\"type\": \"enabled\", \"budget_tokens\": 8000} if deep else {\"type\": \"disabled\"},\n        messages=history,\n    )\n"
+      },
+      "expect": [
+        {
+          "path": "app/step.py",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "id": "effort-ternary",
+      "rule": "cost.cache-param-varies",
+      "kind": "slop",
+      "note": "effort picked per call",
+      "files": {
+        "src/agent/run.ts": "async function run(client, history, hard) {\n  return client.messages.create({\n    model: 'any-model',\n    max_tokens: 4096,\n    output_config: { effort: hard ? 'high' : 'low' },\n    messages: history,\n  })\n}\nexport { run }\n"
+      },
+      "expect": [
+        {
+          "path": "src/agent/run.ts",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "id": "py-thinking-fixed",
+      "rule": "cost.cache-param-varies",
+      "kind": "near-miss",
+      "note": "a fixed thinking config",
+      "files": {
+        "app/step.py": "def step(client, history):\n    return client.messages.create(\n        model=\"any-model\",\n        max_tokens=2048,\n        thinking={\"type\": \"adaptive\"},\n        messages=history,\n    )\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "ui-thinking-label",
+      "rule": "cost.cache-param-varies",
+      "kind": "near-miss",
+      "note": "a UI label named thinking, no model call in the file",
+      "files": {
+        "src/ui/status.ts": "function status(busy) {\n  return { thinking: busy ? 'Thinking' : 'Idle' }\n}\nexport { status }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "py-cron-sync",
+      "rule": "cost.batchable-sync-job",
+      "kind": "slop",
+      "note": "a cron re-index calls the model per document",
+      "files": {
+        "app/cron/reindex_docs.py": "def run(client, docs):\n    for doc in docs:\n        out = client.messages.create(model=\"any-model\", max_tokens=256, messages=[{\"role\": \"user\", \"content\": doc.text}])\n        store(doc.id, out)\n"
+      },
+      "expect": [
+        {
+          "path": "app/cron/reindex_docs.py",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "py-eval-batches",
+      "rule": "cost.batchable-sync-job",
+      "kind": "near-miss",
+      "note": "an eval run already on batches",
+      "files": {
+        "evals/run.py": "def run(client, cases):\n    requests = [{\"custom_id\": c.id, \"params\": c.params} for c in cases]\n    return client.messages.batches.create(requests=requests)\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "py-clock-marked",
+      "rule": "cost.clock-before-breakpoint",
+      "kind": "slop",
+      "note": "f-string with the clock in the marked block",
+      "files": {
+        "app/blocks.py": "def blocks():\n    return [{\"type\": \"text\", \"text\": f\"{RULES}\\nNow: {datetime.now():%Y-%m-%d}\", \"cache_control\": {\"type\": \"ephemeral\"}}]\n"
+      },
+      "expect": [
+        {
+          "path": "app/blocks.py",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "py-clock-after",
+      "rule": "cost.clock-before-breakpoint",
+      "kind": "near-miss",
+      "note": "the clock in the next, unmarked block",
+      "files": {
+        "app/blocks.py": "def blocks():\n    return [\n        {\"type\": \"text\", \"text\": RULES, \"cache_control\": {\"type\": \"ephemeral\"}},\n        {\"type\": \"text\", \"text\": f\"Now: {datetime.now():%Y-%m-%d}\"},\n    ]\n"
+      },
+      "expect": []
     }
   ]
 }

@@ -155,7 +155,9 @@ function packDigest(domains, tier, maxChars = 5000) {
   for (const p of packs) {
     const qs = (p.questions ?? []).filter(q => tiers.includes(q.tier)).map(q => `  - ${q.text}`)
     const flags = (p.rules ?? []).filter(r => sev.includes(r.severity ?? 'medium')).map(r => `  - ${r.title}`)
-    parts.push([`${p.domain} (${p.skill}):`, 'questions:', ...qs, 'red flags /unslop will check:', ...flags].join('\n'))
+    const tactics = (p.tactics ?? []).slice(0, tier === 'S' ? 3 : 8).map(x => `  - ${x.tactic}`)
+    const suggest = tactics.length ? ['tactics to suggest (the pack names each source):', ...tactics] : []
+    parts.push([`${p.domain} (${p.skill}):`, 'questions:', ...qs, 'red flags /unslop will check:', ...flags, ...suggest].join('\n'))
   }
   let text = parts.join('\n')
   if (text.length > maxChars) text = text.slice(0, maxChars) + '\n  ... (cut; the full pack is in its skill)'

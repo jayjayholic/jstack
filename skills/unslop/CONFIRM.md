@@ -51,3 +51,12 @@ Reading the code never confirms a cache finding: the provider's usage numbers do
    Exit 1 with `verdict=write-only`, `not-cached` or `prefix-moved` is the evidence; `ok` dismisses the candidate.
 
 The skeptic reruns the probe on the same saved files (`evidence.mjs rerun`), and for a replay sends the pair once more itself: the finding counts only when its own pair gives the same verdict. Before CONFIRMED, check the disqualifiers that fake a miss: the two calls ran in parallel (an entry is readable only after the first response starts), the gap exceeded the TTL, the model or tool list changed between them, or the prefix is under the model's minimum cacheable length (that is its own finding, `cost.under-min-cache-length`, not a layout bug).
+
+## Prompt-quality findings (eng-llm-prompting `prompt.*`) and batch findings (`cost.batchable-sync-job`, `cost.batch-*`)
+
+- **A layout or reorder finding** (`prompt.question-before-docs`, `prompt.reorder-without-ab`, `prompt.shuffled-examples`) is confirmed by scores, not by reading: score the held-out cases on both prompts with the same model, parameters and grader into `before.jsonl` / `after.jsonl` (`{"case", "score"}` per line), then
+  `node {{JSTACK_TOOLS}}/unslop/evidence.mjs run <run> --id <finding>.measurement --kind measurement --by prosecutor#<n> -- node {{JSTACK_TOOLS}}/unslop/prompt-ab.mjs compare before.jsonl after.jsonl --max-drop-pp <budget> --min-n <budget>`.
+  `verdict=regressed` is the evidence for a reorder that hurt quality; for `prompt.question-before-docs` the arms are the current order and the documents-first order, and `better=true` on the second confirms it. The skeptic reruns on the same score files and checks that both arms ran the same cases (`mismatched` otherwise) and that the cases were not used to write the prompt.
+- **A judge finding** (`prompt.judge-uncalibrated`): `prompt-ab.mjs judge human.jsonl judge.jsonl --min-agreement <budget>`; `uncalibrated` is the evidence. Read `kappa` and `majority_share` too: a judge that always gives the majority label can pass on agreement alone.
+- **A prefill finding** (`prompt.prefill-last-turn`): a failing test that sends the request to a current model (or replays a recorded 400 "prefill not supported").
+- **A batch finding**: static proof that nobody waits (the scheduler entry, no caller awaiting the result) plus the site's metered spend from usage records; the saving claimed is that spend x 0.5. Dismiss it when a person waits on the result or the steps chain (`cost.batch-on-interactive` is the opposite finding).

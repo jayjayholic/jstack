@@ -26,7 +26,7 @@ Don't want to configure it by hand? Tell your agent: **"follow ADAPT.md in jayja
 
 <summary><b>Other ways to install</b> (manual copy, extra plugins, which skills show up)</summary>
 
-**Which skills show up.** With the plugin, the skills appear as `/jstack:train`, `/jstack:train-compound`, `/jstack:train-queue`, `/jstack:optimize`, `/jstack:preflight`, `/jstack:unslop`, `/jstack:machine-memory`, `/jstack:grill-me`, `/jstack:grilling` and `/jstack:wayfinder`, plus the skills wayfinder calls (research, prototype, domain-modeling, setup-matt-pocock-skills) and the 16 `eng-*` domain packs. `/simplify` is already built into Claude Code.
+**Which skills show up.** With the plugin, the skills appear as `/jstack:train`, `/jstack:train-compound`, `/jstack:train-queue`, `/jstack:optimize`, `/jstack:preflight`, `/jstack:unslop`, `/jstack:machine-memory`, `/jstack:grill-me`, `/jstack:grilling` and `/jstack:wayfinder`, plus the skills wayfinder calls (research, prototype, domain-modeling, setup-matt-pocock-skills) and the 17 `eng-*` domain packs. `/simplify` is already built into Claude Code.
 
 **Extra plugins from the same marketplace:**
 
@@ -75,7 +75,7 @@ Don't want to configure it by hand? Tell your agent: **"follow ADAPT.md in jayja
 | [RAM](#keeping-the-ram-alive) | One heavy slot, a hard RAM ceiling, a memory map that names the guilty agent, a minute-by-minute CPU and RAM log with a panel | `heavy-lock.sh`, `machine-memory`, `perf.mjs` |
 | [Guard hooks](#guard-hooks) | Hooks that block bare builds and repo-wide scans and clean up what agents leave running | `~/.jstack/guards.json` |
 | [Worktrees](#worktrees-and-shared-dependencies) | One worktree per agent, shared `node_modules` | `new-worktree.sh` |
-| [Domain packs](#domain-packs) | 16 packs of questions, budgets and red flags per domain | `skills/eng-*` |
+| [Domain packs](#domain-packs) | 17 packs of questions, budgets and red flags per domain | `skills/eng-*` |
 | [Optimize](#optimize) | A speed agent that proves its fixes with A/B stats | `/optimize` |
 | [Account switcher](#account-switcher) | Every Claude account's limits in a side panel, auto-switch at 99% | `jay-claude-switcher` |
 
@@ -477,11 +477,11 @@ Every agent gets its own worktree from `new-worktree.sh`, like a fresh clone, so
 
 ## Domain packs
 
-16 packs (`skills/eng-*`) carry the questions, budgets, red flags, tools and known traps per domain. `/preflight` asks their questions, `/unslop` hunts their red flags. They were ported from 16 research files with dated sources.
+17 packs (`skills/eng-*`) carry the questions, budgets, red flags, tools and known traps per domain. `/preflight` asks their questions, `/unslop` hunts their red flags. They were ported from 16 research files with dated sources; `eng-llm-prompting` came later, from the official Anthropic docs read on 2026-10-26.
 
 <details>
 
-<summary><b>The 16 packs</b> and how each one is built</summary>
+<summary><b>The 17 packs</b> and how each one is built</summary>
 
 | Pack | Use it when a change touches |
 |---|---|
@@ -496,7 +496,8 @@ Every agent gets its own worktree from `new-worktree.sh`, like a fresh clone, so
 | [eng-i18n-a11y](skills/eng-i18n-a11y/SKILL.md) | locale, dates and time zones, contrast, screen readers |
 | [eng-interaction](skills/eng-interaction/SKILL.md) | scrolling, modals, mobile viewport, focus, hydration, state races |
 | [eng-llm-app](skills/eng-llm-app/SKILL.md) | agent loops, prompts, model tools, consent flows |
-| [eng-llm-cost](skills/eng-llm-cost/SKILL.md) | paid model calls, fan-out, metering, quotas, prompt-cache layout (breakpoints, compaction churn, TTL), confirmed with `cache-probe.mjs` |
+| [eng-llm-cost](skills/eng-llm-cost/SKILL.md) | paid model calls, fan-out, metering, quotas, prompt-cache layout (breakpoints, compaction churn, TTL break-even), batch-API fit; confirmed with `cache-probe.mjs`, findings name a sourced tactic |
+| [eng-llm-prompting](skills/eng-llm-prompting/SKILL.md) | prompt layout for answer quality and cache together (documents before the question, stable examples and tags, no prefill, tool search), compaction prompts, LLM judges; proven with a held-out A/B in `prompt-ab.mjs` |
 | [eng-machine](skills/eng-machine/SKILL.md) | servers, builds, browsers, installs, fan-out of agents |
 | [eng-performance](skills/eng-performance/SKILL.md) | page load, latency, logging volume, caching |
 | [eng-security](skills/eng-security/SKILL.md) | auth, permissions, tenant data, OAuth, webhooks, secrets |
@@ -618,7 +619,7 @@ skills/unslop/
   EVIDENCE.md            what counts as evidence (failing test, measurement, repro, static proof, render) and what doesn't
   SELF-EVAL.md           how /unslop itself is measured: golden fixtures, holdout, field precision, rule demotion
   fixtures/              golden slop: per domain, 1 slop + 2 near-misses per static rule (dev) and a holdout set
-skills/eng-*/            16 domain packs: SKILL.md (questions, budgets, red flags, tools, traps), checks.json (the machine
+skills/eng-*/            17 domain packs: SKILL.md (questions, budgets, red flags, tools, traps), checks.json (the machine
                          part), SOURCES.md (dated sources with verification tags)
 skills/simplify/
   README.md              /simplify is built into Claude Code, so this is only a pointer (its licence doesn't allow a copy)

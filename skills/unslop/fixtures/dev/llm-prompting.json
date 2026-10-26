@@ -1,0 +1,111 @@
+{
+  "domain": "llm-prompting",
+  "set": "dev",
+  "cases": [
+    {
+      "id": "question-then-docs",
+      "rule": "prompt.question-before-docs",
+      "kind": "slop",
+      "note": "the question comes before the documents in one template",
+      "files": {
+        "src/rag/prompt.ts": "function buildPrompt(question, documents) {\n  return `Answer the question: ${question}\n\nUse these documents:\n${documents}`\n}\nexport { buildPrompt }\n"
+      },
+      "expect": [
+        {
+          "path": "src/rag/prompt.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "docs-then-question",
+      "rule": "prompt.question-before-docs",
+      "kind": "near-miss",
+      "note": "documents first, question last",
+      "files": {
+        "src/rag/prompt.ts": "function buildPrompt(question, documents) {\n  return `<documents>\n${documents}\n</documents>\n\nAnswer the question: ${question}`\n}\nexport { buildPrompt }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "separate-templates",
+      "rule": "prompt.question-before-docs",
+      "kind": "near-miss",
+      "note": "question and documents in different templates",
+      "files": {
+        "src/rag/prompt.ts": "function parts(question, documents) {\n  const head = `Question: ${question}`\n  const body = `${documents}`\n  return { head, body }\n}\nexport { parts }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "prefill-label",
+      "rule": "prompt.prefill-last-turn",
+      "kind": "slop",
+      "note": "the request ends with a literal assistant turn",
+      "files": {
+        "src/classify.ts": "async function classify(llm, text) {\n  return llm.messages.create({\n    model: 'any-model',\n    max_tokens: 5,\n    messages: [\n      { role: 'user', content: text },\n      { role: 'assistant', content: 'Label:' },\n    ],\n  })\n}\nexport { classify }\n"
+      },
+      "expect": [
+        {
+          "path": "src/classify.ts",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "id": "few-shot-pair",
+      "rule": "prompt.prefill-last-turn",
+      "kind": "near-miss",
+      "note": "an assistant example followed by the real user turn",
+      "files": {
+        "src/classify.ts": "const messages = [\n  { role: 'user', content: 'great product' },\n  { role: 'assistant', content: 'positive' },\n  { role: 'user', content: input },\n]\nexport { messages }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "history-replay",
+      "rule": "prompt.prefill-last-turn",
+      "kind": "near-miss",
+      "note": "replayed history ends with a stored reply, not a literal",
+      "files": {
+        "src/chat/history.ts": "function history(turns, reply) {\n  return [\n    ...turns,\n    { role: 'assistant', content: reply },\n  ]\n}\nexport { history }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "shuffle-examples",
+      "rule": "prompt.shuffled-examples",
+      "kind": "slop",
+      "note": "a new draw of examples per call",
+      "files": {
+        "src/prompts/shots.ts": "function shots(examples) {\n  const picked = shuffle(examples).slice(0, 3)\n  return picked\n}\nexport { shots }\n"
+      },
+      "expect": [
+        {
+          "path": "src/prompts/shots.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "fixed-examples",
+      "rule": "prompt.shuffled-examples",
+      "kind": "near-miss",
+      "note": "one fixed set",
+      "files": {
+        "src/prompts/shots.ts": "function shots() {\n  return EXAMPLES.slice(0, 3)\n}\nexport { shots }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "shuffle-questions",
+      "rule": "prompt.shuffled-examples",
+      "kind": "near-miss",
+      "note": "shuffling eval questions, not prompt examples",
+      "files": {
+        "src/evals/order.ts": "function order(questions) {\n  return shuffle(questions)\n}\nexport { order }\n"
+      },
+      "expect": []
+    }
+  ]
+}

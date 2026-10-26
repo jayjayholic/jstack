@@ -289,6 +289,7 @@ function scan(opts = {}) {
         mode: rule.effective?.mode ?? rule.mode ?? 'warn',
         confirmHint: rule.confirm ?? null,
         fixHint: rule.fixHint ?? null,
+        suggest: rule.tactic ? { id: rule.tactic.id, tactic: rule.tactic.tactic, saving: rule.tactic.saving ?? null, source: rule.tactic.source ?? null } : null,
       }
       const inline = suppressedInline(lines, h.line, rule.id)
       const stored = [waivers.get(c.fingerprint), memory.get(c.fingerprint)].find(w => waiverActive(w, c.severity))

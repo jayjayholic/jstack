@@ -11,8 +11,8 @@ const ENGINES = new Set(['regex', 'script', 'eyes', 'measure', 'eslint', 'ast-gr
 const SEVERITIES = new Set(['high', 'medium', 'low'])
 const MODES = new Set(['warn', 'block-when-confirmed', 'eyes-hint', undefined])
 
-test('there are 16 domain packs and each has SKILL.md, SOURCES.md and checks.json', () => {
-  assert.equal(packs.length, 16)
+test('there are 17 domain packs and each has SKILL.md, SOURCES.md and checks.json', () => {
+  assert.equal(packs.length, 17)
   for (const p of packs) {
     for (const f of ['SKILL.md', 'SOURCES.md', 'checks.json']) assert.ok(fs.existsSync(path.join(p.dir, f)), `${p.skill}/${f}`)
     const src = fs.readFileSync(path.join(p.dir, 'SOURCES.md'), 'utf8')

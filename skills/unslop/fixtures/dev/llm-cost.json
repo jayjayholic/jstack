@@ -230,6 +230,111 @@
           "line": 5
         }
       ]
+    },
+    {
+      "id": "tool-choice-ternary",
+      "rule": "cost.cache-param-varies",
+      "kind": "slop",
+      "note": "tool_choice flips per call inside one conversation",
+      "files": {
+        "src/agent/step.ts": "import { llm } from '../lib/llm-client'\nasync function step(history, mustAct) {\n  return llm.messages.create({\n    model: 'any-model',\n    max_tokens: 2048,\n    tool_choice: mustAct ? { type: 'any' } : { type: 'auto' },\n    messages: history,\n  })\n}\nexport { step }\n"
+      },
+      "expect": [
+        {
+          "path": "src/agent/step.ts",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "id": "tool-choice-fixed",
+      "rule": "cost.cache-param-varies",
+      "kind": "near-miss",
+      "note": "a fixed tool_choice",
+      "files": {
+        "src/agent/step.ts": "import { llm } from '../lib/llm-client'\nasync function step(history) {\n  return llm.messages.create({\n    model: 'any-model',\n    max_tokens: 2048,\n    tool_choice: { type: 'auto' },\n    messages: history,\n  })\n}\nexport { step }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "effort-optional-chaining",
+      "rule": "cost.cache-param-varies",
+      "kind": "near-miss",
+      "note": "optional chaining and nullish default, not a conditional",
+      "files": {
+        "src/agent/step.ts": "import { llm } from '../lib/llm-client'\nasync function step(history, opts) {\n  return llm.messages.create({\n    model: 'any-model',\n    max_tokens: 2048,\n    output_config: { effort: opts?.effort ?? 'medium' },\n    messages: history,\n  })\n}\nexport { step }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "nightly-sync-calls",
+      "rule": "cost.batchable-sync-job",
+      "kind": "slop",
+      "note": "a nightly job pays full price per item",
+      "files": {
+        "jobs/nightly-summaries.ts": "import { llm } from '../src/lib/llm-client'\nasync function run(items) {\n  for (const item of items) {\n    const res = await llm.messages.create({ model: 'any-model', max_tokens: 512, messages: [{ role: 'user', content: item.text }] })\n    await save(item.id, res)\n  }\n}\nexport { run }\n"
+      },
+      "expect": [
+        {
+          "path": "jobs/nightly-summaries.ts",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "nightly-on-batches",
+      "rule": "cost.batchable-sync-job",
+      "kind": "near-miss",
+      "note": "the same job submitted as one batch",
+      "files": {
+        "jobs/nightly-summaries.ts": "import { llm } from '../src/lib/llm-client'\nasync function run(items) {\n  const requests = items.map(item => ({ custom_id: item.id, params: { model: 'any-model', max_tokens: 512, messages: [{ role: 'user', content: item.text }] } }))\n  return llm.messages.batches.create({ requests })\n}\nexport { run }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "interactive-route",
+      "rule": "cost.batchable-sync-job",
+      "kind": "near-miss",
+      "note": "a chat route where a person waits",
+      "files": {
+        "src/app/api/chat/route.ts": "import { llm } from '../../../lib/llm-client'\nasync function POST(req) {\n  const body = await req.json()\n  return llm.messages.create({ model: 'any-model', max_tokens: 1024, messages: body.messages })\n}\nexport { POST }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "clock-in-marked-block",
+      "rule": "cost.clock-before-breakpoint",
+      "kind": "slop",
+      "note": "the marked block holds the time, so every call writes",
+      "files": {
+        "src/chat/blocks.ts": "function blocks(rules) {\n  return [\n    { type: 'text', text: `${rules}\\nToday is ${new Date().toISOString()}`, cache_control: { type: 'ephemeral' } },\n  ]\n}\nexport { blocks }\n"
+      },
+      "expect": [
+        {
+          "path": "src/chat/blocks.ts",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "id": "clock-after-marked-block",
+      "rule": "cost.clock-before-breakpoint",
+      "kind": "near-miss",
+      "note": "the time sits in its own unmarked block after the breakpoint",
+      "files": {
+        "src/chat/blocks.ts": "function blocks(rules) {\n  return [\n    { type: 'text', text: rules, cache_control: { type: 'ephemeral' } },\n    { type: 'text', text: `Today is ${new Date().toISOString()}` },\n  ]\n}\nexport { blocks }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "stable-marked-block",
+      "rule": "cost.clock-before-breakpoint",
+      "kind": "near-miss",
+      "note": "a marked block with stable interpolation only",
+      "files": {
+        "src/chat/blocks.ts": "function blocks(rules, locale) {\n  return [\n    { type: 'text', text: `${rules}\\nLocale: ${locale}`, cache_control: { type: 'ephemeral' } },\n  ]\n}\nexport { blocks }\n"
+      },
+      "expect": []
     }
   ]
 }
