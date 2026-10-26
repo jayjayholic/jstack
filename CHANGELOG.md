@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (10): a job that stalls at the memory cap is killed and reported instead of holding its slot
+
+**What:**
+- `tools/run-capped.ps1`: the job object now has a completion port; a thread records `JOB_OBJECT_MSG_JOB_MEMORY_LIMIT` / `PROCESS_MEMORY_LIMIT`. When the job is at the cap (that message, or private bytes within `-NearCapGB` 0.2 of it) and its CPU time has not grown for `-StallSec` (60), `TerminateJobObject` kills the whole tree, the script prints `run-capped: hit the N GB memory cap and stalled ..., killed the job` and exits 137, and `-NoticeFile` gets a `cap-killed` line. A job that dies at the cap on its own keeps its exit code with a `hit the N GB memory cap; the job exited <code>` line. `GOMEMLIMIT` is set to the cap minus 10% (at least 0.5 GB) unless the caller set it. Polls every second; the status file keeps its cadence.
+- `tools/heavy-lock.sh` `heavy_capped`: passes `-StallSec ${JSTACK_CAP_STALL_S:-60}` and the warden's `notices.jsonl` (`JSTACK_PERF_DIR`).
+- `tools/run-capped.test.mjs` (5): a fake that commits to the cap and idles is killed with 137, the message and one notice; the limit message alone triggers it (margin 0); a job that exits at the cap keeps its code and writes no notice; a job idle below the cap runs to its end; GOMEMLIMIT set and kept. `heavy-lock.test.mjs` still 15/15.
+- `skills/machine-memory/PERF.md`: the cap kill as the first line, the warden's hung-tool kill as the backstop.
+
+**Why:** on 2026-10-26 TypeScript 7's native tsc (Go), run by `tc_run` under an 8 GB cap, froze four times at ~7.9 GB private with zero CPU instead of dying, each time holding a typecheck lane and the RAM until someone killed it; once it did exit with a Go OOM. Go's runtime throws on a refused commit (`runtime/mem_windows.go`: `throw("out of memory")` / `"failed to commit pages"`), so it is not a retry spin; where the dying process blocks was not reproduced. The old script set only `JOB_OBJECT_LIMIT_JOB_MEMORY` with no completion port, so nothing heard the limit, and it waited on the process forever.
+
 ## 2026-10-26 (9): eleven more red flags from one night's /unslop runs and agent audit
 
 **What:**

@@ -235,6 +235,8 @@ server_wait() {
 #   Linux with systemd: systemd-run --user --scope -p MemoryMax. UNVERIFIED, test it on your machine first.
 #   Anything else (macOS, Linux without systemd): runs uncapped with a warning. ulimit -v caps each process, not the
 #   tree, and macOS mostly ignores it, so it is not used.
+# A job that stalls at the cap (no CPU progress for JSTACK_CAP_STALL_S, default 60) is killed: exit 137, a "hit the
+# memory cap" line and a cap-killed notice in the warden's notices.jsonl (Windows; run-capped.ps1).
 # The measured peak goes to JSTACK_JOB_PEAKS under JSTACK_JOB_KEY (tc_run) or the slot's job (heavy_acquire).
 # Inside a slot (JSTACK_SLOT from tc_run, else HEAVY_SLOT) it marks this shell as the holder and has run-capped.ps1
 # write the job's status there for admission.
@@ -257,7 +259,8 @@ heavy_capped() {
     MINGW*|MSYS*|CYGWIN*)
       powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$JSTACK_TOOLS/run-capped.ps1")" \
         -LimitGB "$JSTACK_CAP_GB" -Exe "$(cygpath -w "$(command -v bash)")" -Command "\"$(cygpath -w "$script")\"" \
-        -WorkingDirectory "$(pwd -W)" -PeakFile "$(cygpath -w "$peakf")" "${status[@]}"
+        -WorkingDirectory "$(pwd -W)" -PeakFile "$(cygpath -w "$peakf")" "${status[@]}" \
+        -StallSec "${JSTACK_CAP_STALL_S:-60}" -NoticeFile "$(cygpath -w "${JSTACK_PERF_DIR:-$HOME/.jstack/perf}/notices.jsonl")"
       code=$?
       [ -s "$peakf" ] && job_peak_record "$key" "$(tr -d '\r\n' < "$peakf")" ;;
     *)
