@@ -496,7 +496,7 @@ Every agent gets its own worktree from `new-worktree.sh`, like a fresh clone, so
 | [eng-i18n-a11y](skills/eng-i18n-a11y/SKILL.md) | locale, dates and time zones, contrast, screen readers |
 | [eng-interaction](skills/eng-interaction/SKILL.md) | scrolling, modals, mobile viewport, focus, hydration, state races |
 | [eng-llm-app](skills/eng-llm-app/SKILL.md) | agent loops, prompts, model tools, consent flows |
-| [eng-llm-cost](skills/eng-llm-cost/SKILL.md) | paid model calls, fan-out, caching, metering, quotas |
+| [eng-llm-cost](skills/eng-llm-cost/SKILL.md) | paid model calls, fan-out, metering, quotas, prompt-cache layout (breakpoints, compaction churn, TTL), confirmed with `cache-probe.mjs` |
 | [eng-machine](skills/eng-machine/SKILL.md) | servers, builds, browsers, installs, fan-out of agents |
 | [eng-performance](skills/eng-performance/SKILL.md) | page load, latency, logging volume, caching |
 | [eng-security](skills/eng-security/SKILL.md) | auth, permissions, tenant data, OAuth, webhooks, secrets |

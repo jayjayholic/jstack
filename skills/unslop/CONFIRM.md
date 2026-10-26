@@ -36,3 +36,18 @@ Verdict, one of:
 - `UNPROVEN`: the evidence did not reproduce or proves something else. `--reason "<why>"`.
 
 When the pipeline's rejected-finding rate is above its target (see SELF-EVAL.md), two skeptics must agree before CONFIRMED.
+
+---
+
+## Prompt-cache findings (eng-llm-cost `cost.cache-*`, `cost.unstable-prefix`, `cost.volatile-system-prompt`, `cost.compaction-churn` ...)
+
+Reading the code never confirms a cache finding: the provider's usage numbers do. Two ways, cheapest first.
+
+1. **Existing usage records** (free). Export the call site's rows (one JSON object per line with `site`, `at` and the provider usage: `input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `cache_creation.ephemeral_1h_input_tokens`, or the OpenAI / OpenTelemetry equivalents), then:
+   `node {{JSTACK_TOOLS}}/unslop/evidence.mjs run <run> --id <finding>.measurement --kind measurement --by prosecutor#<n> --budget <100 - hot-loop hit target> --value-regex "miss_pct=([\d.]+)" -- node {{JSTACK_TOOLS}}/unslop/cache-probe.mjs usage <rows.jsonl> --by site`
+   The verdict per site is `write-only` (reads per write under the break-even: the cache costs more than none), `not-cached`, `below-target` or `ok`; `gaps_over_ttl_pct` answers a TTL claim.
+2. **Replay** (paid: estimate first, smallest model the site uses). Send the exact request of the flagged site twice, sequentially, within the TTL, through the project's metered client; save both responses' JSON under `<run>/scratch/`. For a varying-prefix claim, send two requests that differ only in the per-task part (two tasks, users or times). Then:
+   `node {{JSTACK_TOOLS}}/unslop/evidence.mjs run <run> --id <finding>.repro-script --kind repro-script --by prosecutor#<n> -- node {{JSTACK_TOOLS}}/unslop/cache-probe.mjs replay <run>/scratch/a.json <run>/scratch/b.json`
+   Exit 1 with `verdict=write-only`, `not-cached` or `prefix-moved` is the evidence; `ok` dismisses the candidate.
+
+The skeptic reruns the probe on the same saved files (`evidence.mjs rerun`), and for a replay sends the pair once more itself: the finding counts only when its own pair gives the same verdict. Before CONFIRMED, check the disqualifiers that fake a miss: the two calls ran in parallel (an entry is readable only after the first response starts), the gap exceeded the TTL, the model or tool list changed between them, or the prefix is under the model's minimum cacheable length (that is its own finding, `cost.under-min-cache-length`, not a layout bug).

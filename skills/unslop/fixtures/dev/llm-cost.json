@@ -110,6 +110,126 @@
         "src/ui/panel.ts": "const visible = (opts) => opts.show ?? true\nexport { visible }\n"
       },
       "expect": []
+    },
+    {
+      "id": "top-level-cache",
+      "rule": "cost.cache-top-level",
+      "kind": "slop",
+      "note": "automatic caching marks the last block, here a per-call document",
+      "files": {
+        "src/extract/run.ts": "import { llm } from '../lib/llm-client'\nasync function extract(doc) {\n  return llm.messages.create({\n    model: 'any-model',\n    max_tokens: 1024,\n    cache_control: { type: 'ephemeral' },\n    system: INSTRUCTIONS,\n    messages: [{ role: 'user', content: doc }],\n  })\n}\nexport { extract }\n"
+      },
+      "expect": [
+        {
+          "path": "src/extract/run.ts",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "id": "block-level-cache",
+      "rule": "cost.cache-top-level",
+      "kind": "near-miss",
+      "note": "breakpoint on the system block, the per-call document after it",
+      "files": {
+        "src/extract/run.ts": "import { llm } from '../lib/llm-client'\nasync function extract(doc) {\n  return llm.messages.create({\n    model: 'any-model',\n    max_tokens: 1024,\n    system: [{ type: 'text', text: INSTRUCTIONS, cache_control: { type: 'ephemeral' } }],\n    messages: [{ role: 'user', content: doc }],\n  })\n}\nexport { extract }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "py-block-level-cache",
+      "rule": "cost.cache-top-level",
+      "kind": "near-miss",
+      "note": "Python: cache_control as a dict key on a content block, not a keyword argument",
+      "files": {
+        "app/extract.py": "def extract(client, doc):\n    return client.messages.create(\n        model=\"any-model\",\n        max_tokens=1024,\n        system=[{\"type\": \"text\", \"text\": INSTRUCTIONS, \"cache_control\": {\"type\": \"ephemeral\"}}],\n        messages=[{\"role\": \"user\", \"content\": doc}],\n    )\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "date-in-system",
+      "rule": "cost.volatile-system-prompt",
+      "kind": "slop",
+      "note": "the clock in the system prompt changes the cached prefix on every call",
+      "files": {
+        "src/chat/prompt.ts": "function buildPrompt(persona) {\n  const systemPrompt = `You are ${persona.name}. Now: ${new Date().toISOString()}.`\n  return systemPrompt\n}\nexport { buildPrompt }\n"
+      },
+      "expect": [
+        {
+          "path": "src/chat/prompt.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "date-in-user-turn",
+      "rule": "cost.volatile-system-prompt",
+      "kind": "near-miss",
+      "note": "the clock goes in the user turn, after the cached system prompt",
+      "files": {
+        "src/chat/prompt.ts": "function buildMessages(question) {\n  return [\n    { role: 'system', content: SYSTEM },\n    { role: 'user', content: `Now: ${new Date().toISOString()}\\n${question}` },\n  ]\n}\nexport { buildMessages }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "stable-interpolation",
+      "rule": "cost.volatile-system-prompt",
+      "kind": "near-miss",
+      "note": "interpolates a stable value into the system prompt",
+      "files": {
+        "src/chat/prompt.ts": "function buildPrompt(persona) {\n  const systemPrompt = `You are ${persona.name}, answering in ${persona.locale}.`\n  return systemPrompt\n}\nexport { buildPrompt }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "tools-from-set",
+      "rule": "cost.tools-from-set",
+      "kind": "slop",
+      "note": "set order changes with the hash seed of each process",
+      "files": {
+        "app/agent.py": "def tool_list(enabled):\n    tools = list(set(t for t in enabled if t.public))\n    return tools\n"
+      },
+      "expect": [
+        {
+          "path": "app/agent.py",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "tools-sorted",
+      "rule": "cost.tools-from-set",
+      "kind": "near-miss",
+      "note": "sorted, so the order is stable",
+      "files": {
+        "app/agent.py": "def tool_list(enabled):\n    tools = sorted(set(t.name for t in enabled))\n    return tools\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "tools-from-list",
+      "rule": "cost.tools-from-set",
+      "kind": "near-miss",
+      "note": "a comprehension over a list keeps its order",
+      "files": {
+        "app/agent.py": "def tool_list(enabled):\n    tools = [t.schema() for t in enabled if t.public]\n    return tools\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "py-request-dict",
+      "rule": "cost.cache-top-level",
+      "kind": "slop",
+      "note": "request dict built apart from the call, with a request-level cache_control next to messages",
+      "files": {
+        "app/client.py": "def build(conversation, n):\n    request = {\n        \"max_tokens\": n,\n        \"messages\": conversation,\n        \"cache_control\": {\"type\": \"ephemeral\"},\n    }\n    return request\n"
+      },
+      "expect": [
+        {
+          "path": "app/client.py",
+          "line": 5
+        }
+      ]
     }
   ]
 }

@@ -12,6 +12,8 @@ Every artifact is recorded by `tools/unslop/evidence.mjs`, which writes `<run>/e
 
 For a `static-proof`, the "command" is the check itself (for example `node {{JSTACK_TOOLS}}/unslop/scan.mjs --rule <id> --base <base> --fail-on-find`), so the skeptic can rerun it like any other.
 
+A prompt-cache claim is a `measurement` over usage records or a `repro-script` replay, both through `cache-probe.mjs` (CONFIRM.md, "Prompt-cache findings"); a code reading alone is never evidence for it.
+
 A measurement records its number with `--budget <n> --value-regex "<regex with one group>"`; the rerun reproduces when the value is still over the budget.
 
 Never store raw user data, tokens or full payloads in evidence. If the output needs them to make sense, summarise the shape and keep the counts.

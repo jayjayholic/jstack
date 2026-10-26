@@ -123,6 +123,90 @@ const SCRIPTS = {
     }
     return hits
   },
+
+  // A Messages API call with cache_control at the top level of the request (automatic caching). The breakpoint
+  // lands on the last block; when that block is unique per call, every call writes the whole prompt at the write
+  // premium and nothing reads it back. Brackets, strings and comments are walked so only a key of the request
+  // itself counts, never one on a system or content block.
+  'cache-top-level'(ctx, rule) {
+    const globs = rule.files ?? ['**/*.{ts,tsx,js,jsx,mjs,cjs,py}']
+    const hits = []
+    for (const f of ctx.files) {
+      if (!matchAny(f.path, globs)) continue
+      const py = f.path.endsWith('.py')
+      for (const at of topLevelCacheControl(f.text, py)) {
+        const line = f.text.slice(0, at).split('\n').length
+        if (f.added && !f.added.has(line)) continue
+        hits.push({ path: f.path, line, snippet: f.text.split('\n')[line - 1].trim(), detail: 'request-level cache_control: the breakpoint goes on the last block' })
+      }
+    }
+    return hits
+  },
 }
 
-export { SCRIPTS, flatKeys, catalogGroup }
+const MESSAGES_CALL = /\.messages\.(?:create|stream|parse)\s*\(\s*$/
+const CLOSE = { ')': '(', ']': '[', '}': '{' }
+
+// Offsets of request-level cache_control keys. A bracket frame is a request when it holds a `messages` key, or when
+// it is a messages call's argument object (JS/TS) or the call's own keyword arguments (Python). Keys count only at
+// the start of an entry, so values, nested blocks, strings and comments never do.
+function topLevelCacheControl(text, py) {
+  const out = []
+  const frames = []
+  let last = ''
+  let i = 0
+  const callFrame = at => MESSAGES_CALL.test(text.slice(Math.max(0, at - 80), at))
+  const request = f => f && f.keys.has('cache_control') && (f.call || (f.open === '{' && f.keys.has('messages')))
+  const destructured = after => !py && /^\s*\)?\s*=(?!=)/.test(text.slice(after, after + 20))
+  while (i < text.length) {
+    const ch = text[i]
+    const top = frames[frames.length - 1]
+    const entryStart = top && (last === top.open || last === ',')
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const start = i
+      const end = py && text.startsWith(ch.repeat(3), i) ? ch.repeat(3) : ch
+      let j = i + end.length
+      while (j < text.length && !text.startsWith(end, j)) j += text[j] === '\\' ? 2 : 1
+      const body = text.slice(i + end.length, j)
+      i = j + end.length
+      if (entryStart && top.open === '{' && ch !== '`' && /^\s*:/.test(text.slice(i, i + 40))) top.keys.set(body, start)
+      last = ch
+      continue
+    }
+    if ((py && ch === '#') || (!py && ch === '/' && text[i + 1] === '/')) { const nl = text.indexOf('\n', i); i = nl < 0 ? text.length : nl; continue }
+    if (!py && ch === '/' && text[i + 1] === '*') { const e = text.indexOf('*/', i + 2); i = e < 0 ? text.length : e + 2; continue }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      const parent = frames[frames.length - 1]
+      const call = py ? ch === '(' && callFrame(i + 1) : ch === '{' && parent?.open === '(' && parent.callOpen && last === '('
+      frames.push({ open: ch, keys: new Map(), call, callOpen: ch === '(' && callFrame(i + 1) })
+      last = ch
+      i++
+      continue
+    }
+    if (CLOSE[ch]) {
+      const f = frames.pop()
+      if (request(f) && !(f.open === '{' && destructured(i + 1))) out.push(f.keys.get('cache_control'))
+      last = ch
+      i++
+      continue
+    }
+    if (/[A-Za-z_$]/.test(ch) && !/[\w$]/.test(text[i - 1] ?? '')) {
+      const m = /[A-Za-z_$][\w$]*/y
+      m.lastIndex = i
+      const name = m.exec(text)[0]
+      const rest = text.slice(i + name.length, i + name.length + 40)
+      if (entryStart) {
+        if (top.open === '{' && (/^\s*:/.test(rest) || (!py && /^\s*[,}]/.test(rest)))) top.keys.set(name, i)
+        else if (py && top.open === '(' && /^\s*=(?!=)/.test(rest)) top.keys.set(name, i)
+      }
+      i += name.length
+      last = 'w'
+      continue
+    }
+    if (!/\s/.test(ch)) last = ch
+    i++
+  }
+  return out.sort((a, b) => a - b)
+}
+
+export { SCRIPTS, flatKeys, catalogGroup, topLevelCacheControl }

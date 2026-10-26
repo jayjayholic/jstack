@@ -16,6 +16,111 @@
           "line": 1
         }
       ]
+    },
+    {
+      "id": "py-top-level-kwarg",
+      "rule": "cost.cache-top-level",
+      "kind": "slop",
+      "note": "Python keyword argument at the request level",
+      "files": {
+        "app/judge.py": "def judge(client, fact):\n    resp = client.messages.create(\n        model=\"any-model\",\n        max_tokens=256,\n        system=RUBRIC,\n        cache_control={\"type\": \"ephemeral\"},\n        messages=[{\"role\": \"user\", \"content\": fact}],\n    )\n    return resp\n"
+      },
+      "expect": [
+        {
+          "path": "app/judge.py",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "id": "stream-quoted-key",
+      "rule": "cost.cache-top-level",
+      "kind": "slop",
+      "note": "quoted key on a streaming call, after a string holding a brace",
+      "files": {
+        "src/run.js": "const s = client.beta.messages.stream({\n  model: 'any-model',\n  system: 'Answer in JSON like {\"a\": 1}',\n  'cache_control': { type: 'ephemeral' },\n  messages,\n})\nexport { s }\n"
+      },
+      "expect": [
+        {
+          "path": "src/run.js",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "id": "cache-in-message-content",
+      "rule": "cost.cache-top-level",
+      "kind": "near-miss",
+      "note": "breakpoint on the first turn of a conversation",
+      "files": {
+        "src/run.ts": "const r = await client.messages.create({\n  model: 'any-model',\n  max_tokens: 512,\n  messages: [{ role: 'user', content: [{ type: 'text', text: opener, cache_control: { type: 'ephemeral' } }] }, ...rest],\n})\nexport { r }\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "py-fstring-system",
+      "rule": "cost.volatile-system-prompt",
+      "kind": "slop",
+      "note": "Python f-string system prompt with the time",
+      "files": {
+        "app/prompt.py": "def system_for(user):\n    system_prompt = f\"Help {user.name}. Current time: {datetime.now().isoformat()}\"\n    return system_prompt\n"
+      },
+      "expect": [
+        {
+          "path": "app/prompt.py",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "role-system-uuid",
+      "rule": "cost.volatile-system-prompt",
+      "kind": "slop",
+      "note": "a request id inside the system message",
+      "files": {
+        "src/send.ts": "const messages = [\n  { role: 'system', content: `Request ${crypto.randomUUID()}. Follow the rules.` },\n  { role: 'user', content: q },\n]\nexport { messages }\n"
+      },
+      "expect": [
+        {
+          "path": "src/send.ts",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "id": "py-time-in-user",
+      "rule": "cost.volatile-system-prompt",
+      "kind": "near-miss",
+      "note": "time sent in the user turn",
+      "files": {
+        "app/prompt.py": "def messages_for(q):\n    system = SYSTEM\n    user = f\"Now: {datetime.now().isoformat()}\\n{q}\"\n    return system, user\n"
+      },
+      "expect": []
+    },
+    {
+      "id": "tools-set-literal",
+      "rule": "cost.tools-from-set",
+      "kind": "slop",
+      "note": "comprehension over a set literal",
+      "files": {
+        "app/tools.py": "tools = [schema(name) for name in {\"search\", \"read\", \"write\"}]\n"
+      },
+      "expect": [
+        {
+          "path": "app/tools.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "tools-dict-values",
+      "rule": "cost.tools-from-set",
+      "kind": "near-miss",
+      "note": "dict order is insertion order",
+      "files": {
+        "app/tools.py": "tools = list({\"search\": SEARCH, \"read\": READ}.values())\n"
+      },
+      "expect": []
     }
   ]
 }

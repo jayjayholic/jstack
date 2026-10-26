@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (6): prompt-cache red flags in eng-llm-cost, and /unslop confirms them from usage numbers
+
+**What:**
+- `eng-llm-cost/checks.json`: questions `cost.q.cache-layout`, `cost.q.cache-reuse` (M) and `cost.q.compaction-cache` (L); budgets `cost.cache_hit_pct_hot_loop_min` (70%), `cost.cache_reads_per_write_min` (0.3, break-even 0.28 for 5-minute writes, 1.11 for 1-hour), `cost.cache_rewrites_per_100_steps` (project sets it); red flags for a breakpoint on per-call content, compaction that clears a little every step (fix: hysteresis), windows that step on different turns, breakpoints on single-call work, prefixes under the minimum cacheable length, a TTL not matched to measured gaps or 1-hour writes metered at the 5-minute rate, and a hot loop with ~0 cache reads; `cost.unstable-prefix` now names ranked or retrieved text and place; verify steps `cost.v.cache-replay`, `cost.v.cache-sites`, `cost.v.cache-churn`. SKILL.md: a layout paragraph, two tool rows, six known traps.
+- Static rules, each with 1 slop and 2 near-misses in dev plus holdout cases: `cost.cache-top-level` (script: request-level `cache_control` on a Messages call or on a request object that holds `messages`; walks brackets, strings and comments, skips destructuring and type literals), `cost.volatile-system-prompt` (clock, random value or uuid interpolated into a system prompt, JS templates and Python f-strings), `cost.tools-from-set` (Python tool list built from a set).
+- `tools/unslop/cache-probe.mjs`: `replay a.json b.json` (the same request sent twice: verdict ok, write-only, not-cached or prefix-moved, plus `miss_pct`) and `usage rows.jsonl --by site` (hit, reads per write vs break-even, 1-hour writes, gaps over the TTL). Reads Anthropic, OpenAI and OpenTelemetry usage. Exit 1 on a bad verdict, so `evidence.mjs` records it.
+- `skills/unslop/CONFIRM.md`: how a prosecutor confirms a cache finding (usage records first, a paid replay second) and what the skeptic reruns and rules out (parallel calls, gap over the TTL, a changed model or tool list, a prefix under the minimum).
+- SOURCES.md: Anthropic prompt caching and OpenAI prompt caching re-read on 2026-10-26, Anthropic context editing (`clear_at_least`) added, the break-even arithmetic.
+- Tests: `tools/unslop/cache.test.mjs` (12: precision of the three rules on dev and holdout with no overfit, decoys, probe verdicts and CLI) plus 10 new dev fixture cases. Unslop suite 224 -> 245.
+
+**Why:** a cache audit of one production LLM app found every one of these: an automatic breakpoint on a unique last block that wrote 2.02M tokens and read 0.28M (more than no cache), per-task know-how inside the cached system prompt (0% read on task turns), a compactor clearing on nearly every step past its threshold (~39% of uncached tokens), two history windows stepping on alternate turns, and 1-hour writes the metering could not tell apart. Run on that app's code, `cost.cache-top-level` flagged the one confirmed site on the branch before the fix and nothing on the branch after it (about 5,600 files, 0 false positives).
+
 ## 2026-10-26 (5): the perf optimizer runs on its own, and a failed snapshot retries in the same tick
 
 **What:**
