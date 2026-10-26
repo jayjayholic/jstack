@@ -449,6 +449,47 @@ function linkedWorktreesIn(cmd, cwd) {
   return [...found]
 }
 
+// ---------- guard 3: no shared-stack stash when the repo has several worktrees ----------
+
+const STASH_REASON = [
+  'Blocked: this repo has more than one worktree, and `git stash` is ONE stack shared by all of them. A pop or apply here can take another agent\'s changes (and they yours).',
+  'Park your work in a WIP commit instead: `git commit -am "wip"`, then later `git reset --soft HEAD~1`.',
+  'Or tag it and apply by SHA: `git stash push -u -m "<unique tag>"`, find its SHA with `git stash list --format="%H %s"`, then `git stash apply <sha>` (and `git stash drop` that entry). `git stash list` and `git stash show` stay allowed.',
+].join('\n')
+
+function stashVerb(seg) {
+  const toks = tokens(seg)
+  while (toks.length && PREFIX.test(toks[0])) toks.shift()
+  if (!toks.length || toks[0].replace(/^.*[\/]/, '').replace(/\.exe$/i, '') !== 'git') return null
+  let i = 1
+  while (i < toks.length && toks[i].startsWith('-')) i += /^-[Cc]$/.test(toks[i]) ? 2 : 1
+  if (toks[i] !== 'stash') return null
+  const rest = toks.slice(i + 1)
+  if (!rest.length) return 'bare'
+  const sub = rest[0].startsWith('-') ? 'push' : rest[0]
+  const args = rest[0].startsWith('-') ? rest : rest.slice(1)
+  if (sub === 'pop') return 'pop'
+  if (sub === 'push' && !args.some(a => /^(?:-m|--message)(?:=.+)?$/.test(a) || /^-m.+/.test(a))) return 'push without -m'
+  if (sub === 'apply' && !args.some(a => /^[0-9a-f]{7,40}$/i.test(a))) return 'apply without a SHA'
+  return null
+}
+
+function worktreeCount(cwd) {
+  const r = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8', timeout: 5000, windowsHide: true })
+  if (r.status !== 0 || !r.stdout) return 0
+  return r.stdout.split('\n').filter(l => l.startsWith('worktree ')).length
+}
+
+function stashCheck(cmd, project, cwd) {
+  if (project?.stash?.enabled === false || !/\bstash\b/.test(cmd)) return null
+  try {
+    let hit = null
+    walkSegments(cmd, seg => { hit ??= stashVerb(seg) })
+    if (!hit || worktreeCount(cwd) < 2) return null
+    return { guard: 'stash', reason: STASH_REASON, suggestion: 'git commit -am "wip" ... git reset --soft HEAD~1' }
+  } catch { return null }
+}
+
 // ---------- entry points ----------
 
 function pre(payload, env = process.env) {
@@ -468,7 +509,7 @@ function pre(payload, env = process.env) {
       const wts = linkedWorktreesIn(cmd, cwd)
       state.worktrees = [...new Set([...(state.worktrees ?? []), ...wts])].slice(-20)
     }
-    verdict = heavyCheck(cmd, project, cwd, env) ?? scanCheck(cmd, project, cwd)
+    verdict = heavyCheck(cmd, project, cwd, env) ?? scanCheck(cmd, project, cwd) ?? stashCheck(cmd, project, cwd)
     if (verdict) {
       const repeats = (state.blocks ?? 0) + 1
       state.blocks = repeats
@@ -736,4 +777,4 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
 
-export { norm, segments, tokens, head, heavyHeads, heavyCheck, scanCheck, pre, post, cleanup, listProcesses, pickOwned, runHook, crashLog, loadProject, linkedWorktreesIn, gitTop }
+export { norm, segments, tokens, head, heavyHeads, heavyCheck, scanCheck, pre, post, cleanup, listProcesses, pickOwned, runHook, crashLog, loadProject, linkedWorktreesIn, gitTop, stashCheck }

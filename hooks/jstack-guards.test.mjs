@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { pre, post, cleanup, norm } from './jstack-guards.mjs'
+import { pre, post, cleanup, norm, stashCheck } from './jstack-guards.mjs'
 import * as B from './jstack-browsers.mjs'
 import * as calls from './jstack-calls.mjs'
 
@@ -411,4 +411,27 @@ test('run-hook: a crash in the guards exits 0 silently and logs a hook-crash lin
   const last = JSON.parse(fs.readFileSync(logFile, 'utf8').trim().split('\n').at(-1))
   assert.equal(last.type, 'hook-crash')
   assert.match(last.error, /SyntaxError/)
+})
+
+test('stash: shared-stack commands are denied in a repo with several worktrees', () => {
+  for (const c of ['git stash', 'git stash pop', 'git stash push', 'git stash -u', 'git stash apply', 'git stash apply stash@{0}', 'cd x && git stash pop', 'git -C . stash']) {
+    const out = call(c)
+    assert.ok(denied(out), c)
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /git commit -am "wip"/)
+  }
+})
+
+test('stash: tagged push, apply by SHA, list and show pass', () => {
+  for (const c of ['git stash push -u -m "agent-a 1"', 'git stash push --message=x', 'git stash apply 0123abcd', 'git stash list', 'git stash show -p', 'git stash list --format="%H %s"', 'echo stash'])
+    assert.ok(!denied(call(c)), c)
+})
+
+test('stash: a repo with a single worktree is allowed, and the guard fails open', () => {
+  const solo = path.join(tmp, 'solo')
+  fs.mkdirSync(solo)
+  spawnSync('git', ['init', '-q'], { cwd: solo })
+  assert.equal(stashCheck('git stash pop', {}, solo), null)
+  assert.equal(stashCheck('git stash pop', {}, path.join(tmp, 'missing-dir')), null)
+  assert.equal(stashCheck('git stash pop', { stash: { enabled: false } }, wt), null)
+  assert.ok(stashCheck('git stash pop', {}, wt))
 })

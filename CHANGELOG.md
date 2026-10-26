@@ -2,6 +2,14 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (3): stash guard for repos with several worktrees
+
+**What:**
+- `jstack-guards.mjs` guard `stash`: in a repo where `git worktree list` shows more than one worktree, denies bare `git stash`, `git stash push` without `-m`, `git stash pop` and `git stash apply` without an explicit SHA. The denial points to a WIP commit (`git commit -am "wip"`, then `git reset --soft HEAD~1`) or `git stash push -u -m <unique tag>` + `git stash apply <sha>`. `list`/`show` pass. Fails open on any git error. Off per project with `"stash": { "enabled": false }`.
+- Tests: 3 new in `hooks/jstack-guards.test.mjs` (blocked, allowed, single worktree and fail-safe).
+
+**Why:** two parallel agents in different worktrees of one repo used `git stash` / `git stash pop`. The stash stack is shared across worktrees, so their pops swapped each other's uncommitted changes.
+
 ## 2026-10-26 (2): admission counts only unused reservations, and frees dead or hung slots
 
 **What:**
