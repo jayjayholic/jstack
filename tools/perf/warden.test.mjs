@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { buildParents } from './lib.mjs'
-import { decideKills, trackActivity, decideHung, decideRamClean, decideDockerStop, shouldTrigger, topTriggers, runWarden, wardenConfig } from './warden.mjs'
+import { decideKills, trackActivity, decideHung, decideHungTools, decideRamClean, decideDockerStop, shouldTrigger, topTriggers, runWarden, wardenConfig } from './warden.mjs'
 import { computeFloor } from './ops.mjs'
 
 const NOW = Date.parse('2026-10-25T20:00:00Z')
@@ -165,6 +165,7 @@ function runOnce(opts = {}) {
     kill: pids => { if (opts.killThrows) throw new Error('boom'); killed.push(...pids); return pids },
     keepMarkers: () => new Set(), run: () => ({ status: 0 }), floor: null,
     dockerObserve: () => ({ running: false }),
+    alive: opts.alive ?? (() => false), sleep: () => {},
   }
   const did = runWarden({ now: NOW, procs, parent: buildParents(procs), record: { m: { availMb: 9000, totalMb: 32000, cpu: 30 }, g: [], lock: [] }, cfg: { warden: opts.warden ?? {} }, state: opts.state ?? {}, dir, io })
   fs.rmSync(dir, { recursive: true, force: true })
@@ -224,4 +225,74 @@ test('floor: p25 of 15-minute windows with agent work running; idle stretches do
   assert.ok(f.windows >= 2)
   assert.ok(f.cpu.p25 >= 20, `idle windows excluded, got ${f.cpu.p25}`)
   assert.equal(computeFloor([]).windows, 0)
+})
+
+// ---------- hung heavy dev tools ----------
+
+const GB = 1073741824
+function hungScene({ toolCpu = 0, parentName = 'node.exe', parentCmd = 'node node_modules/typescript7/bin/tsc --noEmit', extra = [] } = {}) {
+  const launcher = { pid: 300, ppid: 0, create: '300', name: parentName, kind: 'node', wt: WT, cmd: parentCmd, ageMin: 40, cpuNow: 0, priv: 50 * 1048576 }
+  const tool = { pid: 301, ppid: 300, create: '301', name: 'tsc.exe', kind: 'tsc', wt: WT, cmd: 'tsc.exe --noEmit', ageMin: 40, cpuNow: toolCpu, priv: 7.9 * GB }
+  const procs = [launcher, tool, ...extra]
+  const activity = new Map(procs.map(p => [`${p.pid}:${p.create}`, { lastBusyAt: NOW - 20 * 60000, highSince: null }]))
+  return { procs, activity }
+}
+
+test('hung tool: no CPU 15+ min and 2+ GB private is killed, with a notice naming the worktree', () => {
+  const { procs, activity } = hungScene()
+  const { killed, written, did } = runOnce({ procs, state: { activity } })
+  assert.deepEqual(killed, [301], 'the tool died, the launcher was not touched')
+  const n = written.find(([f, r]) => f === 'notices.jsonl' && r.type === 'hung-tool-killed')[1]
+  assert.equal(n.wt, WT)
+  assert.match(n.detail, /feat-a/)
+  assert.ok(n.freedGb > 7)
+  assert.ok(did.some(d => d.action === 'kill' && d.target.pid === 301))
+})
+
+test('hung tool that survives 10 s: its node launcher is killed, both kills logged', () => {
+  const { procs, activity } = hungScene()
+  const { killed, did, written } = runOnce({ procs, state: { activity }, alive: pid => pid === 301 })
+  assert.deepEqual(killed, [301, 300])
+  assert.equal(did.filter(d => d.action === 'kill').length, 2)
+  const n = written.find(([f, r]) => f === 'notices.jsonl' && r.type === 'hung-tool-killed')[1]
+  assert.equal(n.parentKilled, true)
+})
+
+test('a protected parent is never killed: agent CLI, a shell, a launcher holding other children', () => {
+  const cases = [
+    hungScene({ parentCmd: 'node C:/Users/x/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js' }),
+    hungScene({ parentName: 'bash.exe', parentCmd: 'bash -c tsc' }),
+    hungScene({ extra: [{ pid: 302, ppid: 300, create: '302', name: 'node.exe', kind: 'node', wt: WT, cmd: 'node worker.js', ageMin: 40, cpuNow: 5, priv: 1048576 }] }),
+  ]
+  for (const { procs, activity } of cases) {
+    const { killed, did } = runOnce({ procs, state: { activity }, alive: () => true })
+    assert.ok(!killed.includes(300), 'launcher left alone')
+    assert.ok(did.some(d => d.action === 'skip' && d.target.pid === 300))
+  }
+})
+
+test('a busy, young-idle or small heavy tool is not killed', () => {
+  const busy = hungScene({ toolCpu: 40 })
+  assert.deepEqual(decideHungTools(busy.procs, buildParents(busy.procs), busy.activity, { now: NOW, cfg, selfPid: 1 }), [])
+  const recent = hungScene()
+  recent.activity.set('301:301', { lastBusyAt: NOW - 5 * 60000 })
+  assert.deepEqual(decideHungTools(recent.procs, buildParents(recent.procs), recent.activity, { now: NOW, cfg, selfPid: 1 }), [], 'idle only 5 min')
+  const small = hungScene()
+  small.procs[1].priv = GB
+  assert.deepEqual(decideHungTools(small.procs, buildParents(small.procs), small.activity, { now: NOW, cfg, selfPid: 1 }), [], 'under 2 GB')
+  const notTool = hungScene()
+  notTool.procs[1] = { ...notTool.procs[1], name: 'python.exe', cmd: 'python serve.py' }
+  assert.deepEqual(decideHungTools(notTool.procs, buildParents(notTool.procs), notTool.activity, { now: NOW, cfg, selfPid: 1 }), [], 'not a heavy dev tool')
+})
+
+test('hung-tool fail-safe: a failing kill is logged as an error and later steps run; dry mode kills nothing', () => {
+  const { procs, activity } = hungScene()
+  const state = { activity }
+  const { did } = runOnce({ procs, state, killThrows: true })
+  assert.ok(did.some(d => d.action === 'error' && d.step === 'hung-tools'))
+  assert.equal(state.machineWindow?.length, 1)
+  const dry = hungScene()
+  const r = runOnce({ procs: dry.procs, state: { activity: dry.activity }, warden: { mode: 'dry' } })
+  assert.deepEqual(r.killed, [])
+  assert.match(r.written.find(([f, x]) => x.type === 'hung-tool-killed')[1].detail, /dry/)
 })

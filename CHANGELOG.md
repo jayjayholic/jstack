@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (4): the warden kills hung dev tools, and their launcher when the child won't die
+
+**What:**
+- `tools/perf/warden.mjs` step `hung-tools`: `tsc`/`tsgo`/`esbuild`/`next build` with no CPU for 15+ min and 2+ GB private is killed; if it survives 10 s, its node/bun parent launcher is killed. Never the agent CLI, a shell, a launcher with other children, or anything protected (logged as `skip`). Both kills logged, plus a `hung-tool-killed` notice with GB freed and the worktree. Busy tests still only get a notice.
+- `skills/machine-memory`: SKILL.md known-traps row and PERF.md warden section.
+- Tests: 5 new in `warden.test.mjs` (hung kill, survivor → parent kill, protected parent, busy/small tool spared, fail-safe and dry).
+
+**Why:** two TypeScript 7 `tsc.exe` hung at ~7.9 GB each. `Stop-Process -Force` and `taskkill /F /T` said "no running instance" because the `node` launcher held them; killing the launcher freed ~16 GB at once.
+
 ## 2026-10-26: hooks no longer run binaries from the repo folder
 
 - **Security fix:** on Windows a bare command name (`git`, `powershell.exe`, `taskkill`, `wscript.exe`) is looked up in the current folder first, so a repo could plant a fake `git.exe` and the guard hooks would run it. Every child process now starts from the hook's own folder (git gets the repo via `-C`).

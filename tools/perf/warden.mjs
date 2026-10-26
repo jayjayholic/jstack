@@ -6,6 +6,8 @@
 //     keep-browser marker, anything with a protected descendant, anything whose command line couldn't be read
 //   - run the RAM clean task when available RAM is low (shared cooldown with ram-clean.ps1)
 //   - flag hung tests (90%+ of a core for 15+ min) to notices.jsonl, never kill them
+//   - kill a hung heavy dev tool (tsc/tsgo/next build/esbuild: zero CPU for 15+ min, 2+ GB private); if it survives
+//     10 s, kill its node/bun launcher (a native child of a launcher can't be terminated while the parent holds it)
 //   - stop an idle Docker Compose project (no container CPU, no client connected, no eval process) after 30+ min
 //   - write triggers (ram-low, hung, new top consumer, new heavy process name, regression above the floor) that tell
 //     the orchestrator when an optimizer agent is worth spawning
@@ -22,7 +24,7 @@ const PROTECT_RE = /claude|@anthropic|anthropic-ai|[\\/]mcp|mcp-server|modelcont
 const DEFAULTS = {
   mode: 'act', orphanShortMin: 10, orphanIdleMin: 30, idleCpuPct: 1, maxKillsPerTick: 10,
   ramCleanBelowPct: 10, ramCleanCooldownMin: 10, ramCleanTask: process.env.JSTACK_RAM_CLEAN_TASK ?? 'JstackRamClean',
-  hungCpuPct: 90, hungMin: 15, protect: '', triggerCooldownMin: 30,
+  hungCpuPct: 90, hungMin: 15, hungToolMin: 15, hungToolPrivMb: 2048, hungToolWaitMs: 10000, protect: '', triggerCooldownMin: 30,
   docker: { project: '', idleMin: 30, cpuPct: 2, checkEveryMin: 5, busyPattern: '' },
 }
 
@@ -177,6 +179,44 @@ function topTriggers(record, state, now) {
   return fresh.map(n => ({ type: 'new-top-consumer', key: n, detail: `${n}: ${Math.round(sum.get(n).cpu)}% of a core, ${Math.round(sum.get(n).mb)} MB over 15 min` }))
 }
 
+const HEAVY_TOOL_NAMES = new Set(['tsc', 'tsgo', 'esbuild'])
+const HEAVY_TOOL_CMD = /[\/]bin[\/](tsc|tsgo)|tsgo|esbuild|next(.js)?["']?s+build|[\/]next[\/]dist[\/]bin[\/]next["']?s+build/i
+const LAUNCHERS = new Set(['node', 'bun'])
+const SHELLS = new Set(['bash', 'sh', 'cmd', 'powershell', 'pwsh', 'zsh', 'conhost'])
+
+function isHeavyTool(p) { return HEAVY_TOOL_NAMES.has(base(p.name)) || HEAVY_TOOL_CMD.test(p.cmd ?? '') }
+
+// Why the launcher above a hung tool must be left alone, or null when it may be killed.
+function parentBlock(par, procs, ctx) {
+  if (!par) return 'parent gone'
+  if (!LAUNCHERS.has(base(par.name))) return SHELLS.has(base(par.name)) ? 'parent is a shell' : 'parent is not a node/bun launcher'
+  const blocked = isProtected(par, ctx)
+  if (blocked) return blocked
+  const others = procs.filter(c => c.ppid === par.pid && !HEAVY_TOOL_NAMES.has(base(c.name)) && !/^conhost/i.test(c.name))
+  if (others.length) return 'parent holds other children'
+  return null
+}
+
+// A heavy dev tool with no CPU progress for hungToolMin and over hungToolPrivMb private: hung, holding RAM for nothing.
+function decideHungTools(procs, parent, activity, { now, cfg, selfPid = process.pid, keepPids = new Set() }) {
+  const protectRe = cfg.protect ? new RegExp(`${PROTECT_RE.source}|${cfg.protect}`, 'i') : PROTECT_RE
+  const ctx = { selfPid, protectRe, lockWts: [], keepPids }
+  const out = []
+  for (const p of procs) {
+    if (!isHeavyTool(p) || (p.priv ?? 0) < cfg.hungToolPrivMb * 1048576 || (p.cpuNow ?? 0) >= cfg.idleCpuPct) continue
+    const a = activity.get(`${p.pid}:${p.create}`)
+    if (!a || now - a.lastBusyAt < cfg.hungToolMin * 60000) continue
+    if (isProtected(p, ctx)) continue
+    const par = parent.get(p.pid)
+    out.push({ pid: p.pid, create: p.create, name: p.name, wt: p.wt, cmd: p.cmd, privMb: Math.round(p.priv / 1048576), idleMin: Math.round((now - a.lastBusyAt) / 60000),
+      parent: par ? { pid: par.pid, name: par.name, cmd: par.cmd, privMb: Math.round((par.priv ?? 0) / 1048576) } : null, parentBlock: parentBlock(par, procs, ctx) })
+  }
+  return out
+}
+
+function alive(pid) { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
+function sleepMs(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }
+
 function floorTrigger(state, floor) {
   if (!floor?.cpu || (state.window?.length ?? 0) < 15) return null
   const mean = state.machineWindow.reduce((s, x) => s + x, 0) / state.machineWindow.length
@@ -278,6 +318,34 @@ function runWarden({ now, procs, parent, record, cfg, state, dir, io = {} }) {
     }
   })
 
+  step('hung-tools', () => {
+    for (const h of decideHungTools(procs, parent, state.activity, { now, cfg: w, keepPids: (io.keepMarkers ?? keepMarkers)(now) })) {
+      const kill = io.kill ?? killTree
+      const isAlive = io.alive ?? alive
+      const label = h.wt ?? 'unknown worktree'
+      const r = log({ action: 'kill', id: `h${now}-${h.pid}`, target: { pid: h.pid, name: h.name, wt: h.wt, cmd: (h.cmd ?? '').slice(0, 200) }, killed: act ? kill([h.pid]) : [], why: `hung ${h.name}: no CPU for ${h.idleMin} min, ${h.privMb} MB private`, before: { availMb: record.m.availMb, privMb: h.privMb } })
+      let freedMb = h.privMb
+      let parentKilled = false
+      if (act) {
+        ;(io.sleep ?? sleepMs)(w.hungToolWaitMs)
+        if (isAlive(h.pid)) {
+          if (h.parentBlock) { log({ action: 'skip', target: { pid: h.parent?.pid, name: h.parent?.name }, why: `hung ${h.name} pid ${h.pid} survived its kill; launcher left alone: ${h.parentBlock}` }); freedMb = 0 }
+          else {
+            const killed = kill([h.parent.pid])
+            parentKilled = killed.length > 0
+            log({ action: 'kill', id: `hp${now}-${h.parent.pid}`, target: { pid: h.parent.pid, name: h.parent.name, wt: h.wt, cmd: (h.parent.cmd ?? '').slice(0, 200) }, killed, why: `hung ${h.name} pid ${h.pid} survived its kill; its launcher holds it, so the launcher goes` })
+            freedMb = parentKilled ? h.privMb + h.parent.privMb : 0
+          }
+        }
+        if (freedMb) (state.pendingEffects = state.pendingEffects ?? []).push({ id: r.id, of: 'kill', availMb: record.m.availMb })
+      }
+      const gb = Math.round(freedMb / 102.4) / 10
+      ;(io.append ?? appendJsonl)(path.join(dir, 'notices.jsonl'), { at: new Date(now).toISOString(), type: 'hung-tool-killed', pid: h.pid, name: h.name, wt: h.wt, parentKilled, freedGb: gb, mode: w.mode,
+        detail: `${h.name} in ${label} was hung (no CPU ${h.idleMin} min, ${h.privMb} MB); ${act ? `killed${parentKilled ? ' with its launcher' : ''}, ~${gb} GB freed` : 'would be killed (dry)'}. Rerun it if still needed.` })
+      log({ action: 'notice', target: { pid: h.pid, name: h.name, wt: h.wt }, why: `hung ${h.name} in ${label}: ~${gb} GB freed; its agent was told` })
+    }
+  })
+
   step('docker', () => {
     const d = w.docker
     if (!d.project || now - (state.dockerCheckAt ?? 0) < d.checkEveryMin * 60000) return
@@ -314,4 +382,4 @@ function runWarden({ now, procs, parent, record, cfg, state, dir, io = {} }) {
 
 function readFloor(dir) { try { return JSON.parse(fs.readFileSync(path.join(dir, 'floor.json'), 'utf8')) } catch { return null } }
 
-export { decideKills, trackActivity, decideHung, decideRamClean, decideDockerStop, shouldTrigger, topTriggers, runWarden, wardenConfig, isTest, PROTECT_RE, DEFAULTS }
+export { decideKills, trackActivity, decideHung, decideHungTools, isHeavyTool, decideRamClean, decideDockerStop, shouldTrigger, topTriggers, runWarden, wardenConfig, isTest, PROTECT_RE, DEFAULTS }
