@@ -67,6 +67,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `prompt.one-sided-eval` | Eval cases only where the behaviour should happen (or only where it should not) | One-sided cases optimise one side: an agent tested only on when to search learns to search for everything. | review agent (eyes) | medium |
 | `prompt.tool-bloat` | Dozens of tools or 10k+ tokens of tool definitions loaded on every request | Tool choice gets worse past 30-50 tools and every request pays for definitions it does not use. | review agent (eyes) | low |
 | `prompt.lossy-compaction` | Compaction or summary prompt never tuned on real long traces | Aggressive compaction drops context whose importance shows only later; the agent then repeats work or contradicts itself. | review agent (eyes) | medium |
+| `prompt.forced-reply-shape` | Conversational prompt prescribes the shape of every reply (opening line, numbered questions, a guess, a fixed closing) | Every reply comes out in the same skeleton whatever was said, a greeting gets a questionnaire, and the persona and the conversation stop shaping the answer. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -80,6 +81,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `prompt.one-sided-eval`: static-proof: the case list has no negative (or no positive) cases for the behaviour Suggest: `prompt.t.balanced-cases`.
 - `prompt.tool-bloat`: measurement: count_tokens of the tools array; tool-selection accuracy on held-out cases with and without tool search Suggest: `prompt.t.tool-search`.
 - `prompt.lossy-compaction`: measurement: replay long real traces through the compactor and check that later turns still find each fact they used (recall of facts used after the cut) Suggest: `prompt.t.compaction-recall-first`.
+- `prompt.forced-reply-shape`: measurement: sample 30+ recent real replies and count how many share the same skeleton; quote the prompt lines (base, persona, know-how, first-contact, examples) that prescribe it Fix direction: remove the format orders and keep facts, goals and capabilities; if a format matters for one case, show 3-5 diverse examples instead of a template. Suggest: `prompt.t.examples`.
 
 ## Tactics to suggest
 

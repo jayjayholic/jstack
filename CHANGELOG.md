@@ -2,6 +2,19 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (9): eleven more red flags from one night's /unslop runs and agent audit
+
+**What:**
+- `eng-eval-testing`: question `test.q.dry-run-effects`; eyes rules `test.eval-hold-allowlist` (a dry-run wrapper that holds only allow-listed effects, so other writes apply for real) and `test.vacuous-absence` ("never / at most / avoids" checks passing on an empty or missing observation).
+- `eng-concurrency`: `conc.poll-by-time` (waiter takes the newest row after its start instead of its own job's row), `conc.write-after-await` (read, slow await, unconditional write), `conc.once-caches-failure` (once-wrapper caches failures returned as values).
+- `eng-data-quality`: `dq.validated-status-survives-edit`, `dq.window-ignores-reset`.
+- `eng-interaction`: `ix.index-selection-async-list`.
+- `eng-security`: `sec.display-gate-mismatch` (display data behind a stricter permission than the view; front and back end defaulting a new key differently).
+- `eng-llm-cost`: `cost.batch-all-or-nothing` (a failed batch collect re-runs items already billed).
+- `eng-llm-prompting`: `prompt.forced-reply-shape` (a conversational prompt that prescribes every reply's skeleton).
+
+**Why:** each was confirmed on a real codebase with a failing test that a second agent reproduced (the prompt one from a sample of real replies all sharing one skeleton), and none matched an existing rule. All are eyes rules: /unslop's review agents look for them; nothing static catches them yet.
+
 ## 2026-10-26 (8): /unslop's lessons ride with the branch, and six slop classes from one night of agent work
 
 **What:**

@@ -60,6 +60,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `dq.stacked-thresholds` | Confidence thresholds stacked with AND, no funnel counts logged | Each threshold is reasonable; together they block everything. | review agent (eyes) | medium |
 | `dq.learned-text-no-source` | Learned note or report injected into a prompt with no source or as-of date | A stale lesson beats fresh evidence. | review agent (eyes) | medium |
 | `dq.degenerate-output` | Stage output accepted with no sanity bound (one segment, one label for everything, empty, output/input ratio far off) | A stalled or collapsed stage still reports success and its junk flows downstream. | review agent (eyes) | medium |
+| `dq.validated-status-survives-edit` | A writer changes the content or version of a row whose status was set by a validation or approval step, and leaves the status | An unchecked rewrite keeps the validated status and reaches users. | review agent (eyes) | high |
+| `dq.window-ignores-reset` | Threshold over a history table ignores the event that resets it (version, publication), while another path resets a counter | Two representations of one streak disagree, so a single new event trips a threshold built from old history. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -71,6 +73,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `dq.stacked-thresholds`: measurement: precision vs coverage sweep on labelled candidates
 - `dq.learned-text-no-source`: failing-test: seed a lesson contradicting the source; the answer follows the lesson
 - `dq.degenerate-output`: failing-test: feed a degenerate stage output fixture; the pipeline still marks the item complete
+- `dq.validated-status-survives-edit`: failing-test: for every writer of the body, assert status=validated implies validated_version == version Fix direction: store the validated version and reset the status on any content change.
+- `dq.window-ignores-reset`: failing-test: history ends in failures, reset (republish), one new failure; the threshold must not trip Fix direction: one source for the window, filtered by the reset key.
 
 ## Verification steps
 

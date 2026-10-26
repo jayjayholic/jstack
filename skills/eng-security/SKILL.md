@@ -62,6 +62,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `sec.no-revocation-path` | Token without expiry, or an ACL copied to another store with no update path | Removed users keep access. | review agent (eyes) | high |
 | `sec.nested-quantifier` | Regex with a quantified group that itself contains a quantifier ((\w+\s?)+, (.*)*) | Nested quantifiers backtrack exponentially on a near-miss input: one request can pin a CPU. | static `sec.nested-quantifier` (regex) | medium |
 | `sec.dev-shortcut` | Verification skipped when the host or env looks local (localhost, development, missing base URL) | An attacker or a misconfigured deploy makes production look local and the check turns off. | review agent (eyes) | high |
+| `sec.display-gate-mismatch` | Data a view shows is fetched through an endpoint gated by a stricter permission than the view, or a new key defaults differently on the front and back end | Members who can see the view get blank labels or refused requests, and the UI promises actions the server denies. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -76,6 +77,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `sec.no-revocation-path`: failing-test: grant, use, revoke, reuse the same token -> still works
 - `sec.nested-quantifier`: measurement: pumped attack string at 1e3/1e4/1e5 chars; time grows super-linearly or breaks sec.redos_ms_at_max_input Fix direction: make repetitions unambiguous, bound the input length, or use a linear-time engine. Known false positives: groups whose repetitions cannot overlap because a literal separator starts each one, e.g. (?:-\w+)*.
 - `sec.dev-shortcut`: failing-test: production build with a localhost-like base URL; an unsigned or unauthenticated request is accepted
+- `sec.display-gate-mismatch`: failing-test: render as a role with the view permission only; labels are blank or the request is refused Fix direction: ship display data with the viewable record; one default per permission key shared by both layers.
 
 ## Verification steps
 

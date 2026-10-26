@@ -65,6 +65,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `conc.timeout-mismatch` | Caller timeout shorter than the work it waits for (the caller gives up while the callee keeps going) | The caller reports failure while the effect still lands, and its retry runs the work twice. | review agent (eyes) | high |
 | `conc.second-writer` | Background result written into a conversation, document or session the user is acting in, with no owner or ordering check | Two writers interleave: the background answer lands in the middle of what the user is doing. | review agent (eyes) | medium |
 | `conc.temporary-state-flip` | Status flipped to a temporary value for the length of a job and restored from a snapshot in finally | Two overlapping jobs snapshot each other's temporary value, a killed job never restores, and the restore overwrites changes made meanwhile by the user or another path. | review agent (eyes) | medium |
+| `conc.poll-by-time` | Waiter takes the newest result row after its start time instead of the row its own request produced | A concurrent or leftover job's result is returned (and sometimes deleted) as this run's. | review agent (eyes) | medium |
+| `conc.write-after-await` | Row read, then a slow network or model call awaited, then written by id with no version or updated_at predicate | An edit landing during the await is silently overwritten by data validated against the old snapshot. | review agent (eyes) | medium |
+| `conc.once-caches-failure` | Once/dedupe wrapper caches every resolved value while the wrapped call returns failures as values | An outage turned into { ok: false } is replayed for the cache lifetime and the retry never reaches the dependency. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -81,6 +84,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `conc.timeout-mismatch`: failing-test: make the callee take the caller timeout + 5 s; the caller reports failure while the effect lands, or a retry runs it twice Fix direction: caller timeout above the callee timeout, or hand off to a job with a status.
 - `conc.second-writer`: failing-test: a user action and a background result arrive in the same tick; assert one ordered outcome and nothing overwritten
 - `conc.temporary-state-flip`: failing-test: run two overlapping jobs, or kill one mid-run, or change the status during the job; the final status is wrong Fix direction: keep the in-progress marker in its own column or lease with an expiry, restore with compare-and-set on the value you wrote, and give stuck markers a reaper.
+- `conc.poll-by-time`: failing-test: insert a matching row from another job during the wait; the waiter returns it Fix direction: correlate by job id or idempotency key carried from the request to the result.
+- `conc.write-after-await`: failing-test: change the row inside the awaited stub; the final write overwrites it Fix direction: conditional write (where version = read version) and retry or refuse on conflict.
+- `conc.once-caches-failure`: failing-test: wrapped call returns a failure result, then success; the second call must run Fix direction: cache only success results, or make the callee throw on failure.
 
 ## Verification steps
 

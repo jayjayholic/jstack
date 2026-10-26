@@ -90,6 +90,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `cost.batch-cold-prefix` | Batch of requests sharing a long prefix with no breakpoint, or a 5-minute TTL on it | Batch requests run concurrently and in any order, and a batch often takes 5-60 min: a 5-minute entry expires between requests, so most of them pay the prefix in full. | review agent (eyes) | low |
 | `cost.batch-on-interactive` | Batch API used where a person waits for the result or where steps chain | A batch can take up to 24 h and returns results only when every request has ended; a waiting user or a five-step chain turns half price into hours of wall time. | review agent (eyes) | medium |
 | `cost.history-breakpoint-stale` | Conversation breakpoint fixed on an early turn, or turns that add 20+ blocks with one breakpoint | Each new turn pays its whole history after the fixed breakpoint; when a turn pushes the breakpoint 20 or more blocks past the last write, the lookback misses it and the whole history is written again. | review agent (eyes) | medium |
+| `cost.batch-all-or-nothing` | Error while collecting a batch's results discards the items already received and re-runs the whole set | Answered items were billed and metered already; the fallback pays for them again. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -119,6 +120,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `cost.batch-cold-prefix`: measurement: cache-probe.mjs usage over the batch results: hit_pct low with a prefix over the minimum cacheable length Suggest: `cost.t.batch-plus-cache`.
 - `cost.batch-on-interactive`: measurement: end-to-end wall time of the flow on a real batch vs the latency budget of its caller Suggest: `cost.t.sync-when-waiting`.
 - `cost.history-breakpoint-stale`: measurement: cache-probe.mjs usage on a long conversation: uncached input grows turn by turn, or a full rewrite after a tool-heavy turn Suggest: `cost.t.history-moving-breakpoint`.
+- `cost.batch-all-or-nothing`: failing-test: fail result collection at item k of n; only n-k items may be re-run Fix direction: persist each result as it streams and retry only the missing ones.
 
 ## Tactics to suggest
 

@@ -29,6 +29,7 @@ When the evidence that work is done is produced and checked by the same agent, "
 - `test.q.outward` Which outward or irreversible actions can this code or test perform, and what blocks them by default (egress deny, hold flag, dry-run)? _(answer as: list; prevents: test-side-effects)_
 - `test.q.lane` Which shared resources (ports, DB, queues, tenants, branches, deploys) will I touch, and how is my lane isolated and cleaned up? _(answer as: list; prevents: shared-environment)_
 - `test.q.old-assertions` Which existing tests assert the behaviour I am changing (grep the old literal, route, label, default, count or shape), and did I run them too, not only the tests next to the files I touched? _(answer as: list; prevents: stale-test)_
+- `test.q.dry-run-effects` In a dry or eval run, which effect classes can the code apply (outward, create-own, update, delete, scheduling), and which are held? _(answer as: list; prevents: test-side-effects)_
 
 **DEEP (tier L, with the pre-mortem)**
 
@@ -65,6 +66,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `test.stale-expectation` | Behaviour changed while tests that assert the old behaviour were not updated or not run (tests far from the touched file, path-filtered CI) | The integration branch turns red later, and whoever meets the red test first edits it to pass without knowing which side is right. | review agent (eyes) | medium |
 | `test.mock-drops-exports` | Module mock written as a hand-made object, so exports added to the module later are undefined wherever it is mocked | Every later export breaks unrelated suites with undefined-is-not-a-function, far from the change that added it. | review agent (eyes) | low |
 | `test.time-bomb-date` | Test compares a fixed calendar date with the real clock | It passes until that date and then fails on every branch at once, for no change of anyone's. | review agent (eyes) | medium |
+| `test.eval-hold-allowlist` | Dry-run or eval wrapper holds only the effects on an allow-list (e.g. outward), so other writes apply for real | A consent taxonomy is not a safety taxonomy: 'needs no consent' writes (own memories, tasks, follow-ups) land in real data once per arm per case. | review agent (eyes) | high |
+| `test.vacuous-absence` | Absence check ('never calls X', 'at most N', 'avoids Y') passes when the observation is empty or missing | An empty reply, a missing trace or a missing cost makes every negative check true, so a broken run grades as a pass. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -80,6 +83,8 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `test.stale-expectation`: failing-test: run the full suite, not the path-filtered or touched-file subset, on the branch head; a test asserting the old value fails Fix direction: grep the tests for the old value and update them in the same commit as the behaviour, saying why in the message.
 - `test.mock-drops-exports`: failing-test: import an export the mock does not list through the mocked module; it is undefined Fix direction: spread the real module (await vi.importActual / requireActual) and override only what the test needs, or mock at a narrower seam.
 - `test.time-bomb-date`: failing-test: rerun with the clock set past the date (vi.setSystemTime, freezegun, faketime); it fails Fix direction: freeze the clock in the test or build the date relative to now.
+- `test.eval-hold-allowlist`: failing-test: run the wrapper over the full tool registry and assert every non-read tool returns a held result Fix direction: deny every effect by default in a dry run and allow an explicit read-only list.
+- `test.vacuous-absence`: failing-test: grade an empty rollout (no text, no trace, no error); it must fail or be ungraded, never pass Fix direction: assert the observation exists first; count a missing cost as unknown, never 0.
 
 ## Verification steps
 

@@ -65,6 +65,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `ix.effect-append-loop` | Effect that appends to state or the DOM with no cleanup, or with the appended state in its own dependencies | Each render or remount adds another copy: elements multiply and the page slows down. | review agent (eyes) | high |
 | `ix.menu-wrong-container` | Menu or popover placed with pointer coordinates against a scrolled or transformed ancestor | The menu opens far from the pointer as soon as the container scrolls or moves. | review agent (eyes) | medium |
 | `ix.url-write-before-ready` | URL or route written from an effect before the data it depends on (session, permissions) has loaded | The early write is read back as a new request and the deep link bounces somewhere else. | review agent (eyes) | medium |
+| `ix.index-selection-async-list` | Highlighted or selected item kept as an index into a list assembled from more than one async source | When one source loads late the list shifts and Enter picks a different item than the one shown highlighted. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -80,6 +81,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `ix.effect-append-loop`: failing-test: mount, wait 2 s, remount twice; the element count stays constant
 - `ix.menu-wrong-container`: render: open it at 4 pointer positions inside a scrolled container; the distance from the pointer is over 8 px Fix direction: position against the viewport or with a positioning library (virtual element at the pointer).
 - `ix.url-write-before-ready`: failing-test: delay that data 1.5 s and open a deep link; the final URL equals the deep link
+- `ix.index-selection-async-list`: failing-test: highlight an item, resolve the second source so items are prepended, press Enter; the chosen item differs Fix direction: keep the selection as the item's key and re-derive the index on render.
 
 ## Verification steps
 
