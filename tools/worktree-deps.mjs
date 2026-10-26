@@ -22,7 +22,7 @@
 // dependency fields of every package.json, lockfiles, bunfig.toml, patches/ for node_modules; uncommitted edits
 // under the codegen inputs for the generated folder. Stores are built once, under a lock, and never edited.
 // Workspace packages always link to THIS worktree's own sources, never the store's.
-// Settings (env, all optional): JSTACK_INTEGRATION_BRANCH (stage), JSTACK_INSTALL_CMD (bun install),
+// Settings (env, all optional): JSTACK_INTEGRATION_BRANCH (stage), JSTACK_PROTECTED_BRANCHES (comma list, never deleted by remove), JSTACK_INSTALL_CMD (bun install),
 // WORKTREE_DEPS_STORE_INSTALL (bun install --frozen-lockfile), JSTACK_CODEGEN_CMD (bun run db:generate),
 // JSTACK_CODEGEN_INPUTS (schema bun.lock: the generator version lives in the lockfile), JSTACK_CODEGEN_REUSE_PATHS (first entry: .generated), JSTACK_CODEGEN_REQUIRED,
 // WORKTREE_DEPS_STORES (<main checkout>/.worktrees).
@@ -489,7 +489,16 @@ const remove = (target, deleteBranch) => {
 	// A half-deleted worktree has no .git file, so git would walk up and report the main checkout's branch.
 	const ownsGit = fs.existsSync(path.join(dir, '.git')) && samePath(gitOrNull(dir, 'rev-parse', '--show-toplevel')?.trim() ?? '', dir)
 	const headBranch = ownsGit ? gitOrNull(dir, 'symbolic-ref', '--quiet', '--short', 'HEAD')?.trim() : null
-	const protectedBranches = new Set(['stage', 'production', 'main', 'master', gitOrNull(main, 'symbolic-ref', '--quiet', '--short', 'HEAD')?.trim()].filter(Boolean))
+	const remoteDefault = gitOrNull(main, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD')?.trim().replace(/^origin\//, '')
+	const protectedBranches = new Set(
+		[
+			'main', 'master', 'production', 'develop',
+			env.JSTACK_INTEGRATION_BRANCH || 'stage',
+			remoteDefault,
+			gitOrNull(main, 'symbolic-ref', '--quiet', '--short', 'HEAD')?.trim(),
+			...(env.JSTACK_PROTECTED_BRANCHES || '').split(',').map((b) => b.trim()),
+		].filter(Boolean),
+	)
 	const branch = headBranch && !protectedBranches.has(headBranch) ? headBranch : null
 	if (deleteBranch && headBranch && !branch) console.error(`worktree-deps: not deleting protected branch ${headBranch}`)
 	unlinkEveryLink(dir)

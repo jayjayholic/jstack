@@ -2,6 +2,10 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (12): protected branches follow your repo, not ours
+
+- `worktree-deps remove --delete-branch` now protects `main`, `master`, `production`, `develop`, your integration branch (`JSTACK_INTEGRATION_BRANCH`), the remote's default branch and the main checkout's branch, plus anything in `JSTACK_PROTECTED_BRANCHES` (comma list). No more hardcoded branch names from one project.
+
 ## 2026-10-26 (11): `worktree-deps remove --delete-branch` never deletes the main checkout's branch
 
 **What:**
