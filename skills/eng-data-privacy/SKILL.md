@@ -60,6 +60,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `data.lookup-by-name` | Owner-scoped resource chosen by display name | A name match picks someone else's resource. | review agent (eyes) | high |
 | `data.acl-overwrite` | ACL assigned or spread in merge code instead of a lattice join | A private fact turns public after a merge. | review agent (eyes) | high |
 | `data.no-inverse` | Merge/delete/move with no paired inverse and no stored pre-image | Undo is impossible or reconstructs the wrong state. | review agent (eyes) | medium |
+| `data.edit-skips-review` | Content that passed a review, scan or ACL check when it was shared can be edited afterwards without that check running again | The audience receives the edited text, including what the review had removed. | review agent (eyes) | high |
 
 ## Confirm recipes
 
@@ -72,6 +73,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `data.lookup-by-name`: failing-test: foreign-owner resource with the same name is accepted
 - `data.acl-overwrite`: failing-test: merge a private fact into a public entity; an outsider can read it
 - `data.no-inverse`: failing-test: unmerge(merge(G)) != G on a small graph
+- `data.edit-skips-review`: failing-test: share or publish, edit the content to include a line the review blocks, read it as an audience member; the line is visible Fix direction: route every edit of shared content through the same review, or end the share on edit until it is reviewed again.
 
 ## Verification steps
 

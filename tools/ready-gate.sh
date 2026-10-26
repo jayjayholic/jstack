@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # READY gate: the checks a train orchestrator runs before it accepts a worker's READY. Not a hook; call it.
 # Usage: bash ready-gate.sh <worktree> [--base origin/<branch>] [--brief <file>] [--no-brief]
-#   1. the tree is committed (tracked files clean), so the checks below are about the final commit
+#   1. the tree is committed (tracked files clean), so the checks below are about the final commit; new
+#      .jstack/memory/entries and .jstack/metrics/runs files from /unslop are committed too
 #   2. typecheck green on that commit: tc_run "$JSTACK_TYPECHECK_CMD", cached per commit SHA, so a worker that already
 #      ran the gate makes the orchestrator's run instant
 #   3. unit tests for touched files: touched test files plus the test next to each touched file
@@ -45,6 +46,12 @@ echo "READY gate for $(git branch --show-current) @ ${sha:0:9} (base $base)"
 # 1. committed
 dirty=$(git status --porcelain --untracked-files=no)
 if [ -z "$dirty" ]; then pass "tree committed"; else fail "uncommitted changes, commit them first:"; echo "$dirty" | sed 's/^/          /' | head -10; fi
+# 1b. /unslop's lessons ride with the branch: an untracked memory entry or run record dies with the worktree
+records=$(git status --porcelain --untracked-files=all -- .jstack/memory/entries .jstack/metrics/runs 2>/dev/null | grep '^??')
+if [ -n "$records" ]; then
+  fail "unslop records not committed (they are lost when the worktree is removed, and the next agent never sees them):"
+  echo "$records" | sed 's/^/          /' | head -10
+fi
 
 mapfile -t touched < <(git diff --name-only --diff-filter=ACMR "$base"...HEAD 2>/dev/null)
 [ ${#touched[@]} -eq 0 ] && note "no files differ from $base (wrong --base?)"

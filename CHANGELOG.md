@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (8): /unslop's lessons ride with the branch, and six slop classes from one night of agent work
+
+**What:**
+- `tools/ready-gate.sh` check 1b: an untracked file under `.jstack/memory/entries/` or `.jstack/metrics/runs/` fails the gate, with the list of files. `skills/unslop/SKILL.md` step 8 (Record) now says to commit the new entries with the branch.
+- `eng-eval-testing`: question `test.q.old-assertions` (M: which existing tests assert the behaviour I change, and did I run them); eyes rules `test.stale-expectation` (behaviour changed, tests asserting the old value not updated or not run), `test.mock-drops-exports` (a module mock written as a hand-made object, so later exports are undefined), `test.time-bomb-date` (a fixed calendar date compared with the real clock).
+- `eng-llm-app`: eyes rule `llm.parallel-agents-same-snapshot` (several agents answer one message in parallel without seeing each other's replies).
+- `eng-concurrency`: eyes rule `conc.temporary-state-flip` (status flipped for the length of a job and restored from a snapshot in finally).
+- `eng-data-privacy`: eyes rule `data.edit-skips-review` (shared content edited after its review without the review running again).
+- SKILL.md blocks re-rendered with `packs.mjs render`.
+
+**Why:** a before/after audit of one night of parallel coding agents found that every `/unslop` run wrote its RECORDED lessons as untracked files in the worktree: none reached the integration branch, so the next agent's pre-flight memory query came back empty ("no anchors for these paths") and the same class came back hours later on another branch (5 confirmed concurrency findings on one branch, 5 more on the next). The gate only looked at tracked files, so it never noticed. The six rules are the classes that night's runs confirmed with no existing rule (27 of 41 confirmed findings were "novel"), plus the stale-test commits that kept the integration branch red (`expect` updates for changed links and defaults, partial mocks missing new exports, a test whose "future" date had passed).
+
 ## 2026-10-26 (7): /unslop and /preflight suggest sourced LLM tactics; new pack eng-llm-prompting
 
 **What:**

@@ -28,6 +28,7 @@ When the evidence that work is done is produced and checked by the same agent, "
 - `test.q.repro` Can I reproduce the problem now, on the baseline, with a script I can commit? _(answer as: file; prevents: speculative-fix)_
 - `test.q.outward` Which outward or irreversible actions can this code or test perform, and what blocks them by default (egress deny, hold flag, dry-run)? _(answer as: list; prevents: test-side-effects)_
 - `test.q.lane` Which shared resources (ports, DB, queues, tenants, branches, deploys) will I touch, and how is my lane isolated and cleaned up? _(answer as: list; prevents: shared-environment)_
+- `test.q.old-assertions` Which existing tests assert the behaviour I am changing (grep the old literal, route, label, default, count or shape), and did I run them too, not only the tests next to the files I touched? _(answer as: list; prevents: stale-test)_
 
 **DEEP (tier L, with the pre-mortem)**
 
@@ -61,6 +62,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `test.invalid-ab` | A/B or perf number with no A/A run, baseline arm, environment fingerprint or interval | Noise or a starved machine reads as an effect. | review agent (eyes) | high |
 | `test.stubbed-proof` | Proof (screenshot, e2e run) produced with the path under test mocked or its route intercepted | The proof shows the stub working, not the change. | review agent (eyes) | high |
 | `test.hardcoded-port` | Test or script talks to a fixed localhost port instead of its own lane | Two lanes running at once test each other's servers, so a pass proves nothing. | static `test.hardcoded-port` (regex) | medium |
+| `test.stale-expectation` | Behaviour changed while tests that assert the old behaviour were not updated or not run (tests far from the touched file, path-filtered CI) | The integration branch turns red later, and whoever meets the red test first edits it to pass without knowing which side is right. | review agent (eyes) | medium |
+| `test.mock-drops-exports` | Module mock written as a hand-made object, so exports added to the module later are undefined wherever it is mocked | Every later export breaks unrelated suites with undefined-is-not-a-function, far from the change that added it. | review agent (eyes) | low |
+| `test.time-bomb-date` | Test compares a fixed calendar date with the real clock | It passes until that date and then fails on every branch at once, for no change of anyone's. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -73,6 +77,9 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `test.invalid-ab`: measurement: A/A pair under the same conditions shows a difference of the same size
 - `test.stubbed-proof`: static-proof: the proof test intercepts the endpoint the diff changed (route mock, request handler, stubbed fetch)
 - `test.hardcoded-port`: repro-script: run two lanes at once; the second talks to the first one's server Fix direction: read the base URL or port from the lane environment.
+- `test.stale-expectation`: failing-test: run the full suite, not the path-filtered or touched-file subset, on the branch head; a test asserting the old value fails Fix direction: grep the tests for the old value and update them in the same commit as the behaviour, saying why in the message.
+- `test.mock-drops-exports`: failing-test: import an export the mock does not list through the mocked module; it is undefined Fix direction: spread the real module (await vi.importActual / requireActual) and override only what the test needs, or mock at a narrower seam.
+- `test.time-bomb-date`: failing-test: rerun with the clock set past the date (vi.setSystemTime, freezegun, faketime); it fails Fix direction: freeze the clock in the test or build the date relative to now.
 
 ## Verification steps
 

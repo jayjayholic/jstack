@@ -63,6 +63,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `llm.narrow-tool` | New tool exposes less than the system under it (fixed formats, hardcoded options, no retry or re-check) | The agent cannot do what the user asks even though the system can, so it improvises or asks the user. | review agent (eyes) | medium |
 | `llm.model-swap-no-replay` | Model, provider or prompt changed with no replay of the regression set | Output shape (format, length, tool use) silently regresses on the new model. | review agent (eyes) | medium |
 | `llm.empty-completion` | Model reply used without checking for empty content or the stop reason; a canned fallback stored as the answer | Provider quirks (empty text after tools or thinking) become stored apologies or blank answers. | review agent (eyes) | high |
+| `llm.parallel-agents-same-snapshot` | Several agents answer the same message in parallel from the same snapshot, none seeing the others' replies | They say the same thing in the same shape, or contradict each other, and nobody can build on what was already said. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -76,6 +77,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `llm.narrow-tool`: repro-script: a request the underlying API supports that the tool cannot express
 - `llm.model-swap-no-replay`: measurement: replay set on the old and the new model; a tracked output metric drops beyond the A/A noise
 - `llm.empty-completion`: failing-test: the provider mock returns empty content; the stored reply is empty or a canned sentence instead of a retry or a visible error
+- `llm.parallel-agents-same-snapshot`: repro-script: send one message to a group of N agents and diff the replies; near-identical openings or overlapping content, and no reply references another Fix direction: one agent at a time, each reading the thread including replies already sent, with a per-message reply budget as the loop backstop; let each agent decide to stay silent.
 
 ## Verification steps
 

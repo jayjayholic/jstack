@@ -64,6 +64,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `conc.prose-outcome` | Tool or endpoint returns prose ('ok', 'kept as is') with no typed outcome | The caller (often a model) reads a no-op as success. | review agent (eyes) | medium |
 | `conc.timeout-mismatch` | Caller timeout shorter than the work it waits for (the caller gives up while the callee keeps going) | The caller reports failure while the effect still lands, and its retry runs the work twice. | review agent (eyes) | high |
 | `conc.second-writer` | Background result written into a conversation, document or session the user is acting in, with no owner or ordering check | Two writers interleave: the background answer lands in the middle of what the user is doing. | review agent (eyes) | medium |
+| `conc.temporary-state-flip` | Status flipped to a temporary value for the length of a job and restored from a snapshot in finally | Two overlapping jobs snapshot each other's temporary value, a killed job never restores, and the restore overwrites changes made meanwhile by the user or another path. | review agent (eyes) | medium |
 
 ## Confirm recipes
 
@@ -79,6 +80,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `conc.prose-outcome`: repro-script: run the no-op path; show the reply cannot be told apart from success
 - `conc.timeout-mismatch`: failing-test: make the callee take the caller timeout + 5 s; the caller reports failure while the effect lands, or a retry runs it twice Fix direction: caller timeout above the callee timeout, or hand off to a job with a status.
 - `conc.second-writer`: failing-test: a user action and a background result arrive in the same tick; assert one ordered outcome and nothing overwritten
+- `conc.temporary-state-flip`: failing-test: run two overlapping jobs, or kill one mid-run, or change the status during the job; the final status is wrong Fix direction: keep the in-progress marker in its own column or lease with an expiry, restore with compare-and-set on the value you wrote, and give stuck markers a reaper.
 
 ## Verification steps
 
