@@ -20,8 +20,10 @@ HEAVY_SLOTS=("$JSTACK_LOCK_DIR")
 
 # A slot counts as abandoned only after JSTACK_STALE_MINUTES (a train build can run long). The owner file can vanish
 # between the test and the stat while another holder releases the slot, so a failed stat means "not stale".
+# A job still reporting status (see _slot_reserve) is never stale, however long it runs.
 _stale() {
   local mtime
+  _status_fresh "$1" && return 1
   mtime=$(stat -c %Y "$1/owner" 2>/dev/null || stat -f %m "$1/owner" 2>/dev/null) || return 1
   [ -n "$mtime" ] && [ $(( $(date +%s) - mtime )) -gt $(( JSTACK_STALE_MINUTES * 60 )) ]
 }
@@ -104,22 +106,57 @@ job_peak_record() {
   [ -n "$1" ] && [ -n "$2" ] || return 0
   mkdir -p "$(dirname "$JSTACK_JOB_PEAKS")" && printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" >> "$JSTACK_JOB_PEAKS"
 }
-# GB the other jobs hold back. Admitted jobs count their full need (conservative: part of it is already out of
-# "available"). A heavy job still waiting counts against typechecks too, so tc lanes yield to a waiting build and never
-# starve it; waiting typechecks count against nobody, so two waiters never block each other. A slot without a need
-# file (an older lock script, or the instant after mkdir) counts its cap.
+# Slot files: owner, need, admitted, holder (pid of the shell waiting or running in it) and status, which
+# run-capped.ps1 rewrites every JSTACK_STATUS_EVERY_S while the job runs: "<pid> <used GB> <cpu s> <cpu idle since>
+# <now>" (epoch seconds; used = the job's private bytes now).
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+_status_fresh() { local m; m=$(_mtime "$1/status") && [ $(( $(date +%s) - m )) -le "$JSTACK_STATUS_FRESH_S" ]; }
+# The holder shell is gone (no holder file = an older script: assume alive).
+_holder_dead() { local h; h=$(cat "$1/holder" 2>/dev/null); [ -n "$h" ] && ! kill -0 "$h" 2>/dev/null; }
+# Nothing runs in the slot any more: its shell died and no job reports status.
+_slot_gone() { _holder_dead "$1" && ! _status_fresh "$1"; }
+# One notice per hung slot, in the warden's notices (perf.mjs notices), never a kill: its agent or the owner decides.
+_flag_hung() {
+  local s="$1" min="$2" pid="$3" dir="${JSTACK_PERF_DIR:-$HOME/.jstack/perf}" wt
+  [ -f "$s/hung-flagged" ] && return 0
+  : > "$s/hung-flagged"
+  wt=$(sed -n 's/.* @ //p' "$s/owner" 2>/dev/null)
+  mkdir -p "$dir" && printf '{"at":"%s","type":"hung-slot","pid":%s,"name":"%s","wt":"%s","minutes":%s,"cmd":"no CPU progress while holding the slot; its reservation no longer counts"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${pid:-0}" "$(basename "$s")" "${wt//\\/\/}" "$min" >> "$dir/notices.jsonl"
+  echo "heavy-lock: $(basename "$s") hung (no CPU progress for $min min), flagged in $dir/notices.jsonl" >&2
+}
+# GB of <need> a slot still holds back. A running job (fresh status) only what it has not used yet: its used memory
+# is already missing from "available", so counting it again would be double. A hung job (no CPU progress for
+# JSTACK_HUNG_MIN) nothing, and it is flagged. A slot whose process tree is gone nothing. Otherwise the whole need.
+_slot_reserve() {
+  local s="$1" n="$2" pid used cpu idle now
+  if _status_fresh "$s"; then
+    read -r pid used cpu idle now < "$s/status"
+    now=$(date +%s); idle="${idle:-$now}"
+    if [ $(( now - idle )) -ge $(( JSTACK_HUNG_MIN * 60 )) ]; then _flag_hung "$s" $(( (now - idle) / 60 )) "$pid"; echo 0; return; fi
+    used=$(awk -v u="${used:-0}" 'BEGIN { printf "%d", (u > 0 ? u : 0) }')
+    echo $(( n > used ? n - used : 0 )); return
+  fi
+  if _holder_dead "$s"; then echo 0; return; fi
+  echo "$n"
+}
+# GB the other jobs hold back. Admitted jobs count what is left of their need (_slot_reserve). A heavy job still
+# waiting counts against typechecks too, so tc lanes yield to a waiting build and never starve it; waiting typechecks
+# count against nobody, so two waiters never block each other. A slot without a need file (an older lock script, or
+# the instant after mkdir) counts its cap. A tc slot whose process tree is gone is removed (its wrapper never will).
 _reserved_by_others() {
   local mine="$1" for_tc="$2" s n total=0
   for s in "${HEAVY_SLOTS[@]}" $(_tc_slots); do
     [ -d "$s" ] && [ "$s" != "$mine" ] || continue
     _is_heavy_slot "$s" && _slot_ours "$s" && continue
+    if ! _is_heavy_slot "$s" && _slot_gone "$s"; then rm -rf "$s"; continue; fi
     n=$(cat "$s/need" 2>/dev/null)
     if [ -z "$n" ]; then
       if _is_heavy_slot "$s"; then n="$JSTACK_CAP_GB"; else n="$JSTACK_TC_CAP_GB"; fi
     elif [ ! -f "$s/admitted" ]; then
       { [ "$for_tc" = 1 ] && _is_heavy_slot "$s"; } || continue
     fi
-    total=$(( total + n ))
+    total=$(( total + $(_slot_reserve "$s" "$n") ))
   done
   echo "$total"
 }
@@ -128,6 +165,7 @@ _reserved_by_others() {
 _admit() {
   local slot="$1" need="$2" for_tc="$3" label="$4" force="$5" start free res said=0 cleaned=0
   echo "$need" > "$slot/need"
+  echo "${BASHPID:-$$}" > "$slot/holder"
   start=$(date +%s)
   while [ "${MEM_GUARD:-1}" != 0 ] && [ "$force" != 1 ]; do
     free=$(jstack_free_gb)
@@ -198,10 +236,16 @@ server_wait() {
 #   Anything else (macOS, Linux without systemd): runs uncapped with a warning. ulimit -v caps each process, not the
 #   tree, and macOS mostly ignores it, so it is not used.
 # The measured peak goes to JSTACK_JOB_PEAKS under JSTACK_JOB_KEY (tc_run) or the slot's job (heavy_acquire).
+# Inside a slot (JSTACK_SLOT from tc_run, else HEAVY_SLOT) it marks this shell as the holder and has run-capped.ps1
+# write the job's status there for admission.
 heavy_capped() {
-  local cmd="$1" script peakf key="${JSTACK_JOB_KEY:-${HEAVY_JOB:-}}"
+  local cmd="$1" script peakf key="${JSTACK_JOB_KEY:-${HEAVY_JOB:-}}" slot="${JSTACK_SLOT:-${HEAVY_SLOT:-}}" status=()
   script=$(mktemp "${TMPDIR:-/tmp}/jstack-capped.XXXXXX")
   peakf="$script.peak"
+  if [ -n "$slot" ] && [ -d "$slot" ]; then
+    echo "${BASHPID:-$$}" > "$slot/holder"
+    status=(-StatusFile "$(cygpath -w "$slot/status" 2>/dev/null || echo "$slot/status")" -StatusEverySec "$JSTACK_STATUS_EVERY_S")
+  fi
   {
     echo 'set -o pipefail'
     for kv in $JSTACK_BUILD_ENV; do printf 'export %q\n' "$kv"; done
@@ -213,7 +257,7 @@ heavy_capped() {
     MINGW*|MSYS*|CYGWIN*)
       powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$JSTACK_TOOLS/run-capped.ps1")" \
         -LimitGB "$JSTACK_CAP_GB" -Exe "$(cygpath -w "$(command -v bash)")" -Command "\"$(cygpath -w "$script")\"" \
-        -WorkingDirectory "$(pwd -W)" -PeakFile "$(cygpath -w "$peakf")"
+        -WorkingDirectory "$(pwd -W)" -PeakFile "$(cygpath -w "$peakf")" "${status[@]}"
       code=$?
       [ -s "$peakf" ] && job_peak_record "$key" "$(tr -d '\r\n' < "$peakf")" ;;
     *)
@@ -226,6 +270,7 @@ heavy_capped() {
       code=$? ;;
   esac
   rm -f "$script" "$peakf"
+  [ -n "$slot" ] && rm -f "$slot/status" "$slot/hung-flagged"
   return $code
 }
 
@@ -248,14 +293,14 @@ tc_run() {
   local cmd="${1:-$JSTACK_TYPECHECK_CMD}"
   while [ -z "$slot" ]; do
     for s in $(_tc_slots); do
-      _stale "$s" && rm -rf "$s"
-      if mkdir "$s" 2>/dev/null; then _owner_line tc > "$s/owner"; slot="$s"; break; fi
+      { _stale "$s" || _slot_gone "$s"; } && rm -rf "$s"
+      if mkdir "$s" 2>/dev/null; then _owner_line tc > "$s/owner"; echo "${BASHPID:-$$}" > "$s/holder"; slot="$s"; break; fi
     done
     [ -z "$slot" ] && sleep 10
   done
   _admit "$slot" "$(job_need_gb "$key" "$JSTACK_TC_MIN_AVAIL_GB")" 1 "tc_run" "$force"
   _owner_line tc > "$slot/owner"
-  JSTACK_JOB_KEY="$key" JSTACK_CAP_GB="$JSTACK_TC_CAP_GB" heavy_capped "$cmd"; code=$?
+  JSTACK_SLOT="$slot" JSTACK_JOB_KEY="$key" JSTACK_CAP_GB="$JSTACK_TC_CAP_GB" heavy_capped "$cmd"; code=$?
   rm -rf "$slot"
   ram_clean_after "after tc_run"
   return $code

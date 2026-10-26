@@ -10,7 +10,9 @@ param(
 	[Parameter(Mandatory = $true)][string]$Command,
 	[string]$Exe = "",
 	[string]$WorkingDirectory = (Get-Location).Path,
-	[string]$PeakFile = ""
+	[string]$PeakFile = "",
+	[string]$StatusFile = "",
+	[int]$StatusEverySec = 15
 )
 
 Add-Type -TypeDefinition @"
@@ -44,6 +46,30 @@ public static class JobCap {
 		QueryInformationJobObject(job, 9, ref info, (uint)Marshal.SizeOf(typeof(EXT)), IntPtr.Zero);
 		return info.PeakJobMemoryUsed.ToUInt64() / 1073741824.0;
 	}
+	[StructLayout(LayoutKind.Sequential)]
+	struct ACCT { public long TotalUserTime, TotalKernelTime, ThisPeriodTotalUserTime, ThisPeriodTotalKernelTime; public uint TotalPageFaultCount, TotalProcesses, ActiveProcesses, TotalTerminatedProcesses; }
+	[DllImport("kernel32.dll", EntryPoint = "QueryInformationJobObject")] static extern bool QueryAcct(IntPtr j, int c, ref ACCT i, uint l, IntPtr r);
+	[DllImport("kernel32.dll", EntryPoint = "QueryInformationJobObject")] static extern bool QueryRaw(IntPtr j, int c, IntPtr buf, uint l, IntPtr r);
+	public static double CpuSec(IntPtr job) {
+		ACCT a = new ACCT();
+		QueryAcct(job, 1, ref a, (uint)Marshal.SizeOf(typeof(ACCT)), IntPtr.Zero);
+		return (a.TotalUserTime + a.TotalKernelTime) / 1e7;
+	}
+	// Private bytes summed over the job's live processes (JobObjectBasicProcessIdList).
+	public static double UsedGB(IntPtr job) {
+		int n = 2048, size = 8 + IntPtr.Size * n;
+		IntPtr buf = Marshal.AllocHGlobal(size);
+		try {
+			if (!QueryRaw(job, 3, buf, (uint)size, IntPtr.Zero)) return -1;
+			int count = Marshal.ReadInt32(buf, 4);
+			long sum = 0;
+			for (int i = 0; i < count; i++) {
+				long pid = Marshal.ReadIntPtr(buf, 8 + i * IntPtr.Size).ToInt64();
+				try { using (var p = System.Diagnostics.Process.GetProcessById((int)pid)) sum += p.PrivateMemorySize64; } catch { }
+			}
+			return sum / 1073741824.0;
+		} finally { Marshal.FreeHGlobal(buf); }
+	}
 }
 "@
 
@@ -61,6 +87,22 @@ $psi.UseShellExecute = $false
 $proc = [System.Diagnostics.Process]::Start($psi)
 # Children started after this line inherit the job; the shell itself starts in microseconds, so assign at once.
 [JobCap]::Assign($job, $proc.Handle)
+# Status for heavy-lock.sh admission, every StatusEverySec: "<pid> <used GB> <cpu s> <cpu idle since> <now>" (epoch s).
+# used = the job's private bytes now (admission subtracts only the reservation not yet used); cpu idle since = last
+# time the job's CPU time grew by 0.5 s or more (a job idle for minutes while holding a slot is hung).
+$inv = [Globalization.CultureInfo]::InvariantCulture
+$lastCpu = -1.0
+$idleSince = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+function Write-Status {
+	if (-not $StatusFile) { return }
+	$cpu = [JobCap]::CpuSec($job)
+	$now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+	if ($cpu -ge $script:lastCpu + 0.5) { $script:lastCpu = $cpu; $script:idleSince = $now }
+	$line = "{0} {1} {2} {3} {4}" -f $PID, [JobCap]::UsedGB($job).ToString("F2", $inv), $cpu.ToString("F1", $inv), $script:idleSince, $now
+	try { [IO.File]::WriteAllText($StatusFile, $line) } catch { }
+}
+Write-Status
+while (-not $proc.WaitForExit([Math]::Max(1, $StatusEverySec) * 1000)) { Write-Status }
 $proc.WaitForExit()
 $peak = [JobCap]::PeakGB($job)
 "run-capped: exit {0}, peak {1:N2} GB of {2} GB" -f $proc.ExitCode, $peak, $LimitGB | Write-Host

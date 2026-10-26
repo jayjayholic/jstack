@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26 (2): admission counts only unused reservations, and frees dead or hung slots
+
+**What:**
+- `run-capped.ps1 -StatusFile`: while the job runs it rewrites `<pid> <used GB> <cpu s> <cpu idle since> <now>` every `JSTACK_STATUS_EVERY_S` (15 s): private bytes summed over the Job Object's processes, and the job's CPU time. `heavy_capped` points it at the slot (`<slot>/status`) and removes it after the run.
+- Admission subtracts from available RAM only what a running job has not used yet: max(0, need - used). Its used memory is already missing from "available"; counting the whole reservation again double-counted it.
+- Slots record their `holder` (the shell waiting or running in them). A slot whose holder is gone and whose status is not fresh (`JSTACK_STATUS_FRESH_S`, 60 s) reserves nothing; a typecheck lane in that state is removed, so the next `tc_run` takes it instead of waiting behind a dead lock. A dead heavy slot keeps its folder (heavy_acquire and the build may be separate calls) but reserves nothing.
+- Hung: a job with no CPU progress for `JSTACK_HUNG_MIN` (15 min) while holding a slot reserves nothing and gets one `hung-slot` line in the warden's `notices.jsonl` (`perf.mjs notices`). It is never killed by the lock.
+- A slot whose job still reports status is never swept as stale, however long it runs.
+- Tests: 5 new in `tools/heavy-lock.test.mjs` (15).
+
+**Why:** found live within the hour. With a build at 14 of its 16 GB, admission still subtracted all 16 from an "available" that already lacked the 14, so lanes waited on memory nobody would use. And a typecheck lane whose `tsc` froze (no CPU for 30 min) or whose shell died kept its lock: the wrapper that releases it never ran again, and everything queued behind it. The tests use Git's `usr/bin/bash.exe`: a timeout on the `bin/bash.exe` launcher killed only the launcher, and the real shell kept waiting in admission and took lanes from the next test.
+
 ## 2026-10-26: heavy jobs admitted by measured RAM, and the heavy-lock guard closes its bypasses
 
 **What:**

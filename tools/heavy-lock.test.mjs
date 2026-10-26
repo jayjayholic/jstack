@@ -9,7 +9,10 @@ import { spawn, spawnSync, execFileSync } from 'node:child_process'
 
 const WIN = process.platform === 'win32'
 const HERE = import.meta.dirname
-const BASH = WIN && fs.existsSync('C:/Program Files/Git/bin/bash.exe') ? 'C:/Program Files/Git/bin/bash.exe' : 'bash'
+// Git's usr/bin/bash.exe, not the bin/bash.exe launcher: a timeout kills the launcher only, and the real shell would
+// keep waiting in admission and take lanes from the next test.
+const GIT_BASH = 'C:/Program Files/Git/usr/bin/bash.exe'
+const BASH = WIN && fs.existsSync(GIT_BASH) ? GIT_BASH : 'bash'
 const fwd = p => p.replace(/\\/g, '/')
 
 let tmp, lock, freeFile, peaks, other, oldDir
@@ -30,7 +33,7 @@ before(() => {
   }
 })
 
-after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+after(() => { try { fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }) } catch {} })
 
 function fresh() {
   lock = path.join(tmp, `lock-${++n}`)
@@ -219,4 +222,104 @@ test('replay 01:14Z: the old lock starts the second job beside the held build, t
   const r = await job.done
   assert.ok(r.ranAt >= 4000, 'new: starts only after the release')
   console.log(`replay: old started in ${oldRun.ms} ms beside the held build; new waited ${r.ranAt} ms, until the release`)
+})
+
+const alivePid = () => spawnSync(BASH, ['-c', 'sleep 120 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).stdout.trim()
+const deadPid = () => spawnSync(BASH, ['-c', 'echo $BASHPID'], { encoding: 'utf8' }).stdout.trim()
+const killPid = pid => spawnSync(BASH, ['-c', `kill ${pid} 2>/dev/null`])
+const nowS = () => Math.floor(Date.now() / 1000)
+const status = (slot, { used, idleMin = 0 }) => fs.writeFileSync(path.join(slot, 'status'), `4242 ${used} 100.0 ${nowS() - idleMin * 60} ${nowS()}`)
+
+test('double count: a running job reserves only what it has not used yet', () => {
+  fresh(); setFree(14)
+  const pid = alivePid()
+  try {
+    hold(lock, { need: 16 })
+    fs.writeFileSync(path.join(lock, 'holder'), pid)
+    assert.ok(sh(`${src()}; tc_run "echo RAN"`, { timeoutMs: 3000 }).timedOut, 'no status yet: the whole 16 GB counts, 14 - 16 < 10')
+    status(lock, { used: '14.00' })
+    assert.match(sh(`${src()}; tc_run "echo RAN"`).out, /RAN/, '16 - 14 used = 2 left, 14 - 2 >= 10')
+    fs.rmSync(peaks, { force: true }) // the echo above recorded a tiny typecheck peak
+    status(lock, { used: '3.50' })
+    const r = sh(`${src()}; tc_run "echo RAN"`, { timeoutMs: 3000 })
+    assert.ok(r.timedOut, '16 - 3 = 13 left, 14 - 13 < 10')
+    assert.match(r.err, /13 GB reserved by other jobs/)
+    fs.utimesSync(path.join(lock, 'status'), nowS() - 120, nowS() - 120)
+    assert.ok(sh(`${src()}; tc_run "echo RAN"`, { timeoutMs: 3000 }).timedOut, 'a status older than JSTACK_STATUS_FRESH_S is ignored')
+  } finally { killPid(pid) }
+})
+
+test('stale slots: a lane whose process tree is gone is reclaimed; a dead heavy holder reserves nothing', () => {
+  fresh(); setFree(12)
+  hold(`${lock}-tc-1`, { need: 10, name: 'tc' })
+  fs.writeFileSync(path.join(`${lock}-tc-1`, 'holder'), deadPid())
+  const r = sh(`${src()}; tc_run "echo RAN"`, { extra: { JSTACK_TC_SLOTS: '1' } })
+  assert.match(r.out, /RAN/, 'the only lane was taken by a dead tc_run, and is reclaimed')
+  assert.ok(!fs.existsSync(`${lock}-tc-1`))
+  setFree(14)
+  hold(lock, { need: 16 })
+  fs.writeFileSync(path.join(lock, 'holder'), deadPid())
+  assert.match(sh(`${src()}; tc_run "echo RAN"`).out, /RAN/, 'dead heavy holder with no running job reserves 0')
+  assert.ok(fs.existsSync(lock), 'the heavy slot itself stays: heavy_acquire and the build may be separate calls')
+  const pid = alivePid()
+  try {
+    hold(`${lock}-tc-2`, { need: 10, name: 'tc' })
+    fs.writeFileSync(path.join(`${lock}-tc-2`, 'holder'), pid)
+    fs.rmSync(lock, { recursive: true, force: true })
+    fs.rmSync(peaks, { force: true })
+    const live = sh(`${src()}; tc_run "echo RAN"`, { timeoutMs: 3000, extra: { JSTACK_TC_SLOTS: '2' } })
+    assert.ok(live.timedOut, 'a live lane still counts: 14 - 10 < 10')
+    assert.ok(fs.existsSync(`${lock}-tc-2`))
+  } finally { killPid(pid) }
+})
+
+test('hung: no CPU progress for JSTACK_HUNG_MIN drops the reservation and flags the warden once', () => {
+  fresh(); setFree(14)
+  const perf = path.join(tmp, `perf-${n}`)
+  const pid = alivePid()
+  try {
+    hold(lock, { need: 16, name: 'skills-loop-pool' })
+    fs.writeFileSync(path.join(lock, 'holder'), pid)
+    status(lock, { used: '2.00', idleMin: 20 })
+    const extra = { JSTACK_PERF_DIR: fwd(perf), JSTACK_HUNG_MIN: '15' }
+    const r = sh(`${src()}; tc_run "echo RAN"`, { extra })
+    assert.match(r.out, /RAN/)
+    assert.match(r.err, /hung \(no CPU progress for 20 min\)/)
+    sh(`${src()}; tc_run "echo RAN"`, { extra })
+    const rows = fs.readFileSync(path.join(perf, 'notices.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+    assert.equal(rows.length, 1, 'flagged once')
+    assert.equal(rows[0].type, 'hung-slot')
+    assert.equal(rows[0].pid, 4242)
+    assert.equal(rows[0].minutes, 20)
+    assert.equal(rows[0].wt, fwd(other))
+    status(lock, { used: '2.00', idleMin: 5 })
+    assert.ok(sh(`${src()}; tc_run "echo RAN"`, { timeoutMs: 3000, extra }).timedOut, '5 min idle is not hung: 16 - 2 = 14 left')
+  } finally { killPid(pid) }
+})
+
+test('stale sweep: a job still reporting status is never stale, however old its owner line', () => {
+  fresh(); hold(lock, { need: 16 })
+  const old = nowS() - 7200
+  fs.utimesSync(path.join(lock, 'owner'), old, old)
+  const isStale = () => sh(`${src()}; _stale '${fwd(lock)}' && echo STALE || echo LIVE`).out.trim()
+  assert.equal(isStale(), 'STALE')
+  status(lock, { used: '1.00' })
+  assert.equal(isStale(), 'LIVE')
+})
+
+test('status: run-capped reports the running job\'s used memory into its lane, removed when it ends', { skip: !WIN && 'run-capped.ps1 is Windows only' }, async () => {
+  fresh(); setFree(30)
+  const job = shAsync(`${src()}; tc_run "node -e \\"const b=Buffer.alloc(300*2**20).fill(1);const t=Date.now();while(Date.now()-t<4000);\\""`, { extra: { JSTACK_STATUS_EVERY_S: '1' } })
+  const st = path.join(`${lock}-tc-1`, 'status')
+  let seen = null
+  for (let i = 0; i < 40 && !seen; i++) {
+    await wait(250)
+    try { const f = fs.readFileSync(st, 'utf8').trim().split(' '); if (Number(f[1]) >= 0.25) seen = f } catch {}
+  }
+  const r = await job.done
+  assert.equal(r.code, 0, r.err)
+  assert.ok(seen, 'status with the 300 MB in use seen while running')
+  assert.equal(seen.length, 5)
+  assert.ok(Number(seen[2]) >= 0, 'cpu seconds')
+  assert.ok(!fs.existsSync(`${lock}-tc-1`), 'lane and status gone after the run')
 })

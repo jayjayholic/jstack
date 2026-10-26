@@ -51,6 +51,11 @@ JSTACK_ADMIT_MAX_GB="${JSTACK_ADMIT_MAX_GB:-16}"
 JSTACK_ADMIT_POLL_S="${JSTACK_ADMIT_POLL_S:-20}"
 JSTACK_ADMIT_SAY_S="${JSTACK_ADMIT_SAY_S:-300}"
 JSTACK_ADMIT_FORCE="${JSTACK_ADMIT_FORCE:-0}"
+# Running jobs report status every JSTACK_STATUS_EVERY_S; older than JSTACK_STATUS_FRESH_S means not running. No CPU
+# progress for JSTACK_HUNG_MIN while holding a slot = hung (flagged, reservation dropped).
+JSTACK_STATUS_EVERY_S="${JSTACK_STATUS_EVERY_S:-15}"
+JSTACK_STATUS_FRESH_S="${JSTACK_STATUS_FRESH_S:-60}"
+JSTACK_HUNG_MIN="${JSTACK_HUNG_MIN:-15}"
 JSTACK_QUEUE_FILE="${JSTACK_QUEUE_FILE:-}"
 # RAM clean (Windows): the scheduled task tools/setup-ram-clean.ps1 creates. Empty JSTACK_RAM_CLEAN_TASK turns it off.
 JSTACK_RAM_CLEAN_TASK="${JSTACK_RAM_CLEAN_TASK-JstackRamClean}"

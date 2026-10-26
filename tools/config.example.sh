@@ -34,6 +34,7 @@ export JSTACK_TC_MIN_AVAIL_GB=10                         # a typecheck's need wh
 export JSTACK_JOB_PEAKS="$HOME/.jstack/job-peaks.tsv"    # measured peak per job, written by heavy_capped, read by admission
 export JSTACK_ADMIT_MARGIN_PCT=15                        # need = max of the job's last 5 peaks + this margin
 export JSTACK_ADMIT_MAX_GB=16                            # ceiling on one job's need; a bigger job runs only with nothing else heavy
+export JSTACK_HUNG_MIN=15                                # no CPU progress this long while holding a slot = hung (flagged, stops counting)
 export JSTACK_ADMIT_SAY_S=300                            # status line interval while a job waits (it never gives up by itself)
 export JSTACK_MEM_WAIT_MAX_MIN=15                        # mem_guard only: after this a standalone memory wait gives up
 export JSTACK_QUEUE_FILE="$HOME/.jstack/train-queue.md"  # the orchestrator's queue; mem-map reads it to name agents
