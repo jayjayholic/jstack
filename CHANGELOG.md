@@ -2,6 +2,12 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-26: a red flag for the native scrollbar on a dark UI
+
+**What:** `eng-ui-visual` gets the red flag `ui.native-scrollbar` (a native or default scrollbar on a themed or dark UI), its confirm recipe (dark theme, phone and desktop, look at every scroll area), the verification step `ui.v.scrollbar` and a known-trap row with the fix: one base rule with `color-scheme` per theme and a `::-webkit-scrollbar` pill from a token, the standard `scrollbar-color`/`scrollbar-width` only under `@supports not selector(::-webkit-scrollbar)`, and no per-component overrides.
+
+**Why:** an admin page shipped with a bright white native scrollbar on its dark theme, and the owner's verdict was "horrible". The cause was generic (no `color-scheme`, no global scrollbar style), so three apps had it. A second trap showed up during the fix: in Chromium, setting `scrollbar-color` or `scrollbar-width` switches off `::-webkit-scrollbar` and brings back the arrowed native bar, so the "standard" fix still looked native. Only a render in the dark theme catches either, which is why the check is a look, not a lint. The 32 GB laptop rendered 40 screenshots to prove a stripe of eight pixels.
+
 ## 2026-10-25 (late night, 3): a scan note for scoped grep, and a tip list measured
 
 **What:**

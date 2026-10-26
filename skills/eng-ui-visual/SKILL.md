@@ -61,6 +61,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 | `ui.raw-palette-class` | Raw utility palette class (bg-black/55, text-green-500) instead of a token class | A palette colour is a literal with another name: it ignores the theme and drifts from the tokens. | static `ui.raw-palette-class` (regex) | medium |
 | `ui.component-not-in-gallery` | New shared component with no entry in the component gallery or stories | A component nobody can see in the gallery is missed by the next restyle and audit. | review agent (eyes) | low |
 | `ui.invented-restriction` | New 'never / only / always' constraint in a generation prompt or design spec with no source in the request | Self-invented limits narrow every output (one colour, one body type, refused styles) and nobody asked for them. | review agent (eyes) | medium |
+| `ui.native-scrollbar` | Native or default scrollbar on a themed or dark UI (no color-scheme per theme, no global scrollbar style, or a component resetting it) | The browser draws its own light, arrowed bar: a bright white stripe on a dark page that reads as broken, repeated in every scroll area (page, sidebar, modal, table, code block). | review agent (eyes) | high |
 
 ## Confirm recipes
 
@@ -73,6 +74,7 @@ A red flag is a hypothesis. /unslop turns it into a finding only with evidence (
 - `ui.raw-palette-class`: static-proof plus render: the class is on an added line; in the other theme the element fails contrast or differs from the token value Fix direction: map it to a semantic token class (bg-surface, text-danger). Known false positives: projects whose tokens are the raw palette by design (turn the rule off in .jstack/unslop.json).
 - `ui.component-not-in-gallery`: static-proof: the component name has no reference under the gallery or stories folder at HEAD
 - `ui.invented-restriction`: repro-script: quote the request next to each new constraint (empty source cell), then generate 10 samples with and without it and show the narrowed spread
+- `ui.native-scrollbar`: render: in the dark theme, open each screen with a scroll area (page, sidebar, modals, tables, code blocks, dropdowns) at phone and desktop width and look at the bar; html's computed color-scheme is the theme's and the bar is the house one (in Chromium a ::-webkit-scrollbar pill: scrollbar-color/scrollbar-width there switch back to the arrowed native bar) Fix direction: one global rule in the base CSS: color-scheme per theme, ::-webkit-scrollbar thumb from a token, standard scrollbar-color/scrollbar-width only for Firefox (@supports not selector(::-webkit-scrollbar)); then grep for components that set scrollbar-color/width and remove the overrides.
 
 ## Verification steps
 
@@ -80,10 +82,11 @@ Run in this order after the change; each line is a pass criterion.
 
 1. `ui.v.token-lint` token lint over every styling surface: no new colour literals on added lines _(test; scan.mjs ui.hardcoded-color / stylelint declaration-strict-value)_
 2. `ui.v.matrix` built app: screen inventory x {light, dark} x {desktop, 390 px mobile} _(render; Playwright projects)_
-3. `ui.v.contrast` axe color-contrast per theme with modals and menus open: 0 violations _(render; @axe-core/playwright)_
-4. `ui.v.structure` restyle: aria/heading outline unchanged vs base _(render; toMatchAriaSnapshot)_
-5. `ui.v.brand` toHaveScreenshot on brand surfaces in both themes; brand asset hashes match the manifest; img naturalWidth > 0 _(render; Playwright)_
-6. `ui.v.sheet` before/after contact sheet stamped with HEAD, opened for the reviewer _(render; Playwright + sheet script)_
+3. `ui.v.scrollbar` dark theme, phone and desktop: every scroll area shows the house scrollbar, none the native light or arrowed one _(render; Playwright colorScheme dark + screenshot of each scroll area)_
+4. `ui.v.contrast` axe color-contrast per theme with modals and menus open: 0 violations _(render; @axe-core/playwright)_
+5. `ui.v.structure` restyle: aria/heading outline unchanged vs base _(render; toMatchAriaSnapshot)_
+6. `ui.v.brand` toHaveScreenshot on brand surfaces in both themes; brand asset hashes match the manifest; img naturalWidth > 0 _(render; Playwright)_
+7. `ui.v.sheet` before/after contact sheet stamped with HEAD, opened for the reviewer _(render; Playwright + sheet script)_
 
 ## Triggers
 
@@ -106,6 +109,7 @@ Loaded by `tools/unslop/classify.mjs` when the task says "ui", "design", "redesi
 |---|---|---|---|
 | Looks right in light, broken in dark | screenshot both schemes | raw color or missing token pair | token pair per role; contrast check per scheme |
 | New component looks foreign | compare with the nearest existing screen | built from scratch instead of the house pattern | reuse the existing component; extend the token set |
+| Bright white scrollbar on the dark theme (or a grey arrowed one) | dark theme, phone and desktop, look at every scroll area | no `color-scheme` per theme, no global scrollbar rule, or `scrollbar-color`/`scrollbar-width` set in Chromium, which brings back the arrowed native bar | one base rule: `color-scheme` per theme, a `::-webkit-scrollbar` pill from a token, the standard properties only under `@supports not selector(::-webkit-scrollbar)`; remove per-component overrides |
 | Generated document or image off-brand | render it and view it at real size | template never rendered with real data | render with real data before shipping |
 
 ## Defers to
