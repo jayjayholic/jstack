@@ -89,11 +89,11 @@ Same dev, same 32 GB laptop, every repo I commit to:
 
 ```mermaid
 xychart-beta
-    title "Merged PRs (bars) and code added in k lines (line) per month"
-    x-axis ["May", "Jun", "Jul", "Aug", "Sep", "Oct (ONLY 27 DAYS)"]
-    y-axis 0 --> 1300
-    bar [0, 0, 6, 92, 358, 392]
-    line [185, 41, 52, 84, 442, 1213]
+    title "Merged PRs (bars) and code added in k lines (line) per week"
+    x-axis ["Aug 3", "Aug 10", "Aug 17", "Aug 24", "Aug 31", "Sep 7", "Sep 14", "Sep 21", "Sep 28", "Oct 5", "Oct 12", "Oct 19", "Oct 26 (2 DAYS)"]
+    y-axis 0 --> 650
+    bar [18, 11, 60, 3, 18, 175, 146, 19, 0, 0, 100, 247, 45]
+    line [13, 22, 38, 12, 61, 80, 26, 149, 186, 156, 215, 635, 169]
 ```
 
 <details>
@@ -101,18 +101,18 @@ xychart-beta
 <summary><b>The numbers</b> and the longer story</summary>
 
 - **10x** merged PRs per day (3.1 to 32.4)
-- **25x** code shipped per day (3.6k to 89.3k lines)
-- **8.7x** codebase since May (297k to 2.60M lines, 29 repos)
+- **24x** code shipped per day (3.7k to 89.3k lines)
+- **8.8x** codebase since May (297k to 2.61M lines, 29 repos)
 - **87** tickets, **284** screens rebuilt in one night, every one tested and pixel-checked
 - **0** broken pushes to stage, **7,869** tests green
 
-How it's counted (27 Oct 2026): 29 repos across hakutakuAi, jayjayholic, Hotcafe-io and aillianorg; my commits (agents' included) under joaogamerpolado@gmail.com, joaovitor_rlima@hotmail.com, joao.lima@hakutaku.ai and my GitHub noreply addresses, on each repo's default and integration branches, merges skipped, each sha counted once; PRs I authored and got merged. Lines added leave out Markdown, lockfiles, docs, data, generated, vendored and build dirs, snapshots, benchmark JSON and binaries. "Per day" is 4 May to 20 Sep (before) against 19 to 27 Oct (trains).
+How it's counted (27 Oct 2026; weeks start Monday, the last one is Mon and Tue only): 29 repos across hakutakuAi, jayjayholic, Hotcafe-io and aillianorg; my commits (agents' included) under joaogamerpolado@gmail.com, joaovitor_rlima@hotmail.com, joao.lima@hakutaku.ai and my GitHub noreply addresses (plus augusto.almeidajr@gmail.com in ugc-ai only, where I committed under it), on each repo's default and integration branches, merges skipped, each sha counted once; PRs I authored and got merged. Lines added leave out Markdown, lockfiles, docs, data, generated, vendored and build dirs, snapshots, benchmark JSON and binaries. "Per day" is 4 May to 20 Sep (before) against 19 to 27 Oct (trains).
 
 | Repo | Merged PRs | Commits | Code added | Code now |
 |---|--:|--:|--:|--:|
-| hakutakuAi/dashboard | 410 | 5,672 | 1.37M | 1.46M |
+| hakutakuAi/dashboard | 410 | 5,672 | 1.37M | 1.47M |
 | hakutakuAi/implementaai | 0 | 401 | 107.9k | 104.7k |
-| Hotcafe-io/ugc-ai | 287 | 150 | 62.3k | 77.8k |
+| Hotcafe-io/ugc-ai | 287 | 299 | 83.3k | 77.8k |
 | hakutakuAi/admin | 0 | 162 | 58.9k | 55.6k |
 | hakutakuAi/implementa-white-label | 0 | 224 | 58.4k | 49.5k |
 | jayjayholic/foxhole-helper | 35 | 172 | 50.6k | 55.0k |
@@ -126,7 +126,7 @@ How it's counted (27 Oct 2026): 29 repos across hakutakuAi, jayjayholic, Hotcafe
 | aillianorg/image-model | 10 | 63 | 16.3k | 20.5k |
 | aillianorg/dolls-ai-admin | 5 | 28 | 11.6k | 22.8k |
 | 14 smaller repos | 47 | 265 | 46.3k | 465.0k |
-| **Total (29 repos)** | **848** | **7,921** | **2.02M** | **2.60M** |
+| **Total (29 repos)** | **848** | **8,070** | **2.04M** | **2.61M** |
 
 Code added and PRs are mine only. "Code now" is the whole repo, mine or not.
 
