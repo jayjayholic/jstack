@@ -85,26 +85,50 @@ Don't want to configure it by hand? Tell your agent: **"follow ADAPT.md in jayja
 
 I build a lot of features at once, and almost all of the code comes from Claude Code agents running in parallel, each in its own git worktree. GitHub's one-PR-per-branch flow turns that into a traffic jam: eight agents finish, eight builds, eight CI runs, and my laptop gives up around build three. So I stopped shipping branches one at a time and started shipping trains.
 
-Same dev, same repo, same 32 GB laptop:
+Same dev, same 32 GB laptop, every repo I commit to:
 
 ```mermaid
 xychart-beta
     title "Merged PRs (bars) and code added in k lines (line) per month"
-    x-axis ["May", "Jun", "Jul", "Aug", "Sep", "Oct (ONLY 22 DAYS)"]
-    y-axis 0 --> 800
-    bar [13, 25, 100, 105, 28, 282]
-    line [19, 92, 109, 327, 387, 772]
+    x-axis ["May", "Jun", "Jul", "Aug", "Sep", "Oct (ONLY 27 DAYS)"]
+    y-axis 0 --> 1300
+    bar [0, 0, 6, 92, 358, 392]
+    line [185, 41, 52, 84, 442, 1213]
 ```
 
 <details>
 
 <summary><b>The numbers</b> and the longer story</summary>
 
-- **24x** merged PRs per day (1.9 to 46.5)
-- **18x** code shipped per day (4.2k to 75.6k lines)
-- **5.6x** codebase since May (219k to 1.23M lines)
+- **10x** merged PRs per day (3.1 to 32.4)
+- **25x** code shipped per day (3.6k to 89.3k lines)
+- **8.7x** codebase since May (297k to 2.60M lines, 29 repos)
 - **87** tickets, **284** screens rebuilt in one night, every one tested and pixel-checked
 - **0** broken pushes to stage, **7,869** tests green
+
+How it's counted (27 Oct 2026): 29 repos across hakutakuAi, jayjayholic, Hotcafe-io and aillianorg; my commits (agents' included) under joaogamerpolado@gmail.com, joaovitor_rlima@hotmail.com, joao.lima@hakutaku.ai and my GitHub noreply addresses, on each repo's default and integration branches, merges skipped, each sha counted once; PRs I authored and got merged. Lines added leave out Markdown, lockfiles, docs, data, generated, vendored and build dirs, snapshots, benchmark JSON and binaries. "Per day" is 4 May to 20 Sep (before) against 19 to 27 Oct (trains).
+
+| Repo | Merged PRs | Commits | Code added | Code now |
+|---|--:|--:|--:|--:|
+| hakutakuAi/dashboard | 410 | 5,672 | 1.37M | 1.46M |
+| hakutakuAi/implementaai | 0 | 401 | 107.9k | 104.7k |
+| Hotcafe-io/ugc-ai | 287 | 150 | 62.3k | 77.8k |
+| hakutakuAi/admin | 0 | 162 | 58.9k | 55.6k |
+| hakutakuAi/implementa-white-label | 0 | 224 | 58.4k | 49.5k |
+| jayjayholic/foxhole-helper | 35 | 172 | 50.6k | 55.0k |
+| jayjayholic/clonereel | 18 | 216 | 49.0k | 33.4k |
+| hakutakuAi/hakubrowser-agent | 0 | 38 | 42.5k | 39.5k |
+| hakutakuAi/harness-lab | 0 | 59 | 41.3k | 40.1k |
+| aillianorg/dolls-ai-backend | 28 | 138 | 34.8k | 57.2k |
+| aillianorg/sdoll-app | 8 | 159 | 25.0k | 79.1k |
+| jayjayholic/jstack | 0 | 133 | 20.3k | 19.2k |
+| jayjayholic/meta-preflight | 0 | 41 | 19.7k | 17.7k |
+| aillianorg/image-model | 10 | 63 | 16.3k | 20.5k |
+| aillianorg/dolls-ai-admin | 5 | 28 | 11.6k | 22.8k |
+| 14 smaller repos | 47 | 265 | 46.3k | 465.0k |
+| **Total (29 repos)** | **848** | **7,921** | **2.02M** | **2.60M** |
+
+Code added and PRs are mine only. "Code now" is the whole repo, mine or not.
 
 I prototype, check the UI, test it live, move on. GitHub's normal flow makes sense for one person opening one PR: one CI run, one full build and one merge conflict per feature, and me babysitting all of it. With eight agents finishing at once that hurts. The checks are fine. The one-PR-per-branch shape is the problem.
 
