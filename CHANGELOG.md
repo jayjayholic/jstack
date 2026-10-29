@@ -2,6 +2,20 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-28 (14): project memory can live outside the repo, shared by every worktree
+
+**What:**
+- `tools/memory/location.mjs` (new): where memory lives. `JSTACK_MEMORY_DIR` (env, wins), else `git config jstack.memoryDir` (per repo, read from the shared `.git/config`, so every worktree agrees and nothing is committed), else `<repo>/.jstack/memory` as before. Relative paths resolve against the main checkout; `/c/dev/x` reads as `C:/dev/x` on Windows.
+- `tools/memory/memory.mjs`: every read and write goes through it. Writes are atomic (temp file in the same folder, then rename, with a short retry for Windows' "file is open" refusals); a new entry is created with a hard link, which fails if the id exists, so two agents never overwrite each other (a clash draws a new id). New `where [--json|--tsv]`. `init` with an external folder creates `<dir>/entries` there. `add` of a waiver or false positive into an external folder says the gate won't read it.
+- `tools/ready-gate.sh`: check 1b skips the "commit your memory entries" refusal when memory is external (it prints where they are instead; `.jstack/metrics/runs` is still checked), and check 9 runs when the external folder exists.
+- `tools/unslop/scan.mjs`, `gate.mjs`, `classify.mjs`: read the same location. In diff mode the scan reads no suppressions from an external folder and says so (`memorySource: external-untrusted`, a `----` line in the gate).
+- `tools/memory/location.test.mjs` (+10, 314 total): default unchanged, env and git config (from a second worktree), inside-the-repo is not external, the gate passes with external entries and still refuses untracked in-repo ones, external waivers don't quiet the diff scan, create never clobbers, 8 processes x 5 adds land 40 valid entries.
+- Docs: `skills/unslop/SKILL.md` step 8, `skills/train/SKILL.md`, ADAPT.md, README, `config.example.sh`, `jstack-env.sh` (exports the config file's value to the node tools).
+
+**Why:** a project that gitignores `.jstack/` (agent memory churned 100+ files through its PRs) still wants the lessons. Committed memory also dies with any worktree that forgets to commit it. One folder outside the repo fixes both, but it breaks the trust rule that a branch can't waive its own hits: waivers used to come from the merge-base copy, and a shared folder has no base copy, and any agent can write it. So external memory holds lessons only, as far as the gate is concerned; reviewed waivers live in `.jstack/unslop.json` at the base and in inline `unslop-ignore` lines with a reason. `--full` scans have no base anyway and still read the folder. Git config over env for the per-repo setting because the node tools run outside the bash scripts that source `~/.jstack/config.sh`, and one machine-wide env var would make two repos share one memory.
+
+**Unverified:** Linux and macOS (the MSYS conversion only runs on Windows; the rest is plain Node). The 32 GB laptop now has one more folder to keep, but at least it doesn't have to build it.
+
 ## 2026-10-26 (13): an agent deletes only the branches it created
 
 **What:**

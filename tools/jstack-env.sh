@@ -71,6 +71,10 @@ JSTACK_READY_EXTRA_CMD="${JSTACK_READY_EXTRA_CMD:-}"
 JSTACK_READY_PREFLIGHT="${JSTACK_READY_PREFLIGHT:-warn}"
 JSTACK_READY_UNSLOP="${JSTACK_READY_UNSLOP:-warn}"
 JSTACK_READY_MEMORY="${JSTACK_READY_MEMORY:-block}"
+# Project memory folder (memory.mjs, read by node from the env, else from `git config jstack.memoryDir`): empty means
+# <repo>/.jstack/memory. Exported so the node tools the scripts start see the config file's value.
+JSTACK_MEMORY_DIR="${JSTACK_MEMORY_DIR:-}"
+[ -n "$JSTACK_MEMORY_DIR" ] && export JSTACK_MEMORY_DIR
 # /unslop: agents in flight, candidates confirmed per run, seconds the fast gate may take.
 JSTACK_UNSLOP_MAX_AGENTS="${JSTACK_UNSLOP_MAX_AGENTS:-4}"
 JSTACK_UNSLOP_MAX_CANDIDATES="${JSTACK_UNSLOP_MAX_CANDIDATES:-25}"

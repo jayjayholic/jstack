@@ -2,7 +2,8 @@
 # READY gate: the checks a train orchestrator runs before it accepts a worker's READY. Not a hook; call it.
 # Usage: bash ready-gate.sh <worktree> [--base origin/<branch>] [--brief <file>] [--no-brief]
 #   1. the tree is committed (tracked files clean), so the checks below are about the final commit; new
-#      .jstack/memory/entries and .jstack/metrics/runs files from /unslop are committed too
+#      .jstack/memory/entries and .jstack/metrics/runs files from /unslop are committed too (entries only when memory
+#      lives in the repo: with JSTACK_MEMORY_DIR or git config jstack.memoryDir outside it, they are shared already)
 #   2. typecheck green on that commit: tc_run "$JSTACK_TYPECHECK_CMD", cached per commit SHA, so a worker that already
 #      ran the gate makes the orchestrator's run instant
 #   3. unit tests for touched files: touched test files plus the test next to each touched file
@@ -13,8 +14,8 @@
 #   7. pre-flight present: .agent/preflight.md with the sections its tier needs ($JSTACK_READY_PREFLIGHT off|warn|block)
 #   8. unslop gate: static red flags on the lines this branch added ($JSTACK_READY_UNSLOP off|warn|block; block only
 #      stops on rules that earned it, see skills/unslop/SELF-EVAL.md); cached per commit SHA
-#   9. memory anchors: entries anchored in touched files are FRESH or re-anchored in this branch, only when the repo
-#      has .jstack/memory ($JSTACK_READY_MEMORY off|warn|block)
+#   9. memory anchors: entries anchored in touched files are FRESH or re-anchored in this branch, only when the
+#      project has memory (.jstack/memory, or the external folder) ($JSTACK_READY_MEMORY off|warn|block)
 # Exit 0 = READY accepted, 1 = refused (the output says which check), 2 = usage.
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/jstack-env.sh"
@@ -25,13 +26,20 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --brief) brief="$2"; shift 2 ;;
     --no-brief) use_brief=0; shift ;;
-    -h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) wt="$1"; shift ;;
   esac
 done
 [ -n "$wt" ] && [ -d "$wt" ] || { echo "usage: ready-gate.sh <worktree> [--base ref] [--brief file] [--no-brief]" >&2; exit 2; }
 cd "$wt" || exit 2
 brief="${brief:-.agent/brief.md}"
+
+# Where project memory lives (memory.mjs where): "repo <relative dir>" or "external <absolute dir>".
+mem_kind=repo mem_path=.jstack/memory
+if command -v node >/dev/null 2>&1 && [ -f "$JSTACK_TOOLS/memory/memory.mjs" ]; then
+  IFS=$'\t' read -r _k _p < <(node "$JSTACK_TOOLS/memory/memory.mjs" where --tsv --repo . 2>/dev/null | tr -d '\r')
+  [ -n "${_k:-}" ] && [ -n "${_p:-}" ] && mem_kind=$_k mem_path=$_p
+fi
 
 fails=0
 pass() { echo "  PASS  $1"; }
@@ -46,12 +54,16 @@ echo "READY gate for $(git branch --show-current) @ ${sha:0:9} (base $base)"
 # 1. committed
 dirty=$(git status --porcelain --untracked-files=no)
 if [ -z "$dirty" ]; then pass "tree committed"; else fail "uncommitted changes, commit them first:"; echo "$dirty" | sed 's/^/          /' | head -10; fi
-# 1b. /unslop's lessons ride with the branch: an untracked memory entry or run record dies with the worktree
-records=$(git status --porcelain --untracked-files=all -- .jstack/memory/entries .jstack/metrics/runs 2>/dev/null | grep '^??')
+# 1b. /unslop's lessons ride with the branch: an untracked memory entry or run record dies with the worktree.
+# External memory is outside the worktree and shared by all of them, so there is nothing to commit for it.
+rec_paths=(.jstack/metrics/runs)
+[ "$mem_kind" = repo ] && rec_paths+=("$mem_path/entries")
+records=$(git status --porcelain --untracked-files=all -- "${rec_paths[@]}" 2>/dev/null | grep '^??')
 if [ -n "$records" ]; then
   fail "unslop records not committed (they are lost when the worktree is removed, and the next agent never sees them):"
   echo "$records" | sed 's/^/          /' | head -10
 fi
+[ "$mem_kind" = external ] && note "memory entries live outside the repo ($mem_path), shared by every worktree: nothing to commit"
 
 mapfile -t touched < <(git diff --name-only --diff-filter=ACMR "$base"...HEAD 2>/dev/null)
 [ ${#touched[@]} -eq 0 ] && note "no files differ from $base (wrong --base?)"
@@ -160,7 +172,7 @@ if [ "$JSTACK_READY_UNSLOP" != off ]; then
 fi
 
 # 9. memory anchors
-if [ "$JSTACK_READY_MEMORY" != off ] && [ -d .jstack/memory ]; then
+if [ "$JSTACK_READY_MEMORY" != off ] && [ -d "$mem_path" ]; then
   log="$stamps/$sha.memory.log"
   if node "$JSTACK_TOOLS/memory/memory.mjs" check --changed --base "$base" --repo . >"$log" 2>&1; then pass "memory anchors"
   else soft "$JSTACK_READY_MEMORY" "memory anchors moved by this branch, re-anchor them (memory.mjs reanchor) or retire them:"; tail -12 "$log" | sed 's/^/          /'; fi

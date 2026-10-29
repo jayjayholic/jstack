@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { scan } from './scan.mjs'
 import fs from 'node:fs'
 import { loadProjectConfig, loadProjectConfigAt, baseCommit } from './rules.mjs'
+import { memoryLocation } from '../memory/location.mjs'
 
 const TRAIN_RULES = ['ci.conflict-marker', 'i18n.catalog-parity', 'data.migration-stamp-dup']
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -56,8 +57,9 @@ function gate({ repo = process.cwd(), base = 'origin/main', mode = null, train =
     lines.push(`${blocks ? 'BLOCK' : 'warn '} ${c.rule}  ${c.path}:${c.line}  ${c.title}${c.detail ? ` (${c.detail})` : ''}`)
   }
   for (const n of res.notChecked) lines.push(`----  ${n.rule}  ${n.reason}`)
+  if (res.memorySource === 'external-untrusted') lines.push('----  memory lives outside the repo: its waivers and false positives are not read here (no reviewed base copy); .jstack/unslop.json waivers at the base and inline unslop-ignore lines still apply')
   let memExit = 0
-  if (!train && memory && (project || loadProjectConfig(repo) || fs.existsSync(path.join(repo, '.jstack', 'memory')))) {
+  if (!train && memory && (project || loadProjectConfig(repo) || fs.existsSync(memoryLocation(repo).dir))) {
     const m = memoryCheck(repo, base)
     memExit = m.exit
     if (m.exit !== 0) lines.push(...m.out.trim().split('\n').map(l => `memory ${l}`))

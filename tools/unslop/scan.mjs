@@ -16,6 +16,7 @@ import { loadRules, loadProjectConfig, loadProjectConfigAt, baseCommit, readAtRe
 import { SCRIPTS } from './scripts.mjs'
 import { runAdapter, ADAPTED } from './adapters.mjs'
 import { enclosingSymbol, normalize, hashText, langOf } from '../memory/symbols.mjs'
+import { memoryLocation } from '../memory/location.mjs'
 
 const MAX_BYTES = 1 << 20
 
@@ -149,19 +150,28 @@ function regexHits(rule, file) {
   return hits
 }
 
-const ENTRIES_DIR = '.jstack/memory/entries'
+// The entries folder, repo-relative, when memory lives in the repo (default .jstack/memory/entries); null when it
+// lives outside (JSTACK_MEMORY_DIR / git config jstack.memoryDir).
+function entriesRel(repo) {
+  const loc = memoryLocation(repo)
+  return loc.external ? null : `${loc.rel}/entries`
+}
 
 // Memory entries as text: from the working tree, or from `ref` (diff mode, so a branch can't waive its own hits).
+// External memory has no merge-base copy and any branch's agent can write it, so diff mode reads none of it: there,
+// the trusted suppressions are the base's .jstack/unslop.json waivers and inline unslop-ignore lines.
 function memoryEntryTexts(repo, ref) {
   if (!repo) return []
+  const loc = memoryLocation(repo)
   if (ref) {
-    const list = git(repo, ['ls-tree', '-r', '--name-only', '--end-of-options', ref, '--', ENTRIES_DIR])
+    if (loc.external) return []
+    const list = git(repo, ['ls-tree', '-r', '--name-only', '--end-of-options', ref, '--', entriesRel(repo)])
     if (!list.ok) return []
     return list.out.split('\n').filter(f => f.endsWith('.json')).map(f => readAtRef(repo, ref, f)).filter(t => t != null)
   }
   let files = []
-  try { files = fs.readdirSync(path.join(repo, ENTRIES_DIR)).filter(f => f.endsWith('.json')) } catch { return [] }
-  return files.map(f => readText(path.join(repo, ENTRIES_DIR, f))).filter(t => t != null)
+  try { files = fs.readdirSync(loc.entries).filter(f => f.endsWith('.json')) } catch { return [] }
+  return files.map(f => readText(path.join(loc.entries, f))).filter(t => t != null)
 }
 
 // What a memory entry suppresses, if anything: a false positive, or a waived known slop (which carries an expiry).
@@ -213,13 +223,14 @@ function selfCandidate(ruleId, { path: p, line, snippet, severity = 'high', mode
 
 function jstackSelfCandidates(ctx, repo, runId) {
   const out = []
+  const entries = entriesRel(repo)
   for (const [p, st] of ctx.diffStatus) {
     if (!p.startsWith('.jstack/') || st === 'D') continue
     if (p === '.jstack/unslop.json') {
       out.push(selfCandidate('unslop.config-changed', { path: p, line: 1, snippet: st === 'A' ? 'new file' : 'modified', runId, detail: st === 'A' ? 'added by this branch' : 'modified by this branch' }))
       continue
     }
-    if (!p.startsWith(ENTRIES_DIR + '/') || !p.endsWith('.json')) continue
+    if (!entries || !p.startsWith(entries + '/') || !p.endsWith('.json')) continue
     let sup = null
     try { sup = suppressionOf(JSON.parse(readText(path.join(repo, p)) ?? '')) } catch { sup = null }
     if (sup) out.push(selfCandidate('unslop.new-waiver', { path: p, line: 1, snippet: sup.reason, runId, detail: `fingerprint ${sup.fingerprint}` }))
@@ -303,7 +314,8 @@ function scan(opts = {}) {
     }
   }
   if (diffMode && repo) candidates.push(...jstackSelfCandidates(ctx, repo, runId))
-  return { run: runId, candidates, suppressed, notChecked, eyesRules, files: ctx.files.length, ms: Date.now() - t0 }
+  const memorySource = !repo ? 'none' : (diffMode && memoryLocation(repo).external ? 'external-untrusted' : (diffMode ? 'base' : 'working-tree'))
+  return { run: runId, candidates, suppressed, notChecked, eyesRules, files: ctx.files.length, ms: Date.now() - t0, memorySource }
 }
 
 function parseArgs(argv) {

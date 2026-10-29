@@ -9,6 +9,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { loadPacks, matchAny, loadProjectConfig, ignoreGlobs } from './rules.mjs'
+import { memoryLocation } from '../memory/location.mjs'
 
 const COMPANIONS = ['eval-testing', 'agent-discipline']
 const COMPANION_WHY = {
@@ -50,7 +51,7 @@ function touchedPaths(repo, base) {
 function memoryDomains(repo, paths) {
   const out = []
   if (!repo || !paths.length) return out
-  const dir = path.join(repo, '.jstack', 'memory', 'entries')
+  const dir = memoryLocation(repo).entries
   let files = []
   try { files = fs.readdirSync(dir).filter(f => f.endsWith('.json')) } catch { return out }
   for (const f of files) {

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Project memory: decisions, budgets' reasons, known slop, past failures, conventions and false positives, each
 // anchored to code so it follows refactors. One JSON file per entry under <repo>/.jstack/memory/entries/, so parallel
-// branches and trains merge without conflicts. This script is the only writer: every write is schema-checked and
-// secret-scanned (a hit is refused, exit 2); `lint` catches hand edits of the folder (schema and secrets).
+// branches and trains merge without conflicts; or, with JSTACK_MEMORY_DIR / `git config jstack.memoryDir`, under one
+// folder outside the repo that every worktree shares (location.mjs). Writes are atomic (temp file + rename), and a new
+// entry never overwrites another agent's (hard link, fails on an existing id), so parallel agents can write at once.
+// This script is the only writer: every write is schema-checked and secret-scanned (a hit is refused, exit 2); `lint`
+// catches hand edits of the folder (schema and secrets).
 //
 //   node memory.mjs init
 //   (kind preference: explanation preferences for /unslop:explain, written by tools/unslop/explain.mjs prefer)
@@ -13,6 +16,7 @@
 //   node memory.mjs reanchor <id> (--auto | --accept | --to path#symbol [--also path#symbol]...)
 //   node memory.mjs retire <id> --reason "..."
 //   node memory.mjs lint | export | budgets
+//   node memory.mjs where [--json|--tsv] where entries live (repo or external) and which setting chose it
 // Exit codes: 0 ok, 1 check found problems or lint failed, 2 refused (secret, schema, usage).
 import fs from 'node:fs'
 import path from 'node:path'
@@ -20,6 +24,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { scanFields } from './secrets.mjs'
 import { makeAnchor, resolveAnchor, splitRef, git, isCommitId, isSafeRelPath } from './anchors.mjs'
+import { memoryLocation } from './location.mjs'
 
 const KINDS = ['decision', 'budget-rationale', 'known-slop', 'failure', 'convention', 'false-positive', 'preference']
 const PREF_LEVELS = ['short', 'full']
@@ -51,7 +56,7 @@ function repoRoot(opts) {
   return r.ok ? path.resolve(r.out.trim()) : process.cwd()
 }
 
-const entriesDir = repo => path.join(repo, '.jstack', 'memory', 'entries')
+const entriesDir = repo => memoryLocation(repo).entries
 
 function newId(now = new Date()) {
   const p = n => String(n).padStart(2, '0')
@@ -104,16 +109,39 @@ function validate(entry) {
   return errs
 }
 
-function writeEntry(repo, entry) {
+class IdTaken extends Error {}
+
+// Readers only list *.json, so they never see the temp file, and the rename swaps the whole file at once.
+// create: hard link instead of rename, which fails when the id exists, so two agents never overwrite each other.
+function writeEntry(repo, entry, { create = false } = {}) {
   const clean = Object.fromEntries(Object.entries(entry).filter(([k]) => !k.startsWith('_')))
   const errs = validate(clean)
   if (errs.length) throw new Refusal(`refused: ${errs.join('; ')}`)
   const hits = scanFields(clean)
   if (hits.length) throw new Refusal(`refused: possible secret in ${hits.map(h => `${h.field} (${h.detector})`).join(', ')}. Memory never stores secrets; reference them by name.`)
-  fs.mkdirSync(entriesDir(repo), { recursive: true })
-  const file = path.join(entriesDir(repo), `${clean.id}.json`)
-  fs.writeFileSync(file, JSON.stringify(clean, null, 2) + '\n')
+  const dir = entriesDir(repo)
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, `${clean.id}.json`)
+  const tmp = path.join(dir, `.${clean.id}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`)
+  fs.writeFileSync(tmp, JSON.stringify(clean, null, 2) + '\n')
+  try {
+    if (create) {
+      try { fs.linkSync(tmp, file) } catch (e) { if (e.code === 'EEXIST') throw new IdTaken(clean.id); throw e }
+    } else renameRetry(tmp, file)
+  } finally {
+    fs.rmSync(tmp, { force: true })
+  }
   return file
+}
+
+// Windows refuses a rename over a file another process has open for a moment (EPERM/EBUSY/EACCES): retry briefly.
+function renameRetry(from, to, tries = 20) {
+  for (let i = 1; ; i++) {
+    try { fs.renameSync(from, to); return } catch (e) {
+      if (i >= tries || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10 * i)
+    }
+  }
 }
 
 const DEFAULT_UNSLOP = {
@@ -131,19 +159,20 @@ const DEFAULT_UNSLOP = {
 
 function init(repo) {
   const j = path.join(repo, '.jstack')
+  const loc = memoryLocation(repo)
   const made = []
-  const put = (rel, content) => {
-    const f = path.join(j, rel)
+  const put = (rel, content, root = j) => {
+    const f = path.join(root, rel)
     if (fs.existsSync(f)) return
     fs.mkdirSync(path.dirname(f), { recursive: true })
     fs.writeFileSync(f, content)
-    made.push(path.relative(repo, f).replace(/\\/g, '/'))
+    made.push(loc.external && root === loc.dir ? f.replace(/\\/g, '/') : path.relative(repo, f).replace(/\\/g, '/'))
   }
   put('unslop.json', JSON.stringify(DEFAULT_UNSLOP, null, 2) + '\n')
   put('budgets.json', JSON.stringify({ version: 1, budgets: {} }, null, 2) + '\n')
   put('.gitignore', 'local/\nunslop/runs/\n')
-  put('memory/entries/.gitkeep', '')
-  put('memory/README.md', [
+  put('entries/.gitkeep', '', loc.dir)
+  put('README.md', [
     '# Project memory',
     '',
     'Written by jstack `tools/memory/memory.mjs`, one JSON file per entry in `entries/`. Do not edit by hand: the tool',
@@ -153,7 +182,7 @@ function init(repo) {
     '- Write: `memory.mjs add --kind decision|budget-rationale|known-slop|failure|convention|false-positive ...`.',
     '- After a refactor: `memory.mjs check --changed --base <ref>`, then `reanchor` or `retire` what it reports.',
     '',
-  ].join('\n'))
+  ].join('\n'), loc.dir)
   return made
 }
 
@@ -185,8 +214,18 @@ function add(repo, o) {
   }
   if (kind === 'known-slop' && entry.status === 'waived') entry.waiver = { reason: o['waiver-reason'] ?? null, expires: o['waiver-expires'] ?? null }
   if (entry.source.humanQuote) entry.humanQuote = entry.source.humanQuote
-  writeEntry(repo, entry)
+  createEntry(repo, entry)
   return entry
+}
+
+// A new entry under a fresh id; on the (rare) clash with another agent's id, draw a new one.
+function createEntry(repo, entry) {
+  for (let i = 0; ; i++) {
+    try { return writeEntry(repo, entry, { create: true }) } catch (e) {
+      if (!(e instanceof IdTaken) || i >= 8) throw e
+      entry.id = newId()
+    }
+  }
 }
 
 // Entries related to paths (exact file 3, same folder 2) or domains (1), newest first within a score.
@@ -357,6 +396,16 @@ async function main(argv) {
         if (!KINDS.includes(o.kind)) throw new Refusal(`--kind one of ${KINDS.join(', ')}`)
         const e = add(repo, o)
         console.log(o.json ? JSON.stringify(e, null, 2) : e.id)
+        if (e.fingerprint && (e.kind === 'false-positive' || e.status === 'waived') && memoryLocation(repo).external) {
+          console.error('note: memory lives outside the repo, so the diff-mode scan and the READY gate do not read this suppression (nobody reviewed it). For the gate, add a waiver to .jstack/unslop.json in its own reviewed PR, or an unslop-ignore with a reason on the line.')
+        }
+        return 0
+      }
+      case 'where': {
+        const loc = memoryLocation(repo)
+        if (o.json) console.log(JSON.stringify(loc, null, 2))
+        else if (o.tsv) console.log(`${loc.external ? 'external' : 'repo'}\t${loc.external ? loc.dir.replace(/\\/g, '/') : loc.rel}`)
+        else console.log(`${loc.entries}\n${loc.external ? 'outside the repo, shared by every worktree, never committed' : 'in the repo, committed with the branch'} (${loc.from})`)
         return 0
       }
       case 'query': {
@@ -399,7 +448,7 @@ async function main(argv) {
         return 0
       }
       default:
-        console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 17).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+        console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 21).filter(l => l.startsWith('//')).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
         return cmd ? 2 : 0
     }
   } catch (e) {
@@ -411,4 +460,4 @@ async function main(argv) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main(process.argv.slice(2)).then(code => process.exit(code))
 
-export { main, init, add, query, check, reanchor, retire, lint, budgets, validate, writeEntry, loadEntries, newId, parseArgs, splitRef, Refusal }
+export { main, init, add, query, check, reanchor, retire, lint, budgets, validate, writeEntry, createEntry, loadEntries, newId, parseArgs, splitRef, Refusal, IdTaken }

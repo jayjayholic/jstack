@@ -124,6 +124,8 @@ Run each check and fix what fails.
 
 Without `.jstack/` the skills still run, in "no project memory" mode, and ready-gate check 9 is skipped.
 
+**Memory outside the repo.** If the project would rather not commit memory (say `.jstack/` is gitignored), point it at one shared folder: `git config jstack.memoryDir <dir>` in the main checkout (per repo, every worktree reads the same `.git/config`, nothing committed) or `JSTACK_MEMORY_DIR` in the env or `~/.jstack/config.sh` (wins over git config; machine-wide, so only for one repo per machine). A relative path resolves against the main checkout. Then `memory.mjs init` creates `<dir>/entries`, every worktree reads and writes there, writes are atomic (temp file + rename, new ids never overwrite), and the READY gate stops asking to commit entries. Trade-off: in diff mode the scan and gate read no waivers or false positives from that folder, since there is no reviewed merge-base copy of it; gate waivers live in `.jstack/unslop.json` at the base and in inline `unslop-ignore` lines. `node {{JSTACK_TOOLS}}/memory/memory.mjs where` says which folder is in use and why.
+
 ## Extra: the /optimize skill
 
 `skills/optimize/SKILL.md` is the speed agent: it measures the built app and staging, ranks what costs the user the most time, fixes the top items and proves each fix with interleaved A/B runs. It reuses the train settings above (`{{JSTACK_TOOLS}}`, `{{BUILD_CMD}}`, `{{TYPECHECK_CMD}}`, `{{TEST_CMD}}`, `{{INSTALL_CMD}}`, `{{CODEGEN_CMD}}`, `{{INTEGRATION_BRANCH}}`, `{{PR_TEMPLATE}}`) plus these:

@@ -315,7 +315,7 @@ The first run on jstack itself: 26 hits, every one a false positive (the packs q
 
 <summary><b>Project memory</b>: decisions that follow refactors</summary>
 
-`tools/memory/memory.mjs` stores decisions and their why, the reason behind a budget, confirmed slop, past failures, conventions and false positives. One JSON file per entry under `.jstack/memory/entries/`, so parallel branches never conflict on it. Commands: add, query, check, reanchor, retire, lint, budgets. Opt a repo in with `node tools/memory/memory.mjs init`.
+`tools/memory/memory.mjs` stores decisions and their why, the reason behind a budget, confirmed slop, past failures, conventions and false positives. One JSON file per entry under `.jstack/memory/entries/`, so parallel branches never conflict on it. Commands: add, query, check, reanchor, retire, lint, budgets, where. Opt a repo in with `node tools/memory/memory.mjs init`. Rather not commit it? `git config jstack.memoryDir <folder>` (or `JSTACK_MEMORY_DIR`) moves it to one folder outside the repo that every worktree shares; writes are atomic so parallel agents don't trip over each other, and waivers for the gate then come only from `.jstack/unslop.json` at the base.
 
 Each entry is anchored to code (`path#symbol` plus a hash of the normalized body), and the anchors follow refactors:
 
