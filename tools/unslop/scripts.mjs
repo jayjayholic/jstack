@@ -41,6 +41,8 @@ const SCRIPTS = {
   },
 
   // Two migrations share a timestamp prefix: they apply in an undefined order, and one may be skipped.
+  // With ctx.baseline (the paths at the integration branch, train mode) only groups that gained an entry since then
+  // count: pairs already on the base are history, and blocking every train on them blocks nothing new.
   'migration-stamp-dup'(ctx, rule) {
     const dirs = rule.options?.dirs ?? ['**/migrations/**']
     const all = ctx.listFiles(dirs)
@@ -58,9 +60,11 @@ const SCRIPTS = {
     }
     const touched = new Set(ctx.files.map(f => f.path))
     const hits = []
+    const atBase = e => [...ctx.baseline].some(b => b === e || b.startsWith(e + '/'))
     for (const [key, entries] of groups) {
       if (entries.size < 2) continue
       const list = [...entries].sort()
+      if (ctx.baseline && list.every(atBase)) continue
       for (const e of list) {
         const mine = [...touched].find(t => t === e || t.startsWith(e + '/'))
         if (!ctx.all && !mine) continue

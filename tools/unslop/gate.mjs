@@ -4,8 +4,11 @@
 // project config says "block" AND the hit's rule earned block-when-confirmed (field precision, see SELF-EVAL.md)
 // AND its severity is in gate.blockSeverities; everything else is printed as a warning.
 //   node gate.mjs --base origin/main [--repo .] [--mode warn|block|off] [--json]
-//   node gate.mjs --train [--repo .]     merged-tree rules on the whole tree: conflict markers, catalog keys lost
+//   node gate.mjs --train [--repo .] [--base origin/<integration>]
+//                                         merged-tree rules on the whole tree: conflict markers, catalog keys lost
 //                                         in a merge, duplicate migration stamps. Any hit exits 1 (drop the branch).
+//                                         Stamps: only groups with an entry the base lacks (default base
+//                                         origin/$JSTACK_INTEGRATION_BRANCH); no resolvable base checks the whole tree.
 // The gate reads .jstack/unslop.json from the merge-base, never from the branch it judges, and a branch that edits
 // that file is blocked (`--accept-config-change` or JSTACK_UNSLOP_ACCEPT_CONFIG=1 once a human has read it). Only the
 // operator turns the gate off: `--mode off` or JSTACK_READY_UNSLOP=off; "off" in the config file counts as warn.
@@ -44,10 +47,12 @@ function gate({ repo = process.cwd(), base = 'origin/main', mode = null, train =
   const acceptCfg = acceptConfigChange ?? process.env.JSTACK_UNSLOP_ACCEPT_CONFIG === '1'
   const maxMs = Number(process.env.JSTACK_UNSLOP_GATE_SECONDS ?? cfg.maxSeconds ?? 60) * 1000
   const blockSev = new Set(cfg.blockSeverities ?? ['high'])
+  const baselineRef = train ? baseCommit(repo, base) : null
   const res = train
-    ? scan({ repo, full: '.', ruleIds: TRAIN_RULES })
+    ? scan({ repo, full: '.', ruleIds: TRAIN_RULES, baselineRef })
     : scan({ repo, base, domains: null })
   const lines = []
+  if (train && !baselineRef) lines.push(`----  data.migration-stamp-dup  base ${base} not found: stamps checked on the whole tree, old pairs included (pass --base origin/<integration branch>)`)
   let blocked = 0
   const hints = res.candidates.filter(c => c.mode === 'eyes-hint' && !train)
   for (const c of res.candidates.filter(c => !hints.includes(c))) {
@@ -73,7 +78,9 @@ function gate({ repo = process.cwd(), base = 'origin/main', mode = null, train =
 
 function main(argv) {
   const get = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined }
-  const r = gate({ repo: path.resolve(get('--repo') ?? '.'), base: get('--base') ?? 'origin/main', mode: get('--mode') ?? null, train: argv.includes('--train'), memory: !argv.includes('--no-memory'), acceptConfigChange: argv.includes('--accept-config-change') || null })
+  const train = argv.includes('--train')
+  const defaultBase = train && process.env.JSTACK_INTEGRATION_BRANCH ? `origin/${process.env.JSTACK_INTEGRATION_BRANCH}` : 'origin/main'
+  const r = gate({ repo: path.resolve(get('--repo') ?? '.'), base: get('--base') ?? defaultBase, mode: get('--mode') ?? null, train, memory: !argv.includes('--no-memory'), acceptConfigChange: argv.includes('--accept-config-change') || null })
   if (argv.includes('--json')) process.stdout.write(JSON.stringify({ exit: r.exit, lines: r.lines, candidates: r.res?.candidates ?? [] }, null, 2) + '\n')
   else process.stdout.write(r.lines.join('\n') + '\n')
   return r.exit

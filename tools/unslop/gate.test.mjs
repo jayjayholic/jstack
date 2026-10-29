@@ -58,6 +58,31 @@ test('negative: train mode drops a merged tree with a conflict marker or a lost 
   } finally { r.done() }
 })
 
+test('train mode ignores duplicate migration stamps already on the base and blocks one the train adds', () => {
+  const r = repo()
+  try {
+    r.write('db/migrations/20260101000000_a/migration.sql', 'select 1;\n'); r.write('db/migrations/20260101000000_b/migration.sql', 'select 2;\n'); r.commit('old pair'); r.git('branch', '-f', 'base')
+    r.write('db/migrations/20260202000000_c/migration.sql', 'select 3;\n'); r.commit('train adds a unique stamp')
+    const clean = gate({ repo: r.dir, base: 'base', train: true })
+    assert.equal(clean.exit, 0, clean.lines.join('\n'))
+    r.write('db/migrations/20260202000000_d/migration.sql', 'select 4;\n'); r.commit('train adds a colliding stamp')
+    const dup = gate({ repo: r.dir, base: 'base', train: true })
+    assert.equal(dup.exit, 1)
+    assert.ok(dup.lines.some(l => l.includes('data.migration-stamp-dup') && l.includes('20260202000000')))
+    assert.ok(!dup.lines.some(l => l.startsWith('BLOCK') && l.includes('20260101000000')))
+  } finally { r.done() }
+})
+
+test('negative: train mode with no resolvable base still checks every stamp and says so', () => {
+  const r = repo()
+  try {
+    r.write('db/migrations/20260101000000_a/migration.sql', 'select 1;\n'); r.write('db/migrations/20260101000000_b/migration.sql', 'select 2;\n'); r.commit('old pair')
+    const g = gate({ repo: r.dir, base: 'origin/nope', train: true })
+    assert.equal(g.exit, 1)
+    assert.ok(g.lines.some(l => l.startsWith('----  data.migration-stamp-dup')))
+  } finally { r.done() }
+})
+
 test('negative: a rule whose engine is missing says "not checked", never a silent pass', () => {
   const r = repo()
   try {

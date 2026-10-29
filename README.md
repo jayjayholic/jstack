@@ -336,7 +336,7 @@ A branch that moves an anchor re-anchors it in the same branch, or the READY gat
 
 <summary><b>How it plugs into /train</b>, what isn't built yet, and tests</summary>
 
-The worker clause runs `/preflight` before the first edit and `/unslop` before READY. `ready-gate.sh` gets checks 7 to 9: pre-flight present, unslop gate, memory anchors (`JSTACK_READY_PREFLIGHT`, `JSTACK_READY_UNSLOP`, `JSTACK_READY_MEMORY`; warn by default, memory blocks). The orchestrator runs `gate.mjs --train` on the merged tree (conflict markers, catalog keys a merge lost, duplicate migration stamps) and drops the branch that brought them, like a red typecheck.
+The worker clause runs `/preflight` before the first edit and `/unslop` before READY. `ready-gate.sh` gets checks 7 to 9: pre-flight present, unslop gate, a committed /unslop run record on the branch (8b), memory anchors (`JSTACK_READY_PREFLIGHT`, `JSTACK_READY_UNSLOP`, `JSTACK_READY_UNSLOP_RUN`, `JSTACK_READY_MEMORY`; warn by default, memory blocks). The orchestrator runs `gate.mjs --train --base origin/<integration>` on the merged tree (conflict markers, catalog keys a merge lost, duplicate migration stamps the train added) and drops the branch that brought them, like a red typecheck.
 
 **Not built yet:** the seeded app for the agentic eval, canary injection, and a hook that denies hand edits of `.jstack/memory` (`memory.mjs lint` catches them meanwhile). semgrep and ast-grep rules have adapters (`adapters.mjs`, "not checked" when the tool is missing), but no pack ships one yet and neither tool has run for real here. The scanner, the ledger and the memory tools never start a build, so for once the 32 GB laptop got a feature it doesn't have to pay for.
 

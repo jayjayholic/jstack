@@ -70,6 +70,7 @@ JSTACK_READY_EXTRA_CMD="${JSTACK_READY_EXTRA_CMD:-}"
 # only in repos that opted in with .jstack/memory (memory.mjs init).
 JSTACK_READY_PREFLIGHT="${JSTACK_READY_PREFLIGHT:-warn}"
 JSTACK_READY_UNSLOP="${JSTACK_READY_UNSLOP:-warn}"
+JSTACK_READY_UNSLOP_RUN="${JSTACK_READY_UNSLOP_RUN:-warn}"
 JSTACK_READY_MEMORY="${JSTACK_READY_MEMORY:-block}"
 # Project memory folder (memory.mjs, read by node from the env, else from `git config jstack.memoryDir`): empty means
 # <repo>/.jstack/memory. Exported so the node tools the scripts start see the config file's value.

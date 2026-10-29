@@ -248,6 +248,10 @@ function scan(opts = {}) {
   const ignore = opts.root ? [] : ignoreGlobs(project)
   const rules = opts.rules ?? loadRules({ repo, project, domains: opts.domains ?? null, ruleIds: opts.ruleIds ?? null })
   const ctx = collect({ repo, base: opts.base ?? 'origin/main', full: opts.full, root: opts.root, diffStatus: opts.diffStatus })
+  if (opts.baselineRef && repo) {
+    const ls = git(repo, ['ls-tree', '-r', '--name-only', '--end-of-options', opts.baselineRef])
+    if (ls.ok) ctx.baseline = new Set(ls.out.split('\n').filter(Boolean))
+  }
   const runId = opts.runId ?? new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + 'Z-' + crypto.randomBytes(2).toString('hex')
   const waivers = new Map((project?.waivers ?? []).filter(w => w?.fingerprint).map(w => [w.fingerprint, { reason: 'waiver: ' + w.reason, waiver: true, expires: w.expires ?? null }]))
   const memory = loadMemorySuppressions(repo, diffMode ? trustRef : null)

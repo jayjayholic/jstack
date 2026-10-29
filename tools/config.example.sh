@@ -43,6 +43,7 @@ export JSTACK_UNIT_TEST_CMD="bunx vitest run"            # ready-gate.sh runs it
 export JSTACK_PRETTIER_CHECK_CMD="bunx prettier --check --ignore-unknown" # ready-gate.sh, on touched files
 export JSTACK_READY_PREFLIGHT="warn"                     # ready-gate check 7: .agent/preflight.md present (off|warn|block)
 export JSTACK_READY_UNSLOP="warn"                        # check 8: static red flags on added lines (off|warn|block)
+export JSTACK_READY_UNSLOP_RUN="warn"                    # check 8b: a committed /unslop run record on this branch (off|warn|block); class quick is exempt
 export JSTACK_READY_MEMORY="block"                       # check 9: memory anchors the branch moved (repos with .jstack/memory)
 export JSTACK_MEMORY_DIR=""                              # empty = <repo>/.jstack/memory, committed with each branch. A folder outside
                                                          # the repo = one memory every worktree shares, never committed (relative paths

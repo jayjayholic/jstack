@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-28 (15): the READY gate asks for an /unslop run, and the train's stamp rule stops re-reporting old pairs
+
+**What:**
+- `tools/ready-gate.sh`, new check 8b (`JSTACK_READY_UNSLOP_RUN` off|warn|block, warn by default; `jstack-env.sh`, `config.example.sh`): the branch must carry a committed `.jstack/metrics/runs/*.json` whose `head` is one of its own commits (an ancestor of HEAD, not of the base). A pre-flight whose first line is `class: quick` is exempt, as the worker clause says. The refusal names the command to run.
+- `tools/unslop/gate.mjs --train` takes `--base` (default `origin/$JSTACK_INTEGRATION_BRANCH`) and `scan.mjs` passes the base's file list to the script rules as `ctx.baseline`. `data.migration-stamp-dup` (`scripts.mjs`) then reports a stamp group only when the train added one of its entries. With no resolvable base it checks the whole tree as before and prints a `----` line saying so.
+- `skills/train/orchestrator-brief.md`, README: the train gate call passes `--base`.
+- `tools/unslop/gate.test.mjs` +2: old pair on the base passes, a colliding stamp the train adds blocks (and the old pair is not in the BLOCK lines); no base still blocks and says why.
+
+**Why:** an /unslop over the Hakutaku trains #61-#73 (2026-10-28) found 5 of 28 boarded branches with any trace of an /unslop run, and none of the ones merged that day. The worker clause asked for it, but the READY gate only ran the fast static scan, so a skip was invisible. The same run's `gate.mjs --train` gave 44 BLOCK lines for 21 duplicate-stamp pairs that had been on stage for weeks: none came from the train, but as written every train would be dropped on them, so in practice the rule was ignored.
+
+**Unverified:** check 8b on macOS/Linux shells (plain bash and git, nothing Windows-specific). It counts a run record, not the run's quality: a worker can still commit a run with nothing examined. The 32 GB laptop was not asked for its opinion.
+
 ## 2026-10-28 (14): project memory can live outside the repo, shared by every worktree
 
 **What:**

@@ -14,6 +14,8 @@
 #   7. pre-flight present: .agent/preflight.md with the sections its tier needs ($JSTACK_READY_PREFLIGHT off|warn|block)
 #   8. unslop gate: static red flags on the lines this branch added ($JSTACK_READY_UNSLOP off|warn|block; block only
 #      stops on rules that earned it, see skills/unslop/SELF-EVAL.md); cached per commit SHA
+#  8b. an /unslop run happened on the branch: a committed .jstack/metrics/runs record whose head is in base..HEAD
+#      ($JSTACK_READY_UNSLOP_RUN off|warn|block, warn by default; a pre-flight of class quick is exempt)
 #   9. memory anchors: entries anchored in touched files are FRESH or re-anchored in this branch, only when the
 #      project has memory (.jstack/memory, or the external folder) ($JSTACK_READY_MEMORY off|warn|block)
 # Exit 0 = READY accepted, 1 = refused (the output says which check), 2 = usage.
@@ -168,6 +170,26 @@ if [ "$JSTACK_READY_UNSLOP" != off ]; then
       touch "$stamps/$sha.unslop.ok"; pass "unslop gate ($(tail -1 "$log" | sed 's/^unslop gate[^:]*: //'))"
       grep -E '^warn ' "$log" | head -8 | sed 's/^/          /'
     else fail "unslop gate blocked, see $log:"; grep -E '^(BLOCK|warn) ' "$log" | head -12 | sed 's/^/          /'; fi
+  fi
+fi
+
+# 8b. an /unslop run happened on this branch: a committed .jstack/metrics/runs record whose head is one of this
+# branch's commits (in base..HEAD). The worker clause asks for it, and without this check nothing noticed a skip.
+# A pre-flight of class quick is exempt, as the clause says.
+if [ "$JSTACK_READY_UNSLOP_RUN" != off ]; then
+  pf=".agent/preflight.md"
+  if [ -f "$pf" ] && head -1 "$pf" | grep -qE 'class: *quick'; then pass "unslop run (not needed: class quick)"
+  else
+    run_ok=""
+    while IFS= read -r rec; do
+      h=$(sed -nE 's/^[[:space:]]*"head":[[:space:]]*"([0-9a-f]{7,40})".*/\1/p' "$rec" | head -1)
+      [ -n "$h" ] || continue
+      git merge-base --is-ancestor "$h" HEAD 2>/dev/null || continue
+      git merge-base --is-ancestor "$h" "$base" 2>/dev/null && continue
+      run_ok="$rec"; break
+    done < <(git ls-files -- .jstack/metrics/runs 2>/dev/null | grep '\.json$')
+    if [ -n "$run_ok" ]; then pass "unslop run on this branch ($(basename "$run_ok" .json))"
+    else soft "$JSTACK_READY_UNSLOP_RUN" "no /unslop run on this branch: run /unslop --base $base --fix and commit .jstack/metrics/runs/<run>.json (or write 'class: quick - <why>' as the pre-flight's first line)"; fi
   fi
 fi
 
