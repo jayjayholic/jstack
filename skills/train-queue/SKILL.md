@@ -29,15 +29,56 @@ If the queue file is missing or older than 30 min, ask the orchestrator with Sen
 
 ## Output
 
-One board, at most ~40 lines:
+One board, at most ~45 lines, built to be read at a glance: the owner should know in five seconds whether anything waits on him.
 
-1. **Live**: PR, what it shipped (one line each), deploy state; newest first, last ~8.
-2. **In flight**: the train in CI or merging (its branches, step, check status) and who holds the heavy slot.
-3. **Next**: the boarding train and the queue in order, each with branch, one-line purpose and gate state (READY / held: reason).
-4. **Agents**: one row per running agent: what it works on, its current step, what it waits for (slot, owner, another branch).
-5. **Waiting for the owner**: decisions and approvals only the owner can give.
+### Status dots
 
-Mark anything not confirmed from a primary source (GitHub, the slot, the queue file) as "reported" instead of stating it as fact.
+Every row starts with exactly one dot. The dot answers "does this need the owner, and is it moving?":
+
+| Dot | Means | Examples |
+|---|---|---|
+| 🔴 | **Needs the owner.** Nothing moves until he acts | an approval, a decision, a login, a budget top-up, a paid run to OK |
+| 🟡 | Moving, but waiting on the machine or on another branch | queued for the heavy slot, typecheck lane busy, rebasing after a merge |
+| 🔵 | Running right now | building, typechecking, in CI, an agent mid-task |
+| 🟢 | Done, nothing to do | live on the integration branch, deploy Ready, verdict passed |
+| ⚪ | Paused or parked on purpose | held by the owner, out of scope for now, dropped after a verdict |
+| ⚠️ | Broken and nobody owns it yet | a red check on the integration branch, a failed deploy, a stuck lock |
+
+Rules: one dot per row, no row without one. 🔴 is only for the owner, never for "an agent should look". A 🔴 row always ends with the exact action he has to take (a command, a click, or a yes/no question).
+
+### Layout
+
+Lead with what needs him. Everything else follows, newest first:
+
+```
+🚦 TRAIN  ·  🔴 2 need you  ·  🔵 1 running  ·  🟢 6 live today  ·  slot: <owner or free>
+
+🔴 NEEDS YOU
+  🔴 <what>  →  <the one action: command / yes-no question>
+
+🔵 IN FLIGHT
+  🔵 train <n>  PR #<n>  <branches>  step: <typecheck|build|CI|merging>  ▓▓▓▓░░ <done>/<total> checks
+
+⏭️ NEXT
+  🟡 <branch>  <one-line purpose>  waits: <slot | rebase | branch X>
+  ⚪ <branch>  held: <reason>
+
+🟢 LIVE  (last ~8)
+  🟢 #<n>  <what it shipped>  deploy ✅ <time>
+  ⚠️ #<n>  <what>  deploy ❌ <why>
+
+🤖 AGENTS
+  🔵 <agent>  <task>  now: <step>
+  🟡 <agent>  <task>  waits: <slot / owner / branch>
+```
+
+- Header line first: counts per dot and who holds the heavy slot, so the board reads in one line when nothing is wrong.
+- Progress bars (`▓░`, 6 cells) only for things with a real count (checks passed of total, rollouts of a run); never a guessed percentage.
+- Times are local and relative where short ("2 min ago", "since 14:05").
+- Empty sections collapse to one line (`🔴 NEEDS YOU  ·  nothing 🎉`), never a blank heading.
+- Plain words, one line per row. Branch names in backticks only where the owner might copy them.
+
+Mark anything not confirmed from a primary source (GitHub, the slot, the queue file) as "reported" instead of stating it as fact, and never give it a 🟢: a reported-but-unchecked live state is 🟡 until the deploy status says Ready.
 
 ## The queue file
 

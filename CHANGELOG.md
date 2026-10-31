@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-10-31 (16): /train-queue reads at a glance: red dot = needs you, green = done
+
+**What:**
+- `skills/train-queue/SKILL.md`, Output: every row now starts with one status dot. 🔴 needs the owner (and ends with the exact action to take), 🟡 moving but waiting on the machine or another branch, 🔵 running now, 🟢 done/live, ⚪ paused on purpose, ⚠️ broken with no owner yet.
+- New layout: a one-line header with the count per dot and who holds the heavy slot, then **NEEDS YOU first**, then in flight, next, live and agents. Progress bars only where there is a real count (checks, rollouts). Empty sections collapse to one line. A "reported" live state stays 🟡 until the deploy status says Ready, so a guess never shows green.
+
+**Why:** the old board was five honest text sections, and the owner still had to read all ~40 lines to find the two that needed him. Leading with red rows turns "what do you need from me?" into a five-second scan, and a 🟢 that only counts after the deploy check stops the board from claiming things are live when they are only merged.
+
+**Thanks:** honourable mention to Farias, whose "just tell me what needs me" energy is this whole change.
+
+**Unverified:** how the dots render in terminals without colour emoji (they fall back to the plain words in each row). The 32 GB laptop finally gets a status board it can read faster than it can swap.
+
 ## 2026-10-28 (15): the READY gate asks for an /unslop run, and the train's stamp rule stops re-reporting old pairs
 
 **What:**
