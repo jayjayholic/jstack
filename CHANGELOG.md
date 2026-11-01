@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (22): an account switch can tell other tools, without waiting on them
+
+**What:**
+- `plugins/jay-claude-switcher/hooks/switch-hook.ts`: after every successful switch (auto or **Use**), the switcher runs a tiny launcher that reads `~/.jstack/cloud-kit.json` `{ "onSwitch": ["<cmd>", ...args], "cwd": "<dir>" }`, starts that command detached with `--from <key> --to <key>` appended, writes one `hook on-switch started ...` line to `switch-trace.log` and exits (55 ms measured). No config, or its script or folder gone: one `skipped` line and nothing else.
+- `tools/cloud/cloud-kit.mjs`: `put` and `get` for single sealed objects.
+
+**Why:** cloud sessions on the account just left can no longer run a turn, so they must move to the new account at once; the switch itself must stay instant, so nothing in its path waits on the cloud. The hook is the contract; what runs is the owner's tool (a cloud kit's `on-switch`).
+
+**Unverified:** the mod's own tests need the engine's `claude-code/testing` runtime and did not run under plain bun here; proven with a simulated switch through the same launcher. The 32 GB laptop now hands its cloud sessions over faster than it hands over its RAM.
+
 ## 2026-11-01 (21): cloud sessions get their env files and a work-in-progress save in any repo
 
 **What:**
