@@ -21,6 +21,7 @@ Read all of these in parallel; each one answers a different part of the board.
 | Heavy slot | `cat {{LOCK_DIR}}/owner` (absent = free) | what is building or typechecking now |
 | Queue file | `{{QUEUE_FILE}}`, kept by the orchestrator | boarding, ready, held + why, next steps |
 | Agents | your harness's agent list (status), plus each running agent's launch description and last report in this conversation | what each agent is doing |
+| Cloud sessions | the session registry (`~/.jstack/cloud-sessions.json` or your kit's), each entry's last handoff state, and `gh api repos/<owner>/<repo>/pulls/<n> --jq .body` for the train PR's `train-session:` line | what runs in the cloud, and whether more than one session claims the train |
 | Backlog | `{{BACKLOG_FILE}}` (`ready`, `running`, `waits for the owner`) | what waits |
 
 Never read a subagent's full transcript file to learn its state (it overflows the context); use its last notification, or ask it with SendMessage only if the owner wants detail.
@@ -43,6 +44,8 @@ Every row starts with exactly one dot. The dot answers "does this need the owner
 | 🟢 | Done, nothing to do | live on the integration branch, deploy Ready, verdict passed |
 | ⚪ | Paused or parked on purpose | held by the owner, out of scope for now, dropped after a verdict |
 | ⚠️ | Broken and nobody owns it yet | a red check on the integration branch, a failed deploy, a stuck lock |
+
+A second running session on any `train/*` branch, or a train PR whose `train-session:` id is not the one the orchestrator started, is a ⚠️ row in NEEDS YOU ("stray train session <id>: stop it"), never a 🔵.
 
 Rules: one dot per row, no row without one. 🔴 is only for the owner, never for "an agent should look". A 🔴 row always ends with the exact action he has to take (a command, a click, or a yes/no question).
 

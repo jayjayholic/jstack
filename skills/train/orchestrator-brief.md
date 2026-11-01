@@ -23,6 +23,13 @@ For a big train (many branches, or shared files touched), run CI's own test suit
 
 A CI job that fails the same way on `{{INTEGRATION_BRANCH}}` is pre-existing: say so in the PR and merge. While one train is in CI, the next one boards. Branches marked "hold until GO" wait for the main session's `GO <name>`. Stay alive while work is expected; when the queue is empty, report it.
 
+## Cloud train (only when the train runs as a cloud session)
+
+Rules and checks: `cloud-sessions.md` next to the `train` skill.
+- Exactly one train session. You start it; no watcher, on-switch handler or stall rule ever resumes a `train/*` branch. Before every merge, the PR body must carry `train-session: <the id you started>` and `changed_files` must be above 0; otherwise stop, list the sessions on `train/*`, stop the strays and tell the main session.
+- Two phases: the dry run assembles, gates, pushes and opens the PR, then reports `DRY RUN OK <pr> @ <sha>`. Merge only on `GO <n>` naming that sha, and only while the PR head still equals it.
+- Before reporting a failed run, its traces, logs and screenshots are archived out of the VM (`cloud-sessions.md` section 9), and the report names the keys.
+
 ## Queue file (for /train-queue)
 
 Rewrite `{{QUEUE_FILE}}` every time the queue changes (a READY arrives, a train boards, typechecks, opens its PR, merges or goes live, a branch is held or released), in the format given in the `/train-queue` skill. It is what the owner reads with `/train-queue`.

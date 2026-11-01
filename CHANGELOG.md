@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (29): the orchestrator, the workers, the board and the compound follow the cloud rules
+
+**What:**
+- `skills/train/orchestrator-brief.md`: a "Cloud train" section. One train session that nothing auto-resumes; before every merge the PR body carries `train-session: <id>` and `changed_files` is above 0; two phases (`DRY RUN OK <pr> @ <sha>`, then `GO <n>` at that sha); failed runs archive their traces before the report.
+- `skills/train/worker-clause.md`: a cloud worker that resumes merges the old `claude/*` branch first and proves it with `git merge-base --is-ancestor`; it archives its debug artifacts before it stops; it never pushes `train/*`.
+- `skills/train-queue/SKILL.md`: a cloud sessions source, and a stray train session (a second one, or a PR whose `train-session:` id is not the orchestrator's) is a ⚠️ row in NEEDS YOU.
+- `skills/train-compound/SKILL.md`: a compound assembled or released in the cloud follows the same session-id check and two-phase release.
+
+**Why:** the rulebook (entry 28) only helps where the agents read it. The orchestrator merges, the workers resume, the board is where the owner looks, and the compound's release is the biggest merge of all; each now carries the rule it needs, in one or two lines, with the check.
+
+**Unverified:** a full cloud train run under the two-phase rule end to end in jstack's own tooling (the train scripts that run in the cloud live in the adopting repo). The 32 GB laptop is relieved that the board will now tell on any train that tries to sneak out twice.
+
 ## 2026-11-01 (28): cloud sessions get a rulebook, every rule with its check
 
 **What:**

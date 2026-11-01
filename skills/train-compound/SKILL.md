@@ -39,6 +39,7 @@ Done when: every READY is either boarded with a green typecheck and preview, or 
 
 - Keep ONE PR, `train/compound-…` into `{{INTEGRATION_BRANCH}}`, whose body lists every boarded branch, the migrations, env vars and flags, and how to roll back.
 - Don't merge it until the owner says to release. Hotfixes the owner marks urgent can still ship alone through the normal `/train` path; merge them back into the compound afterwards.
+- When the compound is assembled or released by a cloud session, the `train` skill's [cloud-sessions.md](../train/cloud-sessions.md) applies: one session, its id in the PR body checked before the merge, and the release merge in two phases (dry run at a sha, then the owner's `GO` at that same sha).
 - On release: merge `origin/{{INTEGRATION_BRANCH}}` one last time, typecheck, preview green, merge, confirm the deploy is Ready and every migration applied, and report one line per boarded branch.
 - Then run the leftovers sweep (`train` section 6b) for everything the compound boarded.
 
