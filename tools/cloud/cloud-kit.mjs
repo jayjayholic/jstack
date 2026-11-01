@@ -17,13 +17,12 @@
 // (32 bytes, base64; every object AES-256-GCM sealed under an HMAC-opaque name), JSTACK_STORE_USER (path prefix), from
 // the environment or ~/.jstack/store.env. Same object format as the store client it was taken from, so both read it.
 import { spawnSync } from 'node:child_process'
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, normalize } from 'node:path'
 
-const MAGIC = Buffer.from('JST1')
-const BLOB_API = 'https://blob.vercel-storage.com'
+import { StoreRefused, openStore } from './store.mjs'
+
 const WIP_MESSAGE = 'chore(wip): auto-save cloud session work'
 const SECRET_PATHS = [
   /(^|\/)\.env(\.[^/]*)?$/, /(^|\/)\.envrc$/, /\.(pem|key|p12|pfx|jks|keystore)$/i,
@@ -40,54 +39,6 @@ function git(args, cwd, input) {
   return { ok: r.status === 0, stdout: r.stdout ?? '', stderr: (r.stderr ?? '').trim() }
 }
 
-const readEnvFile = (file) => (existsSync(file) ? readEnvFileText(readFileSync(file, 'utf8')) : {})
-
-function storeConfig(env = process.env) {
-  const file = readEnvFile(env.JSTACK_STORE_ENV_FILE || join(homedir(), '.jstack', 'store.env'))
-  const pick = (k) => env[k] || file[k] || ''
-  const key = pick('JSTACK_STATE_KEY') ? Buffer.from(pick('JSTACK_STATE_KEY'), 'base64') : null
-  return { url: pick('JSTACK_STORE_URL'), token: pick('JSTACK_STORE_TOKEN'), user: pick('JSTACK_STORE_USER') || 'me', key }
-}
-
-function openStore(env = process.env) {
-  const { url, token, user, key } = storeConfig(env)
-  if (!url.startsWith('vercel-blob:')) throw new Error('JSTACK_STORE_URL must be vercel-blob://<name> for this kit')
-  if (!key || key.length !== 32) throw new Error('JSTACK_STATE_KEY must be 32 bytes, base64')
-  const storeId = /^vercel_blob_rw_([A-Za-z0-9]+)_/.exec(token)?.[1]
-  if (!storeId) throw new Error('JSTACK_STORE_TOKEN is not a Vercel Blob read-write token')
-  const auth = { authorization: `Bearer ${token}`, 'x-api-version': '11' }
-  const nameOf = (path) => `jstack/${createHmac('sha256', key).update(path).digest('hex').slice(0, 40)}`
-  const seal = (plain) => {
-    const iv = randomBytes(12)
-    const c = createCipheriv('aes-256-gcm', key, iv)
-    const body = Buffer.concat([c.update(plain), c.final()])
-    return Buffer.concat([MAGIC, iv, c.getAuthTag(), body])
-  }
-  const open = (sealed) => {
-    if (!sealed.subarray(0, 4).equals(MAGIC)) throw new Error('not a sealed object')
-    const d = createDecipheriv('aes-256-gcm', key, sealed.subarray(4, 16))
-    d.setAuthTag(sealed.subarray(16, 32))
-    return Buffer.concat([d.update(sealed.subarray(32)), d.final()])
-  }
-  return {
-    path: (...parts) => [user, ...parts].join('/'),
-    async put(path, data) {
-      const r = await fetch(`${BLOB_API}/?pathname=${encodeURIComponent(nameOf(path))}`, {
-        method: 'PUT',
-        headers: { ...auth, 'x-content-type': 'application/octet-stream', 'x-add-random-suffix': '0', 'x-allow-overwrite': '1', 'x-cache-control-max-age': '60' },
-        body: new Uint8Array(seal(Buffer.from(data))),
-      })
-      if (!r.ok) throw new Error(`store put HTTP ${r.status}`)
-    },
-    async get(path) {
-      const base = `https://${storeId.toLowerCase()}.public.blob.vercel-storage.com`
-      const r = await fetch(`${base}/${nameOf(path)}?fresh=${Date.now()}-${Math.random().toString(36).slice(2)}`, { cache: 'no-store' })
-      if (r.status === 404) return null
-      if (!r.ok) throw new Error(`store get HTTP ${r.status}`)
-      return open(Buffer.from(await r.arrayBuffer()))
-    },
-  }
-}
 
 function repoSlug(remote) {
   const m = /[/:]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(String(remote).trim())
@@ -249,6 +200,15 @@ async function handoff(store, dir, flags) {
   return status
 }
 
+// A store that refuses (4xx: suspended, revoked) loses every handoff and checkpoint: say so where it is seen.
+function raiseIfRefused(error, where) {
+  if (!(error instanceof StoreRefused)) return false
+  const alert = { at: new Date().toISOString(), where, message: error.message }
+  try { writeFileSync(join(homedir(), '.cloud-store-alert.json'), JSON.stringify(alert)) } catch {}
+  console.error(`[RED] STORE REFUSED in ${where}: ${error.message}. Handoffs and checkpoints are NOT being saved.`)
+  return true
+}
+
 const hasOwnKit = (dir) => existsSync(join(dir, 'scripts', 'cloud', 'setup.sh'))
 const repoDir = (flags) => flags.repo || process.env.CLAUDE_PROJECT_DIR || process.cwd()
 
@@ -267,6 +227,7 @@ async function main(argv) {
         console.error(`jstack cloud autocommit: ${r.action}${r.reason ? ` (${r.reason})` : ''}${r.held?.length ? ` held back: ${r.held.join(', ')}` : ''}`)
       }
     } catch (e) {
+      raiseIfRefused(e, command)
       console.error(`jstack cloud ${command}: ${e instanceof Error ? e.message : e}`)
     }
     return 0

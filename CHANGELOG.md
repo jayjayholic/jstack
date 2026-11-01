@@ -2,6 +2,17 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (24): the cloud kit's store also speaks S3, and a refusing store is loud
+
+**What:**
+- `tools/cloud/store.mjs`: the store the kit uses, shared by its commands: Vercel Blob as before, or S3 (`JSTACK_STORE_URL=s3://<bucket>[/<prefix>]` with `JSTACK_STORE_REGION`, `JSTACK_STORE_ACCESS_KEY_ID`, `JSTACK_STORE_SECRET_ACCESS_KEY`, optional `JSTACK_STORE_ENDPOINT` for S3-compatible stores), signed with SigV4 in plain node. Session state is named `jstack/<hash>` and env files `keep/<hash>`, so a bucket can expire `jstack/` after 14 days and keep the rest.
+- Any 4xx from the store is a `StoreRefused`: the hooks print `[RED] STORE REFUSED` and write `~/.cloud-store-alert.json` instead of failing quietly.
+- Correction to entry 23: the tunnel through the VM proxy is unverified. The proxy accepts `CONNECT` to any port but carried no Postgres bytes in our tests, so reach outside databases over HTTPS or WebSocket (an HTTP API, or a WebSocket bridge such as a Cloudflare Tunnel with Access).
+
+**Why:** a Hobby Vercel Blob store has 2,000 advanced and 10,000 simple operations a month and is suspended for 30 days past them (vercel.com/docs/vercel-blob/usage-and-pricing); ours was, and every checkpoint and handoff failed without a word.
+
+**Unverified:** SigV4 against real S3 from a cloud VM (tested against a local fake endpoint only). The 32 GB laptop is shocked to learn that 2,000 is not, in fact, a lot.
+
 ## 2026-11-01 (29): the orchestrator, the workers, the board and the compound follow the cloud rules
 
 **What:**
