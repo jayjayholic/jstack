@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (27): the tunnel reports what the proxy answers, and says it is unverified
+
+**What:**
+- `tools/cloud/tunnel.mjs`: `start` and `status` now send a real `CONNECT` for each target and print the proxy's answer (`CONNECT 200`, `CONNECT 403`, `timeout`). Before, "up" meant only that the tunnel's own loopback listener accepted, which it always does. The header marks the whole approach unverified and names the safer road: the service's HTTPS or WebSocket API, or a WS bridge next to it. Test +1 (200, 403, no answer).
+
+**Why:** two sessions disagreed. One probe got `200` for a CONNECT to a database port; in another cloud session a database query outside the VM hung for minutes. The cloud proxy is meant for HTTPS and WebSocket traffic, so a raw TCP client (Postgres, Redis, SSH) cannot count on it. The old "up" line would have said green in both cases.
+
+**Unverified:** which proxies pass a CONNECT to a non-443 port (seen once, refused or hung elsewhere). The 32 GB laptop reminds everyone its database is one localhost away.
+
 ## 2026-11-01 (26): the switch hook says why the account switched
 
 **What:**

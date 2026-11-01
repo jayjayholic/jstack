@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 // TCP through the cloud VM's HTTPS proxy. A Claude Code cloud VM has no direct outbound TCP: only its proxy
-// ($HTTPS_PROXY), which accepts CONNECT to any host and port. So a database, SSH or any TCP service outside the VM is
-// reached by listening on a loopback address, mapping the service's hostname to it in /etc/hosts, and piping each
-// connection through a CONNECT tunnel. Clients keep their URLs unchanged, TLS hostname checks included.
+// ($HTTPS_PROXY). This listens on a loopback address, maps the service's hostname to it in /etc/hosts, and pipes each
+// connection through a CONNECT tunnel, so clients keep their URLs and TLS hostname checks.
 //
-//   node tunnel.mjs start <host:port> [...]   map and serve each target (detached), idempotent
+// UNVERIFIED: whether the proxy carries CONNECT to a non-HTTPS port. One probe got 200 for port 5432; in another
+// session a database query through the same kind of VM hung for minutes. The proxy is meant for HTTPS and WebSocket
+// traffic, so the safe road to a database outside the VM is its HTTPS or WebSocket API (or a WS bridge you run next
+// to it). Trust this tunnel only when `start` or `status` prints `CONNECT 200` for that target.
+//
+//   node tunnel.mjs start <host:port> [...]   map and serve each target (detached), idempotent, then probe each
 //   node tunnel.mjs serve <host:port> [...]   the server itself (foreground)
-//   node tunnel.mjs status                    the mapped targets and whether each answers
+//   node tunnel.mjs status                    the mapped targets and the proxy's answer to a CONNECT for each
 import { spawn } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
@@ -79,6 +83,31 @@ function pipeThroughProxy(client, target, proxy) {
   upstream.once('data', () => client.resume())
 }
 
+// What the proxy itself answers to a CONNECT for the target: a local listener always accepts, so only this says
+// whether the target is reachable at all.
+function probe(target, proxy, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const s = net.connect(proxy.port, proxy.host)
+    let head = ''
+    const done = (answer) => { s.destroy(); resolve(answer) }
+    s.setTimeout(timeoutMs, () => done('timeout'))
+    s.on('error', (e) => done(`error ${e.code || e.message}`))
+    s.on('connect', () => s.write(connectRequest(target.host, target.port, proxy.auth)))
+    s.on('data', (d) => {
+      head += d.toString('latin1')
+      const line = head.split('\r\n')[0]
+      if (head.includes('\r\n')) done(/^HTTP\/1\.[01] (\d{3})/.exec(line)?.[1] ?? line.slice(0, 60))
+    })
+  })
+}
+
+async function report(targets, mapped, proxy) {
+  for (const t of targets) {
+    const answer = proxy ? await probe(t, proxy) : 'no proxy'
+    console.log(`${t.host}:${t.port} -> ${mapped.get(t.host)} CONNECT ${answer}${answer === '200' ? '' : ' (not reachable through the proxy)'}`)
+  }
+}
+
 function serve(targets) {
   const proxy = proxyOf()
   if (!proxy) throw new Error('no HTTPS_PROXY: this VM needs no tunnel')
@@ -110,7 +139,7 @@ async function start(targets, self) {
     child.unref()
     await new Promise((r) => setTimeout(r, 500))
   }
-  for (const t of targets) console.log(`${t.host}:${t.port} -> ${mapped.get(t.host)} ${(await answers(mapped.get(t.host), t.port)) ? 'up' : 'DOWN'}`)
+  await report(targets, mapped, proxyOf())
 }
 
 async function main(argv) {
@@ -120,8 +149,9 @@ async function main(argv) {
   if (command === 'start') return start(targets, process.argv[1])
   if (command === 'status') {
     const text = existsSync(HOSTS) ? readFileSync(HOSTS, 'utf8') : ''
-    for (const line of text.split('\n').filter((l) => l.endsWith(MARK))) console.log(line)
-    return
+    const mapped = new Map(text.split('\n').filter((l) => l.endsWith(MARK)).map((l) => l.trim().split(/\s+/)).map(([ip, host]) => [host, ip]))
+    const ports = targets.length ? targets : [...mapped.keys()].map((host) => ({ host, port: 443 }))
+    return report(ports, mapped, proxyOf())
   }
   console.log('usage: tunnel.mjs start|serve <host:port>... | status')
 }
@@ -130,4 +160,4 @@ if (process.argv[1]?.endsWith('tunnel.mjs')) {
   main(process.argv.slice(2)).catch((e) => { console.error(`tunnel: ${e.message}`); process.exit(1) })
 }
 
-export { connectRequest, mapHosts, parseTarget, pipeThroughProxy, proxyOf }
+export { connectRequest, mapHosts, parseTarget, pipeThroughProxy, probe, proxyOf }

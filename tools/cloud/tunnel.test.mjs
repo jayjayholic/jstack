@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
 
-import { connectRequest, mapHosts, parseTarget, pipeThroughProxy, proxyOf } from './tunnel.mjs'
+import { connectRequest, mapHosts, parseTarget, pipeThroughProxy, probe, proxyOf } from './tunnel.mjs'
 
 test('parses host:port and refuses anything else', () => {
   assert.deepEqual(parseTarget('db.example.com:5432'), { host: 'db.example.com', port: 5432 })
@@ -68,4 +68,18 @@ test('pipes bytes sent before the tunnel is up through it', async () => {
 
 test('closes the client when the proxy refuses the CONNECT', async () => {
   assert.equal(await roundTrip('HTTP/1.1 403 Forbidden'), '')
+})
+
+async function probeWith(answer) {
+  const proxy = net.createServer((s) => s.once('data', () => (answer === null ? undefined : s.write(`${answer}\r\n\r\n`))))
+  const port = await listen(proxy)
+  const got = await probe({ host: 'db.example', port: 5432 }, { host: '127.0.0.1', port, auth: null }, 500)
+  proxy.close()
+  return got
+}
+
+test('the probe reports what the proxy answers, not whether the local listener accepts', async () => {
+  assert.equal(await probeWith('HTTP/1.1 200 Connection Established'), '200')
+  assert.equal(await probeWith('HTTP/1.1 403 Forbidden'), '403')
+  assert.equal(await probeWith(null), 'timeout')
 })
