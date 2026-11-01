@@ -92,13 +92,13 @@ mem_map() {
   command -v cygpath >/dev/null 2>&1 && command -v powershell >/dev/null 2>&1 || { _mem_map_plain; return; }
   local locks i
   locks=$(cygpath -w "$JSTACK_LOCK_DIR")
-  for i in $(seq 1 "$JSTACK_TC_SLOTS"); do locks="$locks;$(cygpath -w "${JSTACK_LOCK_DIR}-tc-$i")"; done
+  for i in $(seq 1 "$JSTACK_TC_SLOTS"); do locks="$locks;$(cygpath -w "${JSTACK_TC_LOCK_PREFIX:-${JSTACK_LOCK_DIR}-tc-}$i")"; done
   powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$JSTACK_TOOLS/mem-map.ps1")" \
     -LockDirs "$locks" ${JSTACK_QUEUE_FILE:+-QueueFile "$(cygpath -w "$JSTACK_QUEUE_FILE")"} "$@"
 }
 
 # ---------- admission ----------
-_tc_slots() { local i; for i in $(seq 1 "$JSTACK_TC_SLOTS"); do echo "${JSTACK_LOCK_DIR}-tc-$i"; done; }
+_tc_slots() { local i; for i in $(seq 1 "$JSTACK_TC_SLOTS"); do echo "${JSTACK_TC_LOCK_PREFIX:-${JSTACK_LOCK_DIR}-tc-}$i"; done; }
 _is_heavy_slot() { local s; for s in "${HEAVY_SLOTS[@]}"; do [ "$s" = "$1" ] && return 0; done; return 1; }
 # A slot is ours when this shell holds it ($HEAVY_SLOT) or its owner line names this directory: the train typechecks
 # inside its own slot without waiting on itself.
