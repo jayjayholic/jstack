@@ -96,13 +96,20 @@ format_and_commit() {
   git diff --quiet || { git commit -qam "style: format changed files" && echo "formatted"; }
 }
 
-# Waits for the PR's checks. Green (or no checks configured) returns 0; any failure returns 1.
+# Waits for the PR's checks, then returns 0 only when every check's state is SUCCESS or SKIPPED (or the repo has no
+# checks at all). The watch's exit code is not trusted: a cancelled run ends the watch with 0, and a re-run queued
+# after it is not done. Any other state (FAILURE, CANCELLED, QUEUED, PENDING, IN_PROGRESS, ...) returns 1 and is printed.
 checks_green() {
-  local out code
-  out=$(gh pr checks "$1" --watch 2>&1); code=$?
-  [ $code -eq 0 ] && return 0
-  echo "$out" | grep -qi "no checks reported" && return 0
-  echo "$out" | grep -iE "fail" | head -5
+  local out states bad
+  out=$(gh pr checks "$1" --watch 2>&1)
+  states=$(gh pr checks "$1" --json name,state --jq '.[] | "\(.state)\t\(.name)"' 2>&1)
+  if [ -z "$states" ]; then
+    echo "$out" | grep -qi "no checks reported" && return 0
+    echo "could not read the checks of $1"; return 1
+  fi
+  bad=$(echo "$states" | grep -vE '^(SUCCESS|SKIPPED)	')
+  [ -z "$bad" ] && return 0
+  echo "$bad" | sort -u | head -10
   return 1
 }
 
@@ -110,7 +117,7 @@ open_and_merge() { # $1 branch, $2 title, $3 body file
   local s
   gh pr view "$1" --json number >/dev/null 2>&1 || gh pr create --base "$B" --head "$1" --title "$2" --body-file "$3" 2>&1 | tail -1
   for _ in 1 2 3 4 5 6; do [ "$(gh pr view "$1" --json mergeable -q .mergeable)" = "MERGEABLE" ] && break; sleep 10; done
-  if ! checks_green "$1"; then echo "NOT-MERGED $1: a check failed (re-run flakes and confirm green first)"; return 0; fi
+  if ! checks_green "$1"; then echo "NOT-MERGED $1: a check is not SUCCESS/SKIPPED (failed, cancelled or still running); re-run and confirm green first"; return 0; fi
   gh pr merge "$1" --merge 2>&1 | tail -1
   s=$(gh pr view "$1" --json number,state -q '"#\(.number) \(.state)"')
   case "$s" in *MERGED) echo "MERGED $1 $s";; *) echo "NOT-MERGED $1 $s";; esac
