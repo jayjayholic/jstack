@@ -7,9 +7,9 @@ Each entry says what changed and which problem it fixes.
 **What:**
 - `skills/train/SKILL.md`, lessons: a new bullet. A per-file gate run through `xargs -P` wraps each child so it always exits 0 or 1 and writes its own result line, then fails, naming the files, when the result lines don't match the input list.
 
-**Why:** xargs stops launching jobs once a child exits 255 or dies by a signal, and says so only on stderr. The gate counted the lines it got back and printed PASS 899/899 over a list of 1165 files.
+**Why:** xargs stops launching jobs once a child exits 255 or dies by a signal, and says so only on stderr. The gate counted the lines it got back and printed PASS 899/899 over a list of 1165 files. The same bullet keeps the list off the children's stdin (`xargs -a`, child `</dev/null`), so a runner that reads stdin cannot eat the rest of the list.
 
-**Unverified:** BSD xargs (only GNU findutils, on Git Bash and Ubuntu, was exercised). The 32 GB laptop insists it ran all 1165 and simply forgot to mention 266 of them.
+**Unverified:** BSD xargs, which has no `-a` (exercised on GNU findutils 4.9 under Git Bash and on Ubuntu). The stdin swallow was reported by the train but did not reproduce under GNU xargs, which already gives children /dev/null. The 32 GB laptop insists it ran all 1165 and simply forgot to mention 266 of them.
 
 ## 2026-11-01 (19): the test gate must cover every test file of each runner
 
