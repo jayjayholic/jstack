@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (20): a parallel gate counts its results against its input list
+
+**What:**
+- `skills/train/SKILL.md`, lessons: a new bullet. A per-file gate run through `xargs -P` wraps each child so it always exits 0 or 1 and writes its own result line, then fails, naming the files, when the result lines don't match the input list.
+
+**Why:** xargs stops launching jobs once a child exits 255 or dies by a signal, and says so only on stderr. The gate counted the lines it got back and printed PASS 899/899 over a list of 1165 files.
+
+**Unverified:** BSD xargs (only GNU findutils, on Git Bash and Ubuntu, was exercised). The 32 GB laptop insists it ran all 1165 and simply forgot to mention 266 of them.
+
 ## 2026-11-01 (19): the test gate must cover every test file of each runner
 
 **What:**
