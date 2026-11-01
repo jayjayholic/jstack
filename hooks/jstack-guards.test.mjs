@@ -474,6 +474,14 @@ test('branch-delete: another agent\'s branch is refused when both ids are known'
   assert.ok(!denied(asAgent('git branch -D own-b', 'agent-2')))
 })
 
+test('branch-delete: shell redirections are not read as branch names', () => {
+  gitRepo('branch', 'own-r')
+  record('own-r', 'agent-1')
+  for (const c of ['git push origin --delete own-r 2>&1', 'git push origin --delete own-r 2> err.txt', 'git branch -D own-r >/dev/null 2>&1', 'git push origin --delete own-r &> out.log'])
+    assert.ok(!denied(asAgent(c, 'agent-1')), c)
+  assert.ok(denied(asAgent('git push origin --delete feat-r 2>&1', 'agent-1')), 'an unrecorded branch is still refused')
+})
+
 test('branch-delete: protected branches are refused even with a record', () => {
   for (const b of ['develop', 'stage', 'release-x', 'keep-me']) { gitRepo('branch', b); record(b, 'agent-1') }
   const project = { ...branchProject, branchDelete: { protected: ['keep-me'] } }

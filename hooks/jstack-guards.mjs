@@ -531,13 +531,26 @@ function protectedBranches(project, repo, env) {
 
 const shortBranch = ref => ref.replace(/^\+/, '').replace(/^refs\/heads\//, '')
 
+// Shell redirections (`2>&1`, `>log`, `2> err.txt`) are not git arguments: without this a push --delete read `2>&1`
+// as a branch name and refused the whole command.
+const REDIRECTION = /^(?:\d*|&)(?:>>?|<)(?:&\d+)?/
+function withoutRedirections(args) {
+  const out = []
+  for (let k = 0; k < args.length; k++) {
+    const m = REDIRECTION.exec(args[k])
+    if (!m) { out.push(args[k]); continue }
+    if (m[0] === args[k] && !/&\d+$/.test(args[k])) k++
+  }
+  return out
+}
+
 // What a git segment would delete, and the folder it runs in (`git -C <dir>`).
 function gitDeletions(toks, cwd) {
   let i = 1, dir = cwd
   while (i < toks.length && toks[i].startsWith('-')) {
     if (toks[i] === '-C') { dir = resolveFrom(dir, toks[i + 1] ?? '.'); i += 2 } else i += toks[i] === '-c' ? 2 : 1
   }
-  const sub = toks[i], args = toks.slice(i + 1)
+  const sub = toks[i], args = withoutRedirections(toks.slice(i + 1))
   const out = []
   if (sub === 'branch') {
     const flags = args.filter(a => a.startsWith('-'))
