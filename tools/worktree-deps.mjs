@@ -10,7 +10,7 @@
 //   node scripts/worktree-deps.mjs detach <path>          turn a linked path back into an own, empty one
 //   node scripts/worktree-deps.mjs status                 what this worktree links to
 //   node scripts/worktree-deps.mjs prune                  delete stores no worktree links to any more
-//   node scripts/worktree-deps.mjs remove <worktree> [--delete-branch]
+//   node scripts/worktree-deps.mjs remove <worktree> [--delete-branch] [--discard-work]   (refuses to lose uncommitted or unkept work)
 //                                                         unlink every junction, then git worktree remove; the branch
 //                                                         goes only when jstack created it for this caller
 //
@@ -497,7 +497,21 @@ const notOwnedReason = (repo, branch) => {
 	return null
 }
 
-const remove = (target, deleteBranch) => {
+// What removing this worktree would lose: tracked edits never committed, and commits no other ref keeps (a detached
+// HEAD, or the branch itself when --delete-branch drops it). Untracked files are left to the caller (clean-worktrees.sh
+// screens them); remote refs and every other local branch count as kept.
+const workAtRisk = (dir, headBranch, deleteBranch) => {
+	const risks = []
+	const dirty = gitOrNull(dir, 'status', '--porcelain', '--untracked-files=no')?.trim()
+	if (dirty) risks.push(`${dirty.split(/\r?\n/).length} tracked file(s) with uncommitted changes`)
+	if (headBranch && !deleteBranch) return risks
+	const keep = headBranch ? [`--exclude=${headBranch}`, '--branches'] : ['--branches']
+	const lost = gitOrNull(dir, 'rev-list', '--count', 'HEAD', '--not', ...keep, '--remotes', '--tags')?.trim()
+	if (lost && lost !== '0') risks.push(`${lost} commit(s) no other branch or remote has${headBranch ? ` (only ${headBranch} holds them)` : ' (detached HEAD)'}`)
+	return risks
+}
+
+const remove = (target, deleteBranch, discardWork = false) => {
 	const dir = path.resolve(target)
 	if (samePath(dir, mainCheckout(dir))) throw new Error('refusing to remove the main checkout')
 	const main = mainCheckout(dir)
@@ -516,6 +530,12 @@ const remove = (target, deleteBranch) => {
 	)
 	const notOwned = headBranch && !protectedBranches.has(headBranch) ? notOwnedReason(main, headBranch) : null
 	const branch = headBranch && !protectedBranches.has(headBranch) && !notOwned ? headBranch : null
+	const risks = ownsGit && !discardWork ? workAtRisk(dir, headBranch, deleteBranch && Boolean(branch)) : []
+	if (risks.length) {
+		console.error(`worktree-deps: refusing to remove ${dir}: ${risks.join('; ')}. Commit and push it (or drop --delete-branch), or pass --discard-work if it really can go.`)
+		process.exitCode = 1
+		return
+	}
 	if (deleteBranch && headBranch && protectedBranches.has(headBranch)) console.error(`worktree-deps: not deleting protected branch ${headBranch}`)
 	else if (deleteBranch && notOwned)
 		console.error(`worktree-deps: keeping branch ${headBranch}: ${notOwned}. An agent may only delete branches it created; a human can delete it with git branch -D ${headBranch}`)
@@ -542,9 +562,9 @@ else if ((command === 'own' || command === 'share') && ['deps', 'generated'].inc
 } else if (command === 'detach' && rest[0]) detach(rest[0])
 else if (command === 'status') status()
 else if (command === 'prune') prune()
-else if (command === 'remove' && rest[0]) remove(rest[0], rest.includes('--delete-branch'))
+else if (command === 'remove' && rest[0]) remove(rest[0], rest.includes('--delete-branch'), rest.includes('--discard-work'))
 else if (command === 'plan') console.log(changedDepFiles(worktreeRoot(), base))
 else {
-	console.error('usage: node worktree-deps.mjs deps [--base <ref>] | generated | own <deps|generated> | share <deps|generated> | detach <path> | status | plan | prune | remove <worktree> [--delete-branch]')
+	console.error('usage: node worktree-deps.mjs deps [--base <ref>] | generated | own <deps|generated> | share <deps|generated> | detach <path> | status | plan | prune | remove <worktree> [--delete-branch] [--discard-work]')
 	process.exit(2)
 }
