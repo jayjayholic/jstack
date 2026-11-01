@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (25): a cloud session's turn-end save never pushes a train branch
+
+**What:**
+- `tools/cloud/cloud-kit.mjs` `autocommit`: skips any `train/*` branch with `train branch <name>`. Test +1.
+
+**Why:** a train branch is assembled, gated and pushed by the train alone. A turn-end save on it pushes a half-assembled or ungated tree that the next merge step could pick up, and a stray session resumed onto the train branch would publish its own copy of the train. The repo-side kit already refused it; the jstack copy did not.
+
+**Unverified:** nothing new; 6/6 tests. The 32 GB laptop never pushed a train by accident, mostly because it was busy building one.
+
 ## 2026-11-01 (24): the cloud kit and tonight's lessons carry no project specifics
 
 **What:**

@@ -190,6 +190,8 @@ function autocommit(dir, env = process.env, { push = true } = {}) {
   const branch = git(['symbolic-ref', '--quiet', '--short', 'HEAD'], dir).stdout.trim()
   if (!branch) return { action: 'skipped', reason: 'detached HEAD' }
   if (protectedBranches(dir, env).has(branch)) return { action: 'skipped', reason: `protected branch ${branch}` }
+  // A train branch is pushed only by the train itself, after green gates; a turn-end save never pushes one.
+  if (branch.startsWith('train/')) return { action: 'skipped', reason: `train branch ${branch}` }
   const gitDir = git(['rev-parse', '--absolute-git-dir'], dir).stdout.trim()
   const busy = ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD'].find((m) => existsSync(join(gitDir, m)))
   if (busy) return { action: 'skipped', reason: `${busy} in progress` }
