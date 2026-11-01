@@ -6,7 +6,7 @@ Each entry says what changed and which problem it fixes.
 
 **What:**
 - `tools/cloud/cloud-kit.mjs`: the autocommit's protected branches are `production`, `main`, `master`, the configured integration branch (`JSTACK_INTEGRATION_BRANCH`), the remote's default branch and `JSTACK_PROTECTED_BRANCHES`, instead of a hard-coded `stage`. Test +1: a session on the configured integration branch is skipped.
-- `skills/train-compound/SKILL.md`, CHANGELOG entry (13), `tools/memory/location.test.mjs`: "the stage deploy" reads "the integration deploy", the author's product name and checkout path are gone.
+- `skills/train-compound/SKILL.md`, CHANGELOG entry (15), `tools/memory/location.test.mjs`: "the stage deploy" reads "the integration deploy", the author's product name and checkout path are gone.
 
 **Why:** jstack is for any repo and any team. A branch literally named `stage` was protected while a team whose integration branch is `develop` got no protection at all. Kept on purpose: the author's credit in README and HOW-I-WORK, and `stage` as the documented example default in `config.example.sh`.
 
