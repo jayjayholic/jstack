@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (23): cloud sessions reach databases outside the VM
+
+**What:**
+- `tools/cloud/tunnel.mjs`: a Claude Code cloud VM has no direct outbound TCP, only its HTTPS proxy, which accepts `CONNECT` to any host and port. `start <host:port>` maps the hostname to a loopback address in `/etc/hosts` and pipes each connection through a CONNECT tunnel, so clients keep their URLs and TLS hostname checks.
+- `cloud-kit.mjs`: a repo's entry in `~/.jstack/cloud-env.json` may list `{ "tunnel": "host:port" }`; `env-restore` (the SessionStart hook) starts those tunnels.
+
+**Why:** a database that allowed every IP still timed out from the cloud: a raw TCP connect to any port (5432, 6543, even 22) fails there, while `CONNECT` through the proxy succeeds. It looked like an IP allowlist and was not.
+
+**Unverified:** proxies that refuse CONNECT to non-443 ports (this one allows them). The 32 GB laptop insists it never needed a tunnel to reach its own Postgres.
+
 ## 2026-11-01 (22): an account switch can tell other tools, without waiting on them
 
 **What:**

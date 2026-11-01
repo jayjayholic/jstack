@@ -130,7 +130,8 @@ async function envPush(store, dir, manifestFile = join(homedir(), '.jstack', 'cl
   const entries = existsSync(manifestFile) ? JSON.parse(readFileSync(manifestFile, 'utf8'))[slug] : null
   if (!entries?.length) throw new Error(`${slug} has no entry in ${manifestFile}`)
   const files = []
-  for (const entry of entries) {
+  const tunnels = entries.filter((entry) => entry.tunnel).map((entry) => entry.tunnel)
+  for (const entry of entries.filter((e) => e.file)) {
     const refused = safeTarget(dir, entry.file)
     if (refused) throw new Error(`refusing to push: ${refused}`)
     const text = readFileSync(join(dir, entry.file), 'utf8')
@@ -139,8 +140,8 @@ async function envPush(store, dir, manifestFile = join(homedir(), '.jstack', 'cl
     await store.put(store.path('env', slug, entry.file), content)
     files.push({ file: entry.file, keys: content.split('\n').filter((l) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(l)).length })
   }
-  await store.put(store.path('env', slug, 'manifest.json'), JSON.stringify({ repo: slug, files }))
-  return { repo: slug, files }
+  await store.put(store.path('env', slug, 'manifest.json'), JSON.stringify({ repo: slug, files, tunnels }))
+  return { repo: slug, files, tunnels }
 }
 
 async function envRestore(store, dir) {
@@ -148,7 +149,13 @@ async function envRestore(store, dir) {
   const raw = await store.get(store.path('env', slug, 'manifest.json'))
   if (!raw) return []
   const written = []
-  for (const { file } of JSON.parse(raw.toString('utf8')).files) {
+  const manifest = JSON.parse(raw.toString('utf8'))
+  // The VM has no direct outbound TCP: services outside it (a database) are reached through its HTTPS proxy.
+  if (manifest.tunnels?.length && (process.env.HTTPS_PROXY || process.env.https_proxy)) {
+    const r = spawnSync(process.execPath, [join(import.meta.dirname, 'tunnel.mjs'), 'start', ...manifest.tunnels], { encoding: 'utf8', timeout: 30_000 })
+    written.push(`tunnels: ${(r.stdout || r.stderr || '').trim().split(String.fromCharCode(10)).join('; ')}`)
+  }
+  for (const { file } of manifest.files) {
     const refused = safeTarget(dir, file)
     if (refused) throw new Error(`refusing to restore: ${refused}`)
     const content = await store.get(store.path('env', slug, file))
@@ -257,7 +264,7 @@ async function main(argv) {
   }
   if (command === 'env-push') {
     const m = await envPush(openStore(), dir)
-    console.log(`pushed ${m.repo}: ${m.files.map((f) => `${f.file} (${f.keys} keys)`).join(', ')} (values not shown)`)
+    console.log(`pushed ${m.repo}: ${m.files.map((f) => `${f.file} (${f.keys} keys)`).join(', ')}${m.tunnels.length ? `, tunnels ${m.tunnels.join(', ')}` : ''} (values not shown)`)
     return 0
   }
   if (command === 'env-restore') {
