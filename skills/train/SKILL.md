@@ -130,6 +130,16 @@ Done when: you can say λ, W, L and p for the last few hours, and which rule cha
 
 Tools behind the orchestrator: `{{JSTACK_TOOLS}}/train.sh` (`build <wt...>`, `shiptrain`), `{{JSTACK_TOOLS}}/coordinator-build.sh` (waits for {{MIN_FREE_GB}} GB free, one build at a time).
 
+## 8. Cloud mode (optional)
+
+When Claude Code cloud sessions are available (GitHub connected, `claude --cloud` starts one), workers and the train itself can run there, one 16 GB VM per branch, with the laptop free. Without them, everything above runs locally, unchanged.
+
+- **Start:** push the work branch, then start the session through a pseudo-terminal: `claude --cloud` needs a TTY and refuses `--print`. Pick the account's environment with `--settings '{"remote":{"defaultEnvironmentId":"env_..."}}'` (`--environment` takes only self-hosted `ccpool_` ids). Each session works on its own `claude/*` branch; record it as created by you so the branch guard lets you delete it later.
+- **Talk down, read up:** `claude -p --cloud <id>` queues one message (only the account that started the session can reach it). The session cannot message you back, so it publishes its status (`running|waiting|wrapped|ready|failed`, sha, next step) and handoff somewhere you poll. Keep per-user state private (an object store the user owns, every object encrypted client-side under an opaque name); GitHub carries only what the team needs: the `train:ready` label, a `READY: <branch> @ <sha>` line, train comments, and PR screenshots on a dedicated branch.
+- **The train in the cloud:** one session on `train/live` reads the `train:ready` PRs (REST only: the cloud's GitHub proxy refuses GraphQL), refuses drafts, stale READY shas, agent-state files in the diff and UI PRs without before/after shots, assembles on a fresh {{INTEGRATION_BRANCH}}, runs the gates and a full build, merges on green, comments the evidence, and drops the label with the reason on red.
+- **Account rotation, only when it applies:** several stored accounts AND a usage source (a panel that records each account's usage). Then at 95% (and when usage is unknown) message every session on that account to stop at a safe point, commit and push, archive its transcript (encrypted), and publish a `wrapped` handoff, before the account switches. A session on another account cannot be messaged: resume it with a new session on the current account from the branch, its handoff and the restored transcript. With one account, skip rotation.
+- **Limits worth knowing:** setup scripts are cached only under about 5 minutes; idle VMs pause and lose background processes; bun has proxy issues (fall back to npm); the GitHub proxy refuses branch deletions, so clean up session branches from the laptop.
+
 ## Lessons
 
 Every new lesson also goes into the project's memory, so the next pre-flight reads it: `node {{JSTACK_TOOLS}}/memory/memory.mjs add --kind failure --title "<symptom>" --domain <pack> --anchor <path#symbol> --body "<root cause and the rule>"`. When a check or a question would have caught it earlier, `/unslop learn` drafts it.

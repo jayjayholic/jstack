@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (18): /train gets an optional cloud mode
+
+**What:**
+- `skills/train/SKILL.md`, new section 8: when Claude Code cloud sessions are available, workers and the train itself can run in the cloud. It covers how to start a session without a terminal window (a pseudo-terminal, since `claude --cloud` needs a TTY and refuses `--print`), how to pick an environment (`remote.defaultEnvironmentId`; `--environment` takes self-hosted ids only), why the session can only talk back through state you poll, what stays private (an encrypted per-user store) versus what the team sees on GitHub (label, READY line, comments, PR shots), the cloud train's refusals (drafts, stale READY, agent state in the diff, UI without shots), and account rotation only when several accounts and a usage source exist.
+
+**Why:** a laptop with one heavy slot queues every build and test behind the others; a cloud VM per branch removes the queue. Every rule in the section comes from a live probe on 2026-11-01, including the dead ends (`--environment env_...` refused, GraphQL refused by the cloud's GitHub proxy, branch deletions refused, and sessions unreachable from another account).
+
+**Unverified:** a full cloud train merge to the integration branch (only a dry run so far). The 32 GB laptop is relieved to learn it no longer has to build everything itself.
+
 ## 2026-11-01 (17): mem_map and the heavy-lock tests run outside Windows and outside a git checkout
 
 **What:**
