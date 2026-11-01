@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (21): cloud sessions get their env files and a work-in-progress save in any repo
+
+**What:**
+- `tools/cloud/cloud-kit.mjs`: `env-push` (your machine) seals the files a repo needs but git does not carry (`.env`, `.env.keys`, `.env.local`, listed per repo in `~/.jstack/cloud-env.json`, optionally only some keys) into your private store, AES-256-GCM under HMAC-opaque names; `env-restore` writes them back 0600, only to paths git ignores; `autocommit` saves and pushes work in progress on the work branch, never secrets, `.auth/` or a diff holding a private key; `handoff` publishes `status.json` + `handoff.md` for the orchestrator.
+- `hooks/hooks.json`: SessionStart runs `env-restore`, Stop runs `autocommit`, only when `CLAUDE_CODE_REMOTE=true` and only in repos without their own `scripts/cloud/setup.sh`.
+
+**Why:** a cloud session of a repo with no kit of its own started with no env (so nothing that calls an API could run) and lost work when the VM went away. With the plugin installed, every repo gets both without a shim.
+
+**Unverified:** S3 and git-branch stores (this tool speaks Vercel Blob only). The 32 GB laptop is relieved: the cloud now carries its own keys.
+
 ## 2026-11-01 (20): a parallel gate counts its results against its input list
 
 **What:**
