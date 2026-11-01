@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (26): the switch hook says why the account switched
+
+**What:**
+- `plugins/jay-claude-switcher/hooks/switch-hook.ts`, `sessions.ts`: the on-switch command now gets `--trigger out|freed|manual` after `--from` and `--to`, and the trace line carries `trigger=`. `out` = the old account hit its limit; `freed` = a balance switch to an account that freed up; `manual` = the **Use** button.
+
+**Why:** a receiver that moved every session of the old account on every switch started a second session beside each live one after a balance switch: the old account could still run turns, so both sessions worked the same branch. Only an account at its limit loses its sessions. The trigger lets a receiver skip the obvious cases without a usage read; it still checks a fresh reading before moving anything, because a trigger is a hint and a reading is a fact.
+
+**Unverified:** the mod's own tests need the engine's `claude-code/testing` runtime and did not run here; proven with the launcher run directly (`--from a --to b --trigger out` reached the command). A running Claude Code keeps the old module until `/reload-plugins` (or a restart), so the new flag appears only after that. The 32 GB laptop switched accounts twice while reading this and, for once, knew why.
+
 ## 2026-11-01 (25): a cloud session's turn-end save never pushes a train branch
 
 **What:**

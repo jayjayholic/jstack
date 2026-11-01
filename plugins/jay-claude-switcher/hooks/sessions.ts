@@ -4,7 +4,7 @@ import type { AccountView, ReadSchedule, ReadWhich, SessionWindow, SessionsView 
 import { ACTIVE_READ_MS, CANDIDATE_READ_MS, SWITCH_AT, isNearLimit, isSwitchDue, isWatched, leastUsed, markLimitHit, noTargetReason, peakOf, switchTarget, withSessionLimits } from './accounts'
 import { importAccount, ioOf, readAccounts, readPriority, switchAccount, writeTrace } from './account-io'
 import { balanceTarget, isWeeklyLimited, rankingLines, unsureOf, wokenUp, type Pick } from './balance'
-import { notifySwitch } from './switch-hook'
+import { notifySwitch, triggerOf } from './switch-hook'
 
 const AUTO_KEY = 'auto-switch'
 const SWITCH_COOLDOWN_MS = 90_000
@@ -136,7 +136,7 @@ async function switchTo($: EngineInterface, key: string, label: string, reason: 
   sessionLimits = []
   await update($, sessions, v => ({ ...v, active: key, lastSwitch: { from, to: key, at, reason }, chosen: reason, notice: `Now using ${label}. ${RESTART_NOTE}` }))
   $.ui.toast(`Now using ${label}`)
-  void notifySwitch($, from, key)
+  void notifySwitch($, from, key, triggerOf(reason))
   return true
 }
 
