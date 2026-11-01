@@ -15,6 +15,7 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import * as browsers from './jstack-browsers.mjs'
 import * as calls from './jstack-calls.mjs'
+import { listProcessesFast } from '../tools/perf/proc-table.mjs'
 
 // Child processes run from the hook's own folder, never the repo: Windows resolves a bare
 // command name against the current directory first, so a repo could plant git.exe or powershell.exe.
@@ -656,6 +657,9 @@ function pre(payload, env = process.env) {
 
 function listProcesses() {
   if (WIN) {
+    // perf-snap is ~10x cheaper than PowerShell + CIM (perf ledger 2026-10-25); WmiPrvSE load came from this call.
+    const fast = listProcessesFast()
+    if (fast) return fast
     const ps = "$ErrorActionPreference='SilentlyContinue'; @(Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{ p=[int]$_.ProcessId; pp=[int]$_.ParentProcessId; n=[string]$_.Name; c=[string]$_.CommandLine; t=$(if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } else { 0 }) } }) | ConvertTo-Json -Compress"
     const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { cwd: HOOK_DIR, encoding: 'utf8', maxBuffer: 64 << 20, timeout: 20000 })
     try { return JSON.parse(r.stdout) } catch { return [] }
