@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (28): cloud sessions get a rulebook, every rule with its check
+
+**What:**
+- `skills/train/cloud-sessions.md` (new), linked from `/train` section 8: ten sections, each a rule, its why, the failure that taught it and the command or test that proves it. One train session that nothing auto-resumes, its id in the PR body checked before the merge, a two-phase merge (dry run, then `GO <n>` at that sha), watchers that restart when their code changes; a registry with a lock, an atomic write and a per-id merge; account rotation (wrap up at 95%, move sessions only when the old account is really at its limit, messages as the session's own account, reload the switcher after an update); a resume that merges the old `claude/*` branch first; hardlinked dependencies for the train worktree; the parallel-gate count; no raw TCP out of the VM; branch deletions, folder trust and idle approvals; debug artifacts archived before the VM goes; and a placeholder for orphan commits.
+- `skills/train/SKILL.md` section 8: the rotation bullet adds debug artifacts and the `claude/*` merge, and a short form of every rule.
+
+**Why:** in one night a watcher on old code resumed the train branch three times and one stray merged an empty PR; a registry lost entries to a write race; a balance switch doubled sessions; a resume lost the old session's commits; Turbopack refused the train worktree's symlinked dependencies; a gate silently dropped files; a database outside the VM hung; and failed runs left their traces in folders that died with the VM. Each lesson cost a run to learn; the checks make sure it costs nothing the second time.
+
+**Unverified:** the CONNECT tunnel to non-HTTPS ports, the artifact archive check (manual, not enforced in `cloud-kit.mjs`), and orphan-commit causes (audit in progress). The 32 GB laptop read all ten sections and asked whether it can have a cloud too.
+
 ## 2026-11-01 (27): the tunnel reports what the proxy answers, and says it is unverified
 
 **What:**
