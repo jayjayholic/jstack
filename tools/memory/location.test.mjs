@@ -35,7 +35,7 @@ function setup() {
 const entry = (id, extra = {}) => ({ id, kind: 'decision', status: 'active', title: 't', domains: [], anchors: [], created: '2026-10-28T00:00:00Z', ...extra })
 
 test('fromMsys: /c/dev/x is C:/dev/x on Windows only; other paths unchanged', () => {
-  assert.equal(fromMsys('/c/dev/hakutaku/.jstack-memory', 'win32'), 'C:/dev/hakutaku/.jstack-memory')
+  assert.equal(fromMsys('/c/dev/acme/.jstack-memory', 'win32'), 'C:/dev/acme/.jstack-memory')
   assert.equal(fromMsys('/c', 'win32'), 'C:/')
   assert.equal(fromMsys('/c/dev/x', 'linux'), '/c/dev/x', 'a real POSIX path stays')
   assert.equal(fromMsys('/home/me/mem', 'win32'), '/home/me/mem', 'not a drive path')

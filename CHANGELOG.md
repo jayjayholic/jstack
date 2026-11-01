@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (24): the cloud kit and tonight's lessons carry no project specifics
+
+**What:**
+- `tools/cloud/cloud-kit.mjs`: the autocommit's protected branches are `production`, `main`, `master`, the configured integration branch (`JSTACK_INTEGRATION_BRANCH`), the remote's default branch and `JSTACK_PROTECTED_BRANCHES`, instead of a hard-coded `stage`. Test +1: a session on the configured integration branch is skipped.
+- `skills/train-compound/SKILL.md`, CHANGELOG entry (13), `tools/memory/location.test.mjs`: "the stage deploy" reads "the integration deploy", the author's product name and checkout path are gone.
+
+**Why:** jstack is for any repo and any team. A branch literally named `stage` was protected while a team whose integration branch is `develop` got no protection at all. Kept on purpose: the author's credit in README and HOW-I-WORK, and `stage` as the documented example default in `config.example.sh`.
+
+**Unverified:** nothing new; 16/16 tests. The 32 GB laptop checked its own name tag and it, too, is now generic.
+
 ## 2026-11-01 (23): cloud sessions reach databases outside the VM
 
 **What:**
@@ -89,7 +99,7 @@ Each entry says what changed and which problem it fixes.
 - `skills/train/orchestrator-brief.md`, README: the train gate call passes `--base`.
 - `tools/unslop/gate.test.mjs` +2: old pair on the base passes, a colliding stamp the train adds blocks (and the old pair is not in the BLOCK lines); no base still blocks and says why.
 
-**Why:** an /unslop over the Hakutaku trains #61-#73 (2026-10-28) found 5 of 28 boarded branches with any trace of an /unslop run, and none of the ones merged that day. The worker clause asked for it, but the READY gate only ran the fast static scan, so a skip was invisible. The same run's `gate.mjs --train` gave 44 BLOCK lines for 21 duplicate-stamp pairs that had been on stage for weeks: none came from the train, but as written every train would be dropped on them, so in practice the rule was ignored.
+**Why:** an /unslop over the author's trains #61-#73 (2026-10-28) found 5 of 28 boarded branches with any trace of an /unslop run, and none of the ones merged that day. The worker clause asked for it, but the READY gate only ran the fast static scan, so a skip was invisible. The same run's `gate.mjs --train` gave 44 BLOCK lines for 21 duplicate-stamp pairs that had been on the integration branch for weeks: none came from the train, but as written every train would be dropped on them, so in practice the rule was ignored.
 
 **Unverified:** check 8b on macOS/Linux shells (plain bash and git, nothing Windows-specific). It counts a run record, not the run's quality: a worker can still commit a run with nothing examined. The 32 GB laptop was not asked for its opinion.
 

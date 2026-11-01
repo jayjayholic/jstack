@@ -24,7 +24,6 @@ import { join, normalize } from 'node:path'
 
 const MAGIC = Buffer.from('JST1')
 const BLOB_API = 'https://blob.vercel-storage.com'
-const PROTECTED = new Set((process.env.JSTACK_PROTECTED_BRANCHES || 'stage,production,main,master').split(','))
 const WIP_MESSAGE = 'chore(wip): auto-save cloud session work'
 const SECRET_PATHS = [
   /(^|\/)\.env(\.[^/]*)?$/, /(^|\/)\.envrc$/, /\.(pem|key|p12|pfx|jks|keystore)$/i,
@@ -178,11 +177,19 @@ function changedPaths(dir) {
   return paths.filter(Boolean)
 }
 
+// The integration branch comes from the jstack config (JSTACK_INTEGRATION_BRANCH); the remote's default branch is
+// protected too, so a session with no config still never pushes to it.
+function protectedBranches(dir, env = process.env) {
+  const remoteHead = git(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], dir).stdout.trim().replace(/^origin\//, '')
+  return new Set(['production', 'main', 'master', env.JSTACK_INTEGRATION_BRANCH, remoteHead, ...(env.JSTACK_PROTECTED_BRANCHES || '').split(',')]
+    .map((b) => (b || '').trim()).filter(Boolean))
+}
+
 function autocommit(dir, env = process.env, { push = true } = {}) {
   if (!isCloud(env)) return { action: 'skipped', reason: 'not a cloud session' }
   const branch = git(['symbolic-ref', '--quiet', '--short', 'HEAD'], dir).stdout.trim()
   if (!branch) return { action: 'skipped', reason: 'detached HEAD' }
-  if (PROTECTED.has(branch)) return { action: 'skipped', reason: `protected branch ${branch}` }
+  if (protectedBranches(dir, env).has(branch)) return { action: 'skipped', reason: `protected branch ${branch}` }
   const gitDir = git(['rev-parse', '--absolute-git-dir'], dir).stdout.trim()
   const busy = ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD'].find((m) => existsSync(join(gitDir, m)))
   if (busy) return { action: 'skipped', reason: `${busy} in progress` }

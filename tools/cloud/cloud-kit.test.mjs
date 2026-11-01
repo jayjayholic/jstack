@@ -71,6 +71,8 @@ test('autocommit does nothing outside the cloud or on a protected branch', () =>
   assert.deepEqual(autocommit(repo, {}), { action: 'skipped', reason: 'not a cloud session' })
   sh(repo, 'checkout', '-q', '-B', 'main')
   assert.deepEqual(autocommit(repo, CLOUD), { action: 'skipped', reason: 'protected branch main' })
+  sh(repo, 'checkout', '-q', '-B', 'integration')
+  assert.deepEqual(autocommit(repo, { ...CLOUD, JSTACK_INTEGRATION_BRANCH: 'integration' }), { action: 'skipped', reason: 'protected branch integration' })
   assert.equal(sh(repo, 'log', '-1', '--format=%s'), 'init')
 })
 
