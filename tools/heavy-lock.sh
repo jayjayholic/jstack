@@ -68,9 +68,28 @@ mem_guard() {
   done
 }
 
-# The memory map (Windows only): totals, private bytes per process group and per agent, WSL/Docker, orphans, slots.
-# mem_map -Watch -Every 30 samples to a CSV; mem_map -Summary shows each agent's peak; mem_map -Kill orphans.
+# The memory map: totals, private bytes per process group and per agent, WSL/Docker, orphans, slots (Windows,
+# mem-map.ps1). mem_map -Watch -Every 30 samples to a CSV; mem_map -Summary shows each agent's peak; mem_map -Kill
+# orphans. Elsewhere (Linux, macOS, cloud VMs) it prints a plain map: free memory, the top processes by resident
+# memory and the lock slots; the PowerShell options do not apply there.
+_mem_map_plain() {
+  local s
+  if command -v free >/dev/null 2>&1; then free -m; elif command -v vm_stat >/dev/null 2>&1; then vm_stat; fi
+  echo "-- top processes by resident memory (MB)"
+  ps -eo rss=,pid=,comm= 2>/dev/null | sort -rn | head -15 | awk '{ printf("%8.0f  %-7s %s\n", $1/1024, $2, $3) }'
+  echo "-- slots"
+  for s in "$JSTACK_LOCK_DIR" $(_tc_slots); do
+    [ -d "$s" ] && echo "$s: $(cat "$s/owner" 2>/dev/null)"
+  done
+  return 0
+}
+
 mem_map() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) _mem_map_plain; return ;;
+  esac
+  command -v cygpath >/dev/null 2>&1 && command -v powershell >/dev/null 2>&1 || { _mem_map_plain; return; }
   local locks i
   locks=$(cygpath -w "$JSTACK_LOCK_DIR")
   for i in $(seq 1 "$JSTACK_TC_SLOTS"); do locks="$locks;$(cygpath -w "${JSTACK_LOCK_DIR}-tc-$i")"; done

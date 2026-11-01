@@ -25,11 +25,16 @@ before(() => {
   other = path.join(tmp, 'other-worktree')
   fs.mkdirSync(other)
   // The lock script as it was before admission (06c29cc), for the replay below.
+  // Only a git checkout of jstack has that commit: a plugin cache does not, and the replay test skips there.
   oldDir = path.join(tmp, 'old')
   fs.mkdirSync(oldDir)
-  for (const f of ['heavy-lock.sh', 'jstack-env.sh', 'run-capped.ps1']) {
-    const src = execFileSync('git', ['show', `06c29cc:tools/${f}`], { cwd: HERE, encoding: 'utf8' })
-    fs.writeFileSync(path.join(oldDir, f), src)
+  try {
+    for (const f of ['heavy-lock.sh', 'jstack-env.sh', 'run-capped.ps1']) {
+      const src = execFileSync('git', ['show', `06c29cc:tools/${f}`], { cwd: HERE, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      fs.writeFileSync(path.join(oldDir, f), src)
+    }
+  } catch {
+    oldDir = null
   }
 })
 
@@ -206,7 +211,8 @@ test('peaks: heavy_capped records the measured peak of the job under its slot na
 // Replay of 2026-10-26 01:14Z: the heavy slot held by a 22.6 GB build (skills-loop-pool), 14 GB available, and a
 // second build arriving through a tc lane. The old script's waits give up (15 min, compressed here to 0) and it
 // starts: measured 1.35 GB available four minutes later. The new one keeps waiting until the slot is released.
-test('replay 01:14Z: the old lock starts the second job beside the held build, the new one waits', async () => {
+test('replay 01:14Z: the old lock starts the second job beside the held build, the new one waits', async t => {
+  if (!oldDir) return t.skip('not a git checkout of jstack (commit 06c29cc unavailable)')
   fresh(); setFree(14)
   fs.writeFileSync(peaks, 't\tskills-loop-pool\t22.62\n')
   hold(lock, { need: 16, name: 'skills-loop-pool' })

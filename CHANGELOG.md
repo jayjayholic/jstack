@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (17): mem_map and the heavy-lock tests run outside Windows and outside a git checkout
+
+**What:**
+- `tools/heavy-lock.sh`, `mem_map()`: an OS check. On Windows (MINGW/MSYS/Cygwin with `cygpath` and PowerShell) it runs `mem-map.ps1` as before; anywhere else it prints a plain map: `free -m` (or `vm_stat` on macOS), the 15 processes with the most resident memory, and who holds each lock slot.
+- `tools/heavy-lock.test.mjs`: the replay test needs commit 06c29cc from git history; when the tests run from a plugin cache (not a git checkout) that test is skipped with the reason instead of failing all 13 tests in `before()`.
+
+**Why:** found by running jstack inside a Claude Code cloud session (Ubuntu 24.04): `mem_map` died on `cygpath: command not found`, and `node --test tools/heavy-lock.test.mjs` reported 0 pass / 13 fail from the marketplace install because `git show` had no repository to read. Both were Windows-laptop assumptions, not real failures.
+
+**Unverified:** the plain map's process list on macOS (`ps -eo rss=,pid=,comm=` is the BSD form too, but it was only run on Linux and Git Bash). The 32 GB laptop now has a cloud cousin with 16 GB and no PowerShell, and it was not impressed.
+
 ## 2026-10-31 (16): /train-queue reads at a glance: red dot = needs you, green = done
 
 **What:**
