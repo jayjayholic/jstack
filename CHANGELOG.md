@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (31): development is local; the cloud runs only the heavy jobs of a READY branch (0.13.0)
+
+**What:**
+- `skills/train/SKILL.md` section 8 is now "Local development, cloud for heavy jobs": develop locally in worktrees, commit and push a branch only when it is READY for tests, then the cloud runs that branch's browser work (Playwright, screenshots, UI checks) and memory-heavy work (build, typecheck, CI, full test suites). Once tested there, it merges through the normal local train. Local builds keep the heavy lock with a capped heap.
+- Deleted, not softened: workers developing in the cloud, one VM per feature, "with the laptop free", the train as a cloud session, account rotation with wrap-up and resume, resume-on-switch, stall resumes and the watcher that drove them. `skills/train/cloud-sessions.md` keeps only what a heavy-job session needs (registry, gate counting, no raw TCP, folder trust and other limits, debug artifacts, orphan commits), renumbered 1 to 6.
+- `skills/train/orchestrator-brief.md`: the "Cloud train" section is gone. `skills/train/worker-clause.md`: the resume-merge step is gone; a worker develops locally and pushes only when READY. `skills/train-compound/SKILL.md`: the cloud release line is gone. `skills/train-queue/SKILL.md`: the cloud row shows which READY branches run their checks there, and a cloud session on a `train/*` branch is a NEEDS YOU row.
+- Plugin version 0.12.0 -> 0.13.0.
+
+**Why:** with development, resumes and the train itself spread across cloud sessions, nobody could follow where the work and its data went: sessions pushed to their own branches, resumed on their own after an account switch, and a stray train session merged an empty PR. Keeping development local and sending the cloud only the jobs that need its RAM or a browser makes the flow one you can read again. The tools (`tools/cloud/*`) stay; they still run those jobs.
+
+**Unverified:** nothing new to verify; this removes paths. The 32 GB laptop is pleased to report that development has moved back in, and that the cloud is now only allowed over to carry the heavy boxes.
+
 ## 2026-11-01 (30): no commit is left where nothing ships it
 
 **What:**
