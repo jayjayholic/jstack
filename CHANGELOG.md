@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (30): no commit is left where nothing ships it
+
+**What:**
+- `tools/cloud/orphans.mjs` (new): lists session branches (`claude/*`, `--trains` adds `train/*`) whose commits are on no kept branch, patch, squash or merged PR; `--rescue` fast-forwards each one's work branch and never forces. Tests: 7.
+- `tools/worktree-deps.mjs remove`: refuses to lose uncommitted tracked edits, a detached HEAD's unkept commits, or the commits only a `--delete-branch` branch holds; `--discard-work` overrides. Tests +2.
+- `hooks/jstack-guards.mjs` branch guard: shell redirections (`2>&1`, `> log`, `&> out`) are no longer read as branch names; `git push origin --delete <own branch> 2>&1` was refused as deleting a branch named `2>&1`. Test +1.
+- `skills/train/cloud-sessions.md` section 10 replaces the placeholder: the rule, the five failures behind it and the checks.
+
+**Why:** an audit of one night's work across four repos found session branches holding work their work branches never got (a finished experiment's results, a fix session's commits), because sessions push to their own branch, the kit learns that branch only from a status the session may never publish, and `done --cleanup` deleted session branches without checking them. Worktree removal had the same blind spot for local work.
+
+**Unverified:** squash merges are seen by content only while the integration branch has not touched the same lines since; past that the tool needs `gh` for the merged PR head, and without it reports an orphan, which errs on the safe side.
+
 ## 2026-11-01 (24): the cloud kit's store also speaks S3, and a refusing store is loud
 
 **What:**

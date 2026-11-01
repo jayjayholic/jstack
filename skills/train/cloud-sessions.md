@@ -77,6 +77,36 @@ The `/train` lesson "A parallel gate must count its results against its input li
 
 ## 10. Orphan commits
 
-Placeholder: the causes are being collected by a branch audit. Until then, before removing any `claude/*` or work branch, check that its head is reachable from the integration branch or from another kept branch: `git branch -r --contains <sha>` lists something other than the branch itself, else list it for the owner instead of deleting.
+**Rule:** a session, a worktree or a train never ends while its commits live only on a branch nothing ships. Before a
+session is marked done, before a session or train branch is deleted and before a worktree is removed, every commit is
+on a kept branch: the work branch, another non-session branch, the integration branch (same commit, same patch or same
+content after a squash) or a merged pull request head.
+
+**Why and the failures that taught it** (one night's audit across four repos):
+- A cloud session pushes to its own `claude/<slug>-<6 chars>` branch while the kit expects the work branch. An
+  experiment's 27 result commits and a fix session's 7 commits sat only there; the work branch stayed at its start. The
+  registry never learned the session branch (the session published no status with it), so nothing looked.
+- `done --cleanup` deleted the recorded session branch without asking whether its commits were anywhere else.
+- A resumed session duplicated an earlier one's commits under new hashes: the same work twice, one copy orphaned.
+- `worktree remove --force` drops uncommitted edits and the commits of a detached HEAD without a word.
+- A train branch is force-pushed on every run: a fix-up commit made on the train itself, not on a work branch, is gone
+  at the next run.
+
+**Checks:**
+- `node tools/cloud/orphans.mjs [--rescue] [--trains]` lists every session branch on origin (`JSTACK_SESSION_BRANCH_PREFIX`,
+  default `claude/`; `--trains` adds `train/*`) as `safe` or `ORPHAN`, and exits 1 while any orphan is left. The work
+  branch is found by name (`<prefix><slug>-<6 chars>` belongs to `*/<slug>`), else as the one non-session branch the
+  session descends from. `--rescue` fast-forwards the work branch to the session branch and never forces; a work branch
+  that moved on its own is listed as `diverged` for a person to merge or to open as a draft PR for review. A rescue is
+  never labelled ready for the train: someone reviews it first.
+- A kit's `done` refuses while the session's branch holds orphans, unless the caller states why they can go (and then
+  keeps the branch, so the commits stay reachable).
+- `tools/worktree-deps.mjs remove` refuses a worktree with uncommitted tracked edits, a detached HEAD whose commits no
+  ref keeps, or `--delete-branch` on commits only that branch holds; `--discard-work` overrides.
+- Before deleting any branch, the branch guard still applies: an agent deletes only branches it created.
+
+**Unverified:** squash merges are recognised by content only while the integration branch has not changed the same
+lines since; past that the check needs the merged PR head (gh), and without gh it reports an orphan for a person to
+look at, which is the safe side.
 
 The 32 GB laptop would like it noted that none of its sessions ever got resumed twice. It also never left the house.
