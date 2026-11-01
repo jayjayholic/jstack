@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-01 (19): the test gate must cover every test file of each runner
+
+**What:**
+- `skills/train/SKILL.md`, lessons: a new bullet. List the repo's real test files, split them by the rule each runner uses to claim a file, and check the gate's globs against each list, so no file is left to neither runner.
+
+**Why:** in a project with two runners (bun and vitest), the gate ran the bun files only under one folder while vitest skipped every bun file by design. 393 test files ran under no gate, and four of them were red: three stale tests and one real copy regression a naming test had been guarding. Nobody noticed because every gate was green.
+
+**Unverified:** a generic checker script for this (the lesson is a manual check for now). The 32 GB laptop is relieved that its green lights now mean slightly more.
+
 ## 2026-11-01 (18): /train gets an optional cloud mode
 
 **What:**
