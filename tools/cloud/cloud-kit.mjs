@@ -9,6 +9,7 @@
 //   node cloud-kit.mjs autocommit [--repo <dir>]   cloud: commit + push WIP on the work branch, never secrets
 //   node cloud-kit.mjs handoff --branch <b> --state running|waiting|wrapped|ready|failed [--task t] [--done x]...
 //                      [--failure x]... [--next x]                       publish <user>/<branch>/status.json + handoff.md
+//   node cloud-kit.mjs put <path> <file> | get <path>   one sealed object under <user>/<path>
 //   node cloud-kit.mjs hook-start | hook-stop       SessionStart / Stop hooks: cloud only, and only in repos without
 //                                                   their own kit (scripts/cloud/setup.sh)
 //
@@ -268,12 +269,25 @@ async function main(argv) {
     console.log(JSON.stringify(autocommit(dir)))
     return 0
   }
+  if (command === 'put' && rest[0] && rest[1]) {
+    const store = openStore()
+    await store.put(store.path(rest[0]), readFileSync(rest[1]))
+    console.log(`put ${rest[0]} (encrypted)`)
+    return 0
+  }
+  if (command === 'get' && rest[0]) {
+    const store = openStore()
+    const data = await store.get(store.path(rest[0]))
+    if (!data) { console.error(`no object at ${rest[0]}`); return 1 }
+    process.stdout.write(data)
+    return 0
+  }
   if (command === 'handoff') {
     const s = await handoff(openStore(), dir, flags)
     console.log(`published ${s.branch}: ${s.state} @ ${s.sha.slice(0, 9)}`)
     return 0
   }
-  console.log('usage: cloud-kit.mjs env-push|env-restore|autocommit|handoff|hook-start|hook-stop [--repo <dir>]')
+  console.log('usage: cloud-kit.mjs env-push|env-restore|autocommit|handoff|put|get|hook-start|hook-stop [--repo <dir>]')
   return 2
 }
 
