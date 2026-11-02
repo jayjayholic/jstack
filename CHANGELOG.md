@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-02 (32): worktree remove unlinks links at any depth before git runs
+
+**What:**
+- `tools/worktree-deps.mjs` `remove`: walks the whole worktree without following links and unlinks every symlink, junction or other reparse point at any depth, then checks again twice (the same walk, plus Windows' own `dir /s /a:l`) and refuses to run `git worktree remove` if any is left. Before, it looked only two levels into each `node_modules` (top entries and `@scope` children), so a link inside a real package folder (`node_modules/<pkg>/node_modules/<dep>`, `node_modules/@scope/<pkg>/...`) stayed in place.
+- `tools/worktree-deps.test.mjs`: a guard test plants junctions into a fake store at depth 3 and more, in `packages/*/node_modules` and under `src/`, runs `remove`, and checks every store file survives. It fails on the old code. Tests: 18.
+
+**Why:** Git for Windows 2.40 follows junctions while deleting a worktree. Two `remove` runs left nested junctions behind, and git emptied packages in the shared store every worktree links to.
+
+**Unverified:** the exact origin of the nested links in the two damaged worktrees (their files were already gone); the fix covers every depth, whatever made them. The 32 GB laptop now counts its junctions twice before letting git near the shared store.
+
 ## 2026-11-01 (31): development is local; the cloud runs only the heavy jobs of a READY branch (0.13.0)
 
 **What:**

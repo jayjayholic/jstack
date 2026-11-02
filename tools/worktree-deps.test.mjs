@@ -125,6 +125,30 @@ test('remove unlinks every junction before git deletes the worktree, so the shar
 	assert.equal(sh(main, 'git', ['branch', '--list', 'f']).trim(), '')
 })
 
+test('remove unlinks links at any depth, inside real package folders too, so a fake shared store survives', () => {
+	const q = addWorktree('deep-links')
+	deps(q, 'deps', '--base', 'stage')
+	const store = path.join(sandbox, 'fake-store')
+	const kept = ['node_modules/ai/index.js', 'node_modules/konva/index.js', 'node_modules/@pdf-lib/fontkit/index.js', 'packages/core/node_modules/x/index.js', 'generated/client.ts']
+	for (const file of kept) {
+		fs.mkdirSync(path.dirname(path.join(store, file)), { recursive: true })
+		fs.writeFileSync(path.join(store, file), 'keep')
+	}
+	const link = (target, at) => {
+		fs.mkdirSync(path.dirname(at), { recursive: true })
+		fs.symlinkSync(path.join(store, target), at, 'junction')
+	}
+	link('node_modules/ai', path.join(q, 'node_modules', 'real-pkg', 'node_modules', 'ai'))
+	link('node_modules/konva', path.join(q, 'node_modules', 'real-pkg', 'lib', 'vendor', 'konva'))
+	link('node_modules/@pdf-lib/fontkit', path.join(q, 'node_modules', '@scope', 'real', 'node_modules', 'fontkit'))
+	fs.rmSync(path.join(q, 'packages', 'core', 'node_modules'), { recursive: true, force: true })
+	link('packages/core/node_modules', path.join(q, 'packages', 'core', 'node_modules'))
+	link('generated', path.join(q, 'src', 'deep', 'nested', '.generated'))
+	deps(main, 'remove', q)
+	assert.equal(fs.existsSync(q), false)
+	for (const file of kept) assert.equal(fs.readFileSync(path.join(store, file), 'utf8'), 'keep', `${file} must survive remove`)
+})
+
 const removeOutput = (target, extraEnv = {}) => {
 	const run = spawnSync(process.execPath, [SCRIPT, 'remove', target, '--delete-branch'], { cwd: main, encoding: 'utf8', env: { ...process.env, ...extraEnv } })
 	return `${run.stdout}${run.stderr}`

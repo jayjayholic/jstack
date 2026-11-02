@@ -469,21 +469,50 @@ const prune = () => {
 	}
 }
 
-const unlinkEveryLink = (dir) => {
-	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-		const full = path.join(dir, entry.name)
-		if (isLink(full)) fs.rmSync(full, { force: true })
-		else if (entry.isDirectory() && entry.name !== '.git') {
-			if (entry.name === 'node_modules') {
-				for (const top of fs.readdirSync(full, { withFileTypes: true })) {
-					const topPath = path.join(full, top.name)
-					if (isLink(topPath)) fs.rmSync(topPath, { force: true })
-					else if (top.isDirectory() && top.name.startsWith('@'))
-						for (const sub of fs.readdirSync(topPath)) if (isLink(path.join(topPath, sub))) fs.rmSync(path.join(topPath, sub), { force: true })
-				}
-			} else unlinkEveryLink(full)
+// Every symlink, junction or other reparse point under dir, at any depth. The entry type comes from readdir, which on
+// Windows reads any reparse point as a link, and a link is never descended into, so the walk never leaves the worktree.
+const linksUnder = (dir) => {
+	const found = []
+	const walk = (current) => {
+		for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+			const full = path.join(current, entry.name)
+			if (entry.isSymbolicLink()) found.push(full)
+			else if (entry.isDirectory()) walk(full)
 		}
 	}
+	walk(dir)
+	return found
+}
+
+// Windows' own count, independent of Node: `dir /a:l` lists every reparse point, whatever its tag.
+const reparsePointsUnder = (dir) => {
+	if (process.platform !== 'win32') return []
+	const result = spawnSync('cmd.exe', ['/d', '/s', '/c', `dir /s /b /a:l "${dir}"`], {
+		encoding: 'utf8',
+		maxBuffer: 256 * 1024 * 1024,
+		windowsHide: true,
+		windowsVerbatimArguments: true,
+	})
+	return result.status === 0 ? lines(result.stdout.replace(/\r/g, '')) : []
+}
+
+const unlinkLink = (link) => {
+	try {
+		fs.unlinkSync(link)
+	} catch {
+		fs.rmdirSync(link)
+	}
+}
+
+// Git for Windows 2.40 follows junctions while deleting a worktree, at any depth (a link inside a real package folder
+// emptied the shared store on 2026-11-02), so every link goes first and git runs only once none is left.
+const unlinkEveryLink = (dir) => {
+	if (isLink(dir)) throw new Error(`refusing to remove ${dir}: the worktree path itself is a link`)
+	if (!fs.existsSync(dir)) return
+	for (const link of linksUnder(dir)) unlinkLink(link)
+	const left = [...new Set([...linksUnder(dir), ...reparsePointsUnder(dir)])]
+	if (left.length > 0)
+		throw new Error(`refusing to run git worktree remove: ${left.length} link(s) still under ${dir}, which git would follow into their targets: ${left.slice(0, 5).join(', ')}`)
 }
 
 const callerId = () => env.JSTACK_AGENT || env.CLAUDE_AGENT_ID || null
