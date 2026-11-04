@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-04 (33): restore every by-id row after a regen; a red check stops the merge step
+
+**What:**
+- `skills/train/SKILL.md`, lessons: new entry "Rows read by id survive a regen only if you check them". After any regen of a generated table, every id the code references literally must still have its row; restore missing rows from the integration branch, and add a test that scans the code for referenced ids and fails, naming id and file, when the table lacks one.
+- `skills/train/SKILL.md`, "Merge only on zero failed checks": a second occurrence is added. A hand-written merge step printed a failed check and merged anyway. Any merge step reads the full check list first and exits on a single failure.
+
+**Why:** a train's regen dropped a manifest row that code still read by id. A fixed restore list of two ids missed the third, and the merge step didn't stop on the failed unit test job, so the integration branch went red until a one-row fix landed.
+
+**Unverified:** nothing new; both are process rules. The 32 GB laptop now counts ids as carefully as it counts junctions.
+
 ## 2026-11-02 (32): worktree remove unlinks links at any depth before git runs
 
 **What:**
