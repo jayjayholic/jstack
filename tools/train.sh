@@ -113,11 +113,23 @@ checks_green() {
   return 1
 }
 
+# A release can freeze the integration branch (maintenance switch, read-only database role, paused crons). Any merge
+# then deploys, and the deploy migrates and re-registers schedules, which breaks the freeze. JSTACK_FREEZE_CHECK is the
+# project's own check: exit 0 = open; any other exit, or a check that can't run, = frozen (fails closed).
+integration_frozen() {
+  [ -n "$JSTACK_FREEZE_CHECK" ] || return 1
+  local out
+  out=$(eval "$JSTACK_FREEZE_CHECK" 2>&1) && return 1
+  echo "${out:-freeze check failed with no output}" | head -5
+  return 0
+}
+
 open_and_merge() { # $1 branch, $2 title, $3 body file
-  local s
+  local s why
   gh pr view "$1" --json number >/dev/null 2>&1 || gh pr create --base "$B" --head "$1" --title "$2" --body-file "$3" 2>&1 | tail -1
   for _ in 1 2 3 4 5 6; do [ "$(gh pr view "$1" --json mergeable -q .mergeable)" = "MERGEABLE" ] && break; sleep 10; done
   if ! checks_green "$1"; then echo "NOT-MERGED $1: a check is not SUCCESS/SKIPPED (failed, cancelled or still running); re-run and confirm green first"; return 0; fi
+  if why=$(integration_frozen); then echo "FROZEN $1: $B is frozen ($(echo $why)); hold and queue, never merge, never unfreeze"; return 0; fi
   gh pr merge "$1" --merge 2>&1 | tail -1
   s=$(gh pr view "$1" --json number,state -q '"#\(.number) \(.state)"')
   case "$s" in *MERGED) echo "MERGED $1 $s";; *) echo "NOT-MERGED $1 $s";; esac
