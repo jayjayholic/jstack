@@ -2,6 +2,15 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-04 (34): a merge during a host incident can fire no push events
+
+**What:**
+- `skills/train/SKILL.md`, lessons: after every merge, confirm a deploy status exists on the merge SHA. If none shows within about 10 minutes, the next push carries the code, but path-filtered workflows the lost push should have fired must be dispatched by hand, integration environment only.
+
+**Why:** a train merged during a GitHub incident (502s on PRs and git operations). Its push fired no deploy and no workflows. The next train's push deployed the app, but the graphiti deploy filtered by paths never saw the lost push's files.
+
+**Unverified:** how often a host drops push events outside a declared incident. The 32 GB laptop now checks for a deploy instead of assuming one.
+
 ## 2026-11-04 (33): restore every by-id row after a regen; a red check stops the merge step
 
 **What:**
