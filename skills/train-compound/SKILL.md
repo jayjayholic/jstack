@@ -39,7 +39,7 @@ Done when: every READY is either boarded with a green typecheck and preview, or 
 
 - Keep ONE PR, `train/compound-…` into `{{INTEGRATION_BRANCH}}`, whose body lists every boarded branch, the migrations, env vars and flags, and how to roll back.
 - Don't merge it until the owner says to release. Hotfixes the owner marks urgent can still ship alone through the normal `/train` path; merge them back into the compound afterwards.
-- On release: merge `origin/{{INTEGRATION_BRANCH}}` one last time, typecheck, preview green, merge, confirm the deploy is Ready and every migration applied, and report one line per boarded branch.
+- On release: run the freeze check first (train skill, section 6d; frozen = wait, never unfreeze), merge `origin/{{INTEGRATION_BRANCH}}` one last time, typecheck, preview green, merge, confirm the deploy is Ready and every migration applied, and report one line per boarded branch.
 - Then run the leftovers sweep (`train` section 6b) for everything the compound boarded.
 
 Done when: `{{INTEGRATION_BRANCH}}` is Ready on the compound's merge commit, the queue file is reset, and the sweep has reported.

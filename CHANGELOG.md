@@ -2,6 +2,18 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-04 (35): never merge into a frozen integration branch
+
+**What:**
+- `tools/train.sh`: `open_and_merge` runs `JSTACK_FREEZE_CHECK` right before `gh pr merge` (train PRs and single-branch ships alike). Exit 0 = open; any other exit, or a check that can't run, = frozen: it prints `FROZEN <branch>: ...` and does not merge. Empty (the default) = gate off.
+- `tools/jstack-env.sh`, `tools/config.example.sh`, `ADAPT.md`: the new `JSTACK_FREEZE_CHECK` setting.
+- `skills/train/SKILL.md`: new section 6d, the freeze gate: check before every merge, frozen = hold and queue, never merge, never unfreeze; how to pick markers the release really sets (a maintenance flag on the integration branch, a read-only database role, a release record, paused schedules). Plus a lesson.
+- `skills/train/orchestrator-brief.md` step 4b, `skills/train-compound/SKILL.md` (release step) and `skills/train-queue/SKILL.md` (`held: ... frozen`) follow.
+
+**Why:** a release froze the integration branch (maintenance switch on, read-only database role, paused crons; its runbook said "no deploy while frozen"). The orchestrator saw green checks and merged two PRs anyway. Each merge deployed, and each deploy re-registered the schedules the freeze had paused.
+
+**Unverified:** the gate is only as good as the markers a project plugs in; a release that freezes something nobody wrote into the check still gets merged over. The 32 GB laptop now knocks before walking in.
+
 ## 2026-11-04 (34): a merge during a host incident can fire no push events
 
 **What:**

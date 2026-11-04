@@ -92,6 +92,6 @@ updated: <ISO time>
 in flight: train <n> - <branches> - <step: assembling|typecheck|build|PR #|merged|live>
 boarding next: train <n+1> - <branches>
 ready: <branch> - <title>
-held: <branch> - <reason (gate, owner, base branch)>
+held: <branch> - <reason (gate, owner, base branch, frozen: <freeze marker>)>
 next steps: <one line each>
 ```
