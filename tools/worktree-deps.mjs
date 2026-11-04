@@ -540,13 +540,26 @@ const workAtRisk = (dir, headBranch, deleteBranch) => {
 	return risks
 }
 
+// The branch comes only from this exact path's record in `git worktree list`. A half-removed worktree has no .git file,
+// so asking git inside it walks up to the main checkout and reports ITS branch (it once tried to delete the integration
+// branch, and only failed because that branch was checked out).
+const recordedBranch = (main, dir) => {
+	for (const record of (gitOrNull(main, 'worktree', 'list', '--porcelain') ?? '').replace(/\r/g, '').split('\n\n')) {
+		const fields = lines(record)
+		const at = fields.find((field) => field.startsWith('worktree '))
+		if (!at || !samePath(at.slice(9), dir)) continue
+		const ref = fields.find((field) => field.startsWith('branch '))
+		return ref ? { branch: ref.slice(7).replace(/^refs\/heads\//, '') } : { reason: 'its HEAD is detached' }
+	}
+	return { reason: 'git worktree list has no record for that path' }
+}
+
 const remove = (target, deleteBranch, discardWork = false) => {
 	const dir = path.resolve(target)
-	if (samePath(dir, mainCheckout(dir))) throw new Error('refusing to remove the main checkout')
-	const main = mainCheckout(dir)
-	// A half-deleted worktree has no .git file, so git would walk up and report the main checkout's branch.
+	const main = mainCheckout(gitOrNull(dir, 'rev-parse', '--git-common-dir') ? dir : process.cwd())
+	if (samePath(dir, main)) throw new Error('refusing to remove the main checkout')
 	const ownsGit = fs.existsSync(path.join(dir, '.git')) && samePath(gitOrNull(dir, 'rev-parse', '--show-toplevel')?.trim() ?? '', dir)
-	const headBranch = ownsGit ? gitOrNull(dir, 'symbolic-ref', '--quiet', '--short', 'HEAD')?.trim() : null
+	const { branch: headBranch = null, reason: unresolved } = recordedBranch(main, dir)
 	const remoteDefault = gitOrNull(main, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD')?.trim().replace(/^origin\//, '')
 	const protectedBranches = new Set(
 		[
@@ -565,7 +578,8 @@ const remove = (target, deleteBranch, discardWork = false) => {
 		process.exitCode = 1
 		return
 	}
-	if (deleteBranch && headBranch && protectedBranches.has(headBranch)) console.error(`worktree-deps: not deleting protected branch ${headBranch}`)
+	if (deleteBranch && !headBranch) console.error(`worktree-deps: not deleting any branch: ${unresolved}`)
+	else if (deleteBranch && protectedBranches.has(headBranch)) console.error(`worktree-deps: not deleting protected branch ${headBranch}`)
 	else if (deleteBranch && notOwned)
 		console.error(`worktree-deps: keeping branch ${headBranch}: ${notOwned}. An agent may only delete branches it created; a human can delete it with git branch -D ${headBranch}`)
 	unlinkEveryLink(dir)

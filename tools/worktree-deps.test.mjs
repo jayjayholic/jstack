@@ -160,10 +160,26 @@ test('remove on a half-deleted worktree never reads or deletes the main checkout
 	sh(main, 'git', ['worktree', 'add', '-q', '-b', 'half', g, 'stage'])
 	fs.rmSync(path.join(g, '.git'), { force: true })
 	const out = removeOutput(g)
-	assert.doesNotMatch(out, /and branch/)
-	assert.doesNotMatch(out, /branch -D|Deleted branch|cannot delete/i)
+	assert.match(out, /keeping branch half/)
+	assert.doesNotMatch(out, /stage/)
 	assert.ok(branchExists('stage'))
 	assert.equal(fs.existsSync(g), false)
+})
+
+test('remove on a worktree git no longer lists, or whose folder is gone, deletes no branch and says why', () => {
+	const g = path.join(main, '.worktrees', 'unlisted')
+	sh(main, 'git', ['worktree', 'add', '-q', '-b', 'unlisted', g, 'stage'])
+	claim('unlisted', 'agent-1')
+	fs.rmSync(path.join(g, '.git'), { force: true })
+	sh(main, 'git', ['worktree', 'prune'])
+	const out = removeOutput(g, { JSTACK_AGENT: 'agent-1' })
+	assert.match(out, /not deleting any branch: git worktree list has no record for that path/)
+	assert.doesNotMatch(out, /and branch|Deleted branch|cannot delete/i)
+	assert.ok(branchExists('stage'))
+	assert.equal(fs.existsSync(g), false)
+	const out2 = removeOutput(path.join(main, '.worktrees', 'never-there'), { JSTACK_AGENT: 'agent-1' })
+	assert.match(out2, /not deleting any branch/)
+	assert.ok(branchExists('stage'))
 })
 
 test('remove refuses to delete a protected branch and says so, even with a jstack record', () => {

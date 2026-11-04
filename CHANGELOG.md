@@ -2,6 +2,16 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-04 (36): remove reads the branch from the worktree's own record, never from whatever git finds upstairs
+
+**What:**
+- `tools/worktree-deps.mjs` `remove`: the branch now comes only from the `git worktree list --porcelain` block for that exact path. No block (the worktree was pruned, or its folder is gone) or a detached HEAD: no branch is deleted and it prints `not deleting any branch: <why>`. The protected list and the `jstackCreatedBy` ownership check still apply on top. The main checkout is found from the worktree when git still knows it, else from the cwd, so a folder that is already gone no longer crashes `remove`.
+- `tools/worktree-deps.test.mjs` (+1, 18/18): a pruned half-removed worktree and a path that never existed delete no branch and say why; the half-deleted-but-listed test now expects its own branch (`half`) to be judged, never `stage`. The new test fails on the old code.
+
+**Why:** entry 33's guard asked git *inside* the folder whether it owned its `.git`. That holds for a folder missing its `.git`, but a second `remove` on a worktree git had already forgotten still resolved the branch from the main checkout's HEAD and went after `stage` again; only "branch is checked out" saved it. The record in `git worktree list` is the one place that knows which branch a path had.
+
+**Unverified:** worktrees on network or case-sensitive paths that `samePath` (case-insensitive) might match too eagerly. The 32 GB laptop has stopped asking strangers in the hallway which branch it lives on; it reads its own name tag now.
+
 ## 2026-11-04 (35): never merge into a frozen integration branch
 
 **What:**
