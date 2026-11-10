@@ -1,9 +1,9 @@
 import { atom, read } from 'claude-code'
 import type { EngineInterface, RenderInput } from 'claude-code'
 import type { AccountView, SessionsView, UsageWindow } from '../types'
-import { SWITCH_AT, byNearestReset, effectivePercent, labelOf } from './accounts'
+import { SWITCH_AT, byNearestReset, effectivePercent, isSwitchDue, labelOf } from './accounts'
 import { describeClass, hasWeeklyLimit, nextWake } from './balance'
-import { ensureLoaded, priorityOrder, refreshSessions, setAutoSwitch, switchTo } from './sessions'
+import { ensureLoaded, lockTo, priorityOrder, refreshSessions, setAutoSwitch, switchTo, unlock } from './sessions'
 
 const EMPTY: SessionsView = { accounts: [], active: null, autoSwitch: true, refreshing: false, lastSwitch: null, notice: null, error: null, loadedAt: null }
 const sessions = atom({ plugin: 'jay-claude-switcher', key: 'sessions' } as const, EMPTY)
@@ -61,18 +61,22 @@ async function renderSessions($: EngineInterface, e: RenderInput<'Pane'>) {
 
   const row = (a: AccountView) => {
     const isActive = a.key === view.active
-    const head = `(${shortTier(a.tier)}) ${a.email}`
+    const isLocked = a.key === view.locked
+    // While locked, Use is off on every row: Lock on another row moves the lock instead.
+    const showUse = !isActive && !view.locked
+    const buttons = (showUse ? 6 : 0) + (isLocked ? 9 : 7)
+    const head = `(${shortTier(a.tier)}) ${a.email}${isLocked ? ' LOCKED' : ''}`
     const org = (orgsPerEmail.get(a.email) ?? 0) > 1 && a.org ? ` ${a.org}` : ''
     return (
       <Box key={`acct-${a.key}`} flexDirection="column">
         <Box flexDirection="row" gap={1}>
-          <Text color={isActive ? 'claude' : undefined} bold={isActive}>
-            {clip(head, width - (isActive ? 0 : 8))}
+          <Text color={isLocked ? 'warning' : isActive ? 'claude' : undefined} bold={isActive || isLocked}>
+            {clip(head, width - buttons)}
             <Text dimColor bold={false}>
-              {clip(org, Math.max(0, width - head.length - (isActive ? 0 : 8)))}
+              {clip(org, Math.max(0, width - head.length - buttons))}
             </Text>
           </Text>
-          {!isActive && (
+          {showUse && (
             <Button
               key={`use-${a.key}`}
               label="Use"
@@ -83,8 +87,19 @@ async function renderSessions($: EngineInterface, e: RenderInput<'Pane'>) {
               }
             />
           )}
+          <Button
+            key={`lock-${a.key}`}
+            label={isLocked ? 'Unlock' : 'Lock'}
+            variant={isLocked ? 'primary' : 'secondary'}
+            onPress={() =>
+              void (isLocked ? unlock($) : lockTo($, a.key, labelOf(a)).then(() => undefined))
+                .then(() => refreshSessions($, 'none'))
+                .catch(err => $.ui.toast(`${isLocked ? 'Unlock' : 'Lock'} failed: ${err instanceof Error ? err.message : 'error'}`))
+            }
+          />
         </Box>
         {a.windows.map(w => meter(a.key, w))}
+        {isLocked && isActive && isSwitchDue(a, now) && <Text color="error">{clip('  at its limit and locked: not switching')}</Text>}
         {hasWeeklyLimit(a) === false && <Text dimColor>{clip(`  ${'week'.padEnd(LABEL_WIDTH)}no weekly limit`)}</Text>}
         {a.error && <Text color="error">{clip(`  ${a.error}`)}</Text>}
       </Box>
@@ -108,8 +123,13 @@ async function renderSessions($: EngineInterface, e: RenderInput<'Pane'>) {
         </Text>
       )}
       {view.notice && (
-        <Text key="notice" color={view.notice.startsWith('Auto-switch: no') ? 'warning' : undefined} wrap="wrap">
+        <Text key="notice" color={view.notice.startsWith('Auto-switch: no') || view.notice.includes('not switching while locked') ? 'warning' : undefined} wrap="wrap">
           {view.notice}
+        </Text>
+      )}
+      {view.locked && (
+        <Text key="locked" color="warning" wrap="wrap">
+          {`Locked to ${view.locked.split('#')[0]}: auto-switch will not move away from it and Use is off. Unlock to resume, or Lock another account to move the lock.`}
         </Text>
       )}
       {current && (

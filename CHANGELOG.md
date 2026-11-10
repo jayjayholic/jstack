@@ -2,6 +2,19 @@
 
 Each entry says what changed and which problem it fixes.
 
+## 2026-11-09 (37): jay-claude-switcher 0.10.0 can lock an account
+
+**What:**
+- `plugins/jay-claude-switcher/hooks/sessions-pane.tsx`: every account row gets a **Lock** button. Lock switches to that account the way **Use** does (live login saved back, `.credentials.json` backed up, swap) and pins it; the row shows `LOCKED`, the button turns into **Unlock**, and a line at the top says auto-switch won't move away. Locking the account already in use only pins it. While locked, **Use** is hidden on every row; **Lock** on another row moves the lock.
+- `hooks/sessions.ts`: `lockTo` / `unlock`. The switch check reads `lock.json` fresh before any swap (99%, limit error, freed account, wake-up) and holds while locked; at the limit the tab says `at its limit and locked` and the trace gets one `hold locked=... switched=false` line per change, plus `lock` / `unlock` lines. A manual switch away from the locked account is refused with a message. Version 0.10.0.
+- `hooks/account-io.ts`: `readLock` / `writeLock` for `~/.claude/logins/lock.json` (`{ key, email, lockedAt }`, temp file plus rename, owner-only like the store, no token). Missing, invalid JSON, no string key, or a key naming no stored account: unlocked.
+- `scripts/switch.py`: `lock <n|email>` (switch like `use`, then pin) and `unlock`; `use`, `next` and `least-used` refuse while another account is locked; `list` marks `LOCKED`.
+- Tests: 14 new in `hooks/limit-switch.test.ts` (100 total in `claude plugin test`), 8 new in `scripts/switch_test.py` (18 total). The hold and refusal tests fail with the guards switched off.
+
+**Why:** the owner wanted one click that puts the session on a given account and keeps it there, without turning auto-switch off for good and remembering to turn it back on. Use while locked is blocked rather than moving the lock because the lock is a promise to stay put; a stray Use click shouldn't break it, and Lock on the other row already moves it in one click.
+
+**Unverified:** the click in a live Claude Code panel (covered by the plugin test harness, not by a human click yet); macOS, as for every switch. The 32 GB laptop can now be told to sit, and it sits.
+
 ## 2026-11-04 (36): remove reads the branch from the worktree's own record, never from whatever git finds upstairs
 
 **What:**

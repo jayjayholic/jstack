@@ -5,6 +5,9 @@
   python switch.py use <n|email>   save the current login back, then switch (n = number from `list`)
   python switch.py next            rotate to the next stored account
   python switch.py import <dir>    store the login of another config folder (a CLAUDE_CONFIG_DIR)
+  python switch.py lock <n|email>  switch to that account (like `use`) and pin it: no auto-switch moves away from it,
+                                   and `use`, `next` and `least-used` refuse while it is locked
+  python switch.py unlock          remove the pin; auto-switch resumes
   python switch.py least-used --from <store> [--min-valid-min 45]
                                    read every account's usage in <store> (another folder's logins/accounts.json),
                                    activate the least-used one in THIS config folder; no token is refreshed or printed
@@ -32,6 +35,7 @@ CONFIG = os.path.expanduser(CONFIG_DIR) if CONFIG_DIR else os.path.join(HOME, '.
 CRED = os.path.join(CONFIG, '.credentials.json')
 CLAUDE_JSON = os.path.join(CONFIG, '.claude.json') if CONFIG_DIR else os.path.join(HOME, '.claude.json')
 STORE = os.path.join(CONFIG, 'logins', 'accounts.json')
+LOCK = os.path.join(CONFIG, 'logins', 'lock.json')
 
 
 def load(path, default):
@@ -58,6 +62,40 @@ def login_in(cred_path, claude_json_path):
     oauth = (load(cred_path, {}) or {}).get('claudeAiOauth')
     acct = (load(claude_json_path, {}) or {}).get('oauthAccount') or {}
     return acct.get('emailAddress'), acct, oauth
+
+
+# The pin the panel reads too. Missing, unreadable or without a string key: unlocked.
+def locked_key():
+    try:
+        data = load(LOCK, {})
+    except (ValueError, OSError):
+        return None
+    key = data.get('key') if isinstance(data, dict) else None
+    return key if isinstance(key, str) and key else None
+
+
+def write_lock(key):
+    if key:
+        dump(LOCK, {'key': key, 'email': key.split('#')[0], 'lockedAt': stamp()})
+    elif os.path.exists(LOCK):
+        os.remove(LOCK)
+
+
+# A lock names a stored key, or an email that only one stored account has.
+def lock_target(accts, lock):
+    keys = [stored_key(a) for a in accts]
+    if lock in keys:
+        return lock
+    same = [k for a, k in zip(accts, keys) if a['email'] == lock]
+    return same[0] if len(same) == 1 else None
+
+
+def refuse_if_locked(store, wanted=None):
+    lock = locked_key()
+    key = lock_target(store['accounts'], lock) if lock else None
+    if key and key != wanted:
+        print(f"locked to {key.split('#')[0]}: run `switch.py unlock` first, or `switch.py lock <n|email>` to move the lock")
+        sys.exit(1)
 
 
 def current():
@@ -264,18 +302,25 @@ def main():
     elif cmd == 'list':
         email, acct, _ = current()
         ck = key_of(acct, email)
+        lock = locked_key()
+        lk = lock_target(store['accounts'], lock) if lock else None
         for i, a in enumerate(store['accounts']):
             mark = '*' if stored_key(a) == ck else ' '
-            print(mark, i, label(a), (a.get('claudeAiOauth') or {}).get('rateLimitTier'), 'saved', a.get('savedAt'))
-    elif cmd in ('use', 'next'):
+            pin = 'LOCKED' if stored_key(a) == lk else ''
+            print(mark, i, label(a), (a.get('claudeAiOauth') or {}).get('rateLimitTier'), 'saved', a.get('savedAt'), pin)
+    elif cmd in ('use', 'next', 'lock'):
         before = store['accounts']
-        if cmd == 'use' and arg.isdigit() and int(arg) < len(before):
+        if cmd in ('use', 'lock') and arg.isdigit() and int(arg) < len(before):
             arg = stored_key(before[int(arg)])
+        if cmd == 'next':
+            refuse_if_locked(store)
+        elif cmd == 'use':
+            refuse_if_locked(store, lock_target(before, arg))
         store = save_current(store)
         dump(STORE, store)
         accts = store['accounts']
         keys = [stored_key(a) for a in accts]
-        if cmd == 'use':
+        if cmd in ('use', 'lock'):
             idx = keys.index(arg) if arg in keys else None
             if idx is None:
                 matches = [i for i, a in enumerate(accts) if a['email'] == arg]
@@ -288,8 +333,19 @@ def main():
         if idx is None:
             print('unknown account:', arg, '| stored:', [label(a) for a in accts])
             sys.exit(1)
-        activate(accts[idx])
+        email, acct, _ = current()
+        # Lock on the account already in use only pins it.
+        if cmd != 'lock' or key_of(acct, email) != keys[idx]:
+            activate(accts[idx])
+        if cmd == 'lock':
+            write_lock(keys[idx])
+            print('locked to', label(accts[idx]), '(auto-switch will not move away; `switch.py unlock` to resume)')
+    elif cmd == 'unlock':
+        lock = locked_key()
+        write_lock(None)
+        print('unlocked' + (f" {lock.split('#')[0]}" if lock else ' (nothing was locked)') + '; auto-switch resumes')
     elif cmd == 'least-used':
+        refuse_if_locked(store)
         least_used()
     elif cmd == 'give-back':
         give_back()

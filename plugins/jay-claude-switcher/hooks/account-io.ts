@@ -272,4 +272,21 @@ async function readPriority(io: AccountIo): Promise<string[]> {
   return Array.isArray(json.order) ? json.order.filter((x): x is string => typeof x === 'string') : []
 }
 
-export { importAccount, ioOf, readAccounts, readPriority, switchAccount, writeTrace }
+// The owner's pin, `lock.json` next to the store: `{ "key": "email#organizationUuid", "email": ..., "lockedAt": ... }`.
+// Missing, unreadable, or without a key: unlocked. Written like the store (temp file, rename, owner-only).
+async function lockFile(io: AccountIo): Promise<string> {
+  return (await paths(io)).store.replace(/accounts\.json$/, 'lock.json')
+}
+
+async function readLock(io: AccountIo): Promise<string | null> {
+  const json = await readJson<{ key?: unknown }>(io, await lockFile(io), {}).catch(() => ({ key: null }))
+  return json && typeof json.key === 'string' && json.key ? json.key : null
+}
+
+// `key` null unlocks: the file stays, with no key (the engine has no delete).
+async function writeLock(io: AccountIo, key: string | null): Promise<void> {
+  const at = new Date(await io.now()).toISOString()
+  await writeAtomic(io, await lockFile(io), key ? { key, email: key.split('#')[0], lockedAt: at } : { key: null, unlockedAt: at })
+}
+
+export { importAccount, ioOf, readAccounts, readLock, readPriority, switchAccount, writeLock, writeTrace }

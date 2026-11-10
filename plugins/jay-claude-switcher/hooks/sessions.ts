@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 import type { AccountView, ReadSchedule, ReadWhich, SessionWindow, SessionsView } from '../types'
 import { ACTIVE_READ_MS, CANDIDATE_READ_MS, SWITCH_AT, isNearLimit, isSwitchDue, isWatched, leastUsed, markLimitHit, noTargetReason, peakOf, switchTarget, withSessionLimits } from './accounts'
-import { importAccount, ioOf, readAccounts, readPriority, switchAccount, writeTrace } from './account-io'
+import { importAccount, ioOf, readAccounts, readLock, readPriority, switchAccount, writeLock, writeTrace } from './account-io'
 import { balanceTarget, isWeeklyLimited, rankingLines, unsureOf, wokenUp, type Pick } from './balance'
 import { notifySwitch, triggerOf } from './switch-hook'
 
@@ -24,7 +24,7 @@ const CANDIDATE_WAIT_MS = 4_000
 // After a switch, readings that still carry the old account's windows (requests sent before it) are not the new one's.
 const OLD_READING_MS = 10 * 60_000
 const TRACE_LINES = 2000
-const VERSION = '0.9.0'
+const VERSION = '0.10.0'
 // Tells this module's lines from another session's (or an earlier load's) in the shared trace.
 const INSTANCE = Math.random().toString(36).slice(2, 6)
 // A due switch about to land on a weekly-limited account first reads the accounts whose weekly status is unknown or
@@ -46,6 +46,7 @@ let oldReading: { windows: Set<string>; until: number } | null = null
 let trace: string[] = []
 let traceDirty = false
 let lastDecision = ''
+let lastHold = ''
 let lastReading = ''
 
 // One timestamped line per reading, decision and switch, the last 400 kept in ~/.claude/logins/switch-trace.log.
@@ -80,6 +81,14 @@ function withinMs<T>($: EngineInterface, work: Promise<T>, ms: number): Promise<
   return Promise.race([work, $.clock.sleep(ms).then(() => undefined)])
 }
 
+// The lock in lock.json, as the key of a stored account (the file may name it by email alone). A lock naming no
+// stored account pins nothing.
+function lockedKey(raw: string | null, accounts: readonly AccountView[]): string | null {
+  if (!raw) return null
+  const hit = accounts.find(a => a.key === raw) ?? (accounts.filter(a => a.email === raw).length === 1 ? accounts.find(a => a.email === raw) : undefined)
+  return hit?.key ?? null
+}
+
 function readRunning(): boolean {
   return inFlight !== null
 }
@@ -106,14 +115,16 @@ async function readOnce($: EngineInterface, which: ReadWhich): Promise<void> {
     const previous = (await read($, sessions)).accounts
     const autoSwitch = await $.store.get(AUTO_KEY).catch(() => undefined)
     priority = await readPriority(ioOf($)).catch(() => priority)
+    const rawLock = await readLock(ioOf($)).catch(() => null)
     const { accounts, active } = await readAccounts(ioOf($), previous, schedule, which)
+    const locked = lockedKey(rawLock, accounts)
     const at = await $.clock.now()
     await update($, sessions, v => {
       // A switch made while this read ran wins over the login the read found; the session's own reading, fresher
       // than a usage answer, stays laid over the current account's.
       const current = v.lastSwitch && v.lastSwitch.at >= started ? v.active : active
       const merged = accounts.map(a => (a.key === current ? { ...a, windows: withSessionLimits(a.windows, sessionLimits) } : a))
-      return { ...v, accounts: merged, active: current, autoSwitch: autoSwitch !== false, error: null, loadedAt: at }
+      return { ...v, accounts: merged, active: current, autoSwitch: autoSwitch !== false, locked, error: null, loadedAt: at }
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -125,7 +136,14 @@ async function readOnce($: EngineInterface, which: ReadWhich): Promise<void> {
   }
 }
 
+// A manual switch (Use) away from the locked account is refused: the lock is the owner's promise that the session
+// stays there. Lock on another account moves the lock instead (lockTo).
 async function switchTo($: EngineInterface, key: string, label: string, reason: string, expectFrom?: string | null): Promise<boolean> {
+  if (reason === 'manual') {
+    const view = await read($, sessions)
+    const locked = lockedKey(await readLock(ioOf($)).catch(() => null), view.accounts)
+    if (locked && locked !== key) throw new Error(`locked to ${emailOf(locked)}. Unlock it first, or press Lock on this account to move the lock.`)
+  }
   const { from, switched } = await switchAccount(ioOf($), key, expectFrom)
   const at = await $.clock.now()
   if (!switched) {
@@ -191,6 +209,7 @@ async function autoSwitchTick($: EngineInterface, limitHit = false): Promise<voi
   const cooling = sinceSwitch < (due ? (limitHit ? LIMIT_HIT_GRACE_MS : SWITCH_COOLDOWN_MS) : FREED_GRACE_MS)
   const note = [limitHit && 'limit-hit', freed && `freed=${emailOf(freed.to)}`, (due || freed) && cooling && 'cooldown'].filter(Boolean).join(' ')
   await decided($, current, now, due, note)
+  if ((due || freed) && (await holdForLock($, view, current, now, due, freed?.to ?? null))) return void (await flushTrace($))
   if ((!due && !freed) || cooling) return void (await flushTrace($))
   busySince = now
   let moved: string | null = null
@@ -251,6 +270,58 @@ async function autoSwitchTick($: EngineInterface, limitHit = false): Promise<voi
   void refreshSessions($, moved ? [moved] : 'none').catch(() => undefined)
 }
 
+// Locked (lock.json, read fresh: switch.py may have written it a second ago): no swap, for any trigger. At the limit
+// the tab says so; every change of what is held goes to the trace once. Says whether the swap is held.
+async function holdForLock($: EngineInterface, view: SessionsView, current: AccountView | undefined, now: number, due: boolean, freedTo: string | null): Promise<boolean> {
+  const locked = lockedKey(await readLock(ioOf($)).catch(() => null), view.accounts)
+  if ((view.locked ?? null) !== locked) await update($, sessions, v => ({ ...v, locked }))
+  if (!locked) {
+    lastHold = ''
+    return false
+  }
+  const peak = current ? peakOf(current, now) : null
+  const line = `locked=${emailOf(locked)} account=${emailOf(current?.key)} due=${due}${due ? ` peak=${peak ?? 'none'}` : ''}${freedTo ? ` freed=${emailOf(freedTo)}` : ''} switched=false`
+  if (line !== lastHold) {
+    lastHold = line
+    await traced($, 'hold', line)
+  }
+  if (due) {
+    const notice = `Locked to ${emailOf(locked)}${locked === view.active ? ` and at its limit (${peak ?? '?'}%)` : ''}: not switching while locked. Unlock to let auto-switch move.`
+    if (view.notice !== notice) await update($, sessions, v => ({ ...v, notice }))
+  }
+  return true
+}
+
+// Lock: switch to the account the safe way (switchTo: live login saved back, backup, swap), then pin it in lock.json.
+// On the locked account already, only the pin is written. The tick is held (busy) while this runs.
+async function lockTo($: EngineInterface, key: string, label: string): Promise<boolean> {
+  const now = await $.clock.now()
+  busySince = now
+  try {
+    const view = await read($, sessions)
+    const switched = view.active === key ? true : await switchTo($, key, label, 'lock')
+    await traced($, 'lock', `account=${emailOf(key)} from=${emailOf(view.active)} switched=${switched}`)
+    if (!switched) return false
+    await writeLock(ioOf($), key)
+    lastHold = ''
+    const chosen = `Locked by you: auto-switch will not move away from ${label}.`
+    await update($, sessions, v => ({ ...v, locked: key, chosen, notice: `Locked to ${label}. Auto-switch will not move away from it; Unlock to resume.` }))
+    return true
+  } finally {
+    busySince = null
+    await flushTrace($)
+  }
+}
+
+async function unlock($: EngineInterface): Promise<void> {
+  const view = await read($, sessions)
+  await writeLock(ioOf($), null)
+  lastHold = ''
+  await traced($, 'unlock', `account=${emailOf(view.locked)}`)
+  await flushTrace($)
+  await update($, sessions, v => ({ ...v, locked: null, chosen: null, notice: 'Unlocked. Auto-switch is back on duty.' }))
+}
+
 // The first draw of the tab, and a reload, find nothing read yet: read once, without forcing.
 async function ensureLoaded($: EngineInterface): Promise<void> {
   const view = await read($, sessions)
@@ -263,7 +334,7 @@ function summaryOf(view: SessionsView): string {
   return view.accounts
     .map((a, i) => {
       const windows = a.windows.map(w => `${w.label} ${Math.round(w.percent)}%`).join(', ')
-      return `${a.key === view.active ? '*' : ' '} ${i} ${a.email} (${a.tier}${a.org ? `, ${a.org}` : ''}): ${a.error ?? (windows || 'no reading')}`
+      return `${a.key === view.active ? '*' : ' '} ${i} ${a.email} (${a.tier}${a.org ? `, ${a.org}` : ''})${a.key === view.locked ? ' LOCKED' : ''}: ${a.error ?? (windows || 'no reading')}`
     })
     .join('\n')
 }
@@ -367,4 +438,4 @@ function priorityOrder(): readonly string[] {
   return priority
 }
 
-export { autoSwitchTick, priorityOrder, switchPoll, traceStart, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, activeLabel, setNotice, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }
+export { autoSwitchTick, lockTo, unlock, priorityOrder, switchPoll, traceStart, backgroundRefresh, ensureLoaded, importFrom, loadAutoSwitch, activeLabel, setNotice, noteLimitHit, noteSessionLimits, noteTurnError, refreshSessions, sessionsReport, setAutoSwitch, switchTo }

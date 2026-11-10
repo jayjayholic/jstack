@@ -80,6 +80,8 @@ export type SessionsView = {
   // The balancer: the soonest reset of an account that is not free, and why the current account is the one in use.
   nextWake?: { at: number; key: string; window: string } | null
   chosen?: string | null
+  // The account pinned by Lock (lock.json): auto-switch never moves away from it, and Use is off.
+  locked?: string | null
 }
 
 export type OAuthTokens = {

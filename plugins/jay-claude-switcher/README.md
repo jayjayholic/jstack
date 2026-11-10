@@ -24,6 +24,7 @@ The panel has two tabs. `/switcher` opens it.
 
 - **Sorted by nearest reset.** An account full for the week waits for its weekly reset; any other sorts by its 5-hour reset (nothing pending goes first). So the top row is always the next one you can actually use.
 - **Use** on a row switches to it.
+- **Lock** on a row switches to it and pins it there: auto-switch stops moving you. **Unlock** lets it go again. See [Lock](#lock-pin-one-account).
 - **Refresh** reads the usage of every account now.
 - **Auto-switch 99%** toggles the automatic switch (on by default, remembered across sessions).
 - `/switcher-accounts` reads every account and prints the list as text.
@@ -39,6 +40,19 @@ A switch is a file swap. It does what `switch.py use` does:
 Every write is a temp file plus a rename, so nothing ever reads half a file.
 
 **A running session picks it up on its next request.** Tested on Claude Code 2.1.308 (Windows): a session whose `.credentials.json` was replaced mid-run used the new file on its very next message. Claude Code compares the file's modified time before each request and drops its cached login when it changed. The email `/status` shows comes from `.claude.json`, which is cached in memory, so `/status` can show the old email until a restart. Ignore it, the requests go out as the new account.
+
+### Lock: pin one account
+
+Sometimes you want the session on one account and nowhere else: a client's seat, the account that has the right org, the one you're paying for this week. **Lock** on its row does two things:
+
+1. **Switches to it**, the same safe way **Use** does (live login saved back, `.credentials.json` backed up, then the swap). Locking the account you're already on just pins it, no file is touched.
+2. **Pins it.** While locked, nothing automatic moves the session: not the 99% check, not the limit error, not a better account freeing up, not a wake-up. The row says `LOCKED`, a line at the top says so too, and its button turns into **Unlock**.
+
+If the locked account hits its limit, it stays put. The row says `at its limit and locked: not switching`, the tab says the same, and `switch-trace.log` gets one `hold locked=... due=true peak=99 switched=false` line (once, not every second). You asked for that account; the switcher won't overrule you. Unlock and the next 1-second check switches as usual.
+
+**Use while locked is off, on purpose.** The lock is a promise that the session stays where you put it, so a stray click on another row's **Use** shouldn't quietly break it. The **Use** buttons disappear while locked, and a switch that sneaks in anyway (say `switch.py lock` ran a second before you clicked) is refused with `locked to <email>. Unlock it first, or press Lock on this account to move the lock.` Want a different account? **Lock** on its row moves the lock in one click.
+
+The lock lives in `lock.json` next to the store (`~/.claude/logins/lock.json`), written like the store (temp file plus rename, owner-only), so it survives restarts and reloads and `switch.py` sees the same pin: `{ "key": "email#organizationUuid", "email": ..., "lockedAt": ... }`, no token. A missing file, one that isn't valid JSON, one without a key, or one naming an account that isn't stored: unlocked, business as usual. Reads of usage keep going while locked, so the bars stay honest.
 
 ### When it reads usage (gently, the endpoint bites)
 
@@ -153,7 +167,11 @@ python switch.py list            stored accounts, no tokens; * marks the current
 python switch.py use <n|email>   save the current login back, then switch (n from `list`)
 python switch.py next            rotate to the next stored account
 python switch.py import <dir>    store the login of another config folder (default ~/.claude-login)
+python switch.py lock <n|email>  switch to it (like `use`) and pin it; `use`, `next` and `least-used` refuse while locked
+python switch.py unlock          remove the pin; auto-switch resumes
 ```
+
+`list` marks the locked account with `LOCKED`. `use` on the locked account itself is fine (it's where you are anyway).
 
 Accounts are keyed by `email#organizationUuid`, because one email can belong to several organizations, each with its own plan and its own limits. Same email, two orgs: two rows. Importing the same pair again just refreshes it.
 
@@ -189,4 +207,4 @@ Paths follow Claude Code: `CLAUDE_CONFIG_DIR` when set, else `~/.claude/.credent
 
 ## Tests
 
-`claude plugin test .` covers picking the least-used account, the 99%-on-screen trigger, the switch on the session's own limit error, the who-to-resume status line, the refresh on 401 (and that only a refused refresh logs out), not switching (and saying why) when every account is full, a 429'd candidate keeping its last reading, accounts with no weekly window, the gentle read schedule (no reads below 95%, Retry-After, the 5 to 30 minute backoff), a 99% switching within a second while every usage read hangs and with no hook firing, a lagging usage answer not hiding a 99%, the old account's reading not laid over the new one, the trace (and no token in it), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, and the tab drawn on every surface.
+`claude plugin test .` covers picking the least-used account, the 99%-on-screen trigger, the switch on the session's own limit error, the who-to-resume status line, the refresh on 401 (and that only a refused refresh logs out), not switching (and saying why) when every account is full, a 429'd candidate keeping its last reading, accounts with no weekly window, the gentle read schedule (no reads below 95%, Retry-After, the 5 to 30 minute backoff), a 99% switching within a second while every usage read hangs and with no hook firing, a lagging usage answer not hiding a 99%, the old account's reading not laid over the new one, the trace (and no token in it), the token refresh write-back, the switch writes (backup, `mcpOAuth` kept, no write when the login changed elsewhere), `CLAUDE_CONFIG_DIR`, the first-run store, the import, the tab drawn on every surface, and the lock (Lock switches and pins, Use off and refused while locked, no switch at 99% or on the limit error or when a better account frees up while locked, Unlock resumes, a missing or broken `lock.json` pins nothing). `python -m unittest switch_test` in `scripts/` covers `switch.py` (`lock`, `unlock`, refusals, a broken lock file).

@@ -85,5 +85,72 @@ class GiveBackTest(unittest.TestCase):
         self.assertEqual(switch.load(self.dest, {})['accounts'][0]['claudeAiOauth']['refreshToken'], 'r-from-switcher')
 
 
+class LockTest(unittest.TestCase):
+    def setUp(self):
+        self.a, self.b = acct('a@x', org='o1'), acct('b@x', org='o2')
+        switch.dump(switch.STORE, {'accounts': [self.a, self.b]})
+        switch.activate(self.a)
+        if os.path.exists(switch.LOCK):
+            os.remove(switch.LOCK)
+
+    def run_cmd(self, *args):
+        sys.argv = ['switch.py', *args]
+        switch.main()
+
+    def live_token(self):
+        return switch.load(switch.CRED, {})['claudeAiOauth']['accessToken']
+
+    def test_lock_switches_and_pins(self):
+        self.run_cmd('lock', '1')
+        self.assertEqual(self.live_token(), 't-b@x')
+        self.assertEqual(switch.locked_key(), 'b@x#o2')
+        self.assertNotIn('t-', open(switch.LOCK, encoding='utf-8').read())
+
+    def test_lock_on_the_current_account_only_pins(self):
+        before = open(switch.CRED, encoding='utf-8').read()
+        self.run_cmd('lock', 'a@x')
+        self.assertEqual(open(switch.CRED, encoding='utf-8').read(), before)
+        self.assertEqual(switch.locked_key(), 'a@x#o1')
+
+    def test_lock_unknown_account_writes_no_lock(self):
+        with self.assertRaises(SystemExit):
+            self.run_cmd('lock', 'nobody@x')
+        self.assertIsNone(switch.locked_key())
+        self.assertEqual(self.live_token(), 't-a@x')
+
+    def test_use_and_next_refused_while_locked_elsewhere(self):
+        self.run_cmd('lock', '0')
+        for cmd in (('use', 'b@x#o2'), ('use', 'b@x'), ('next',)):
+            with self.assertRaises(SystemExit) as stop:
+                self.run_cmd(*cmd)
+            self.assertEqual(stop.exception.code, 1)
+            self.assertEqual(self.live_token(), 't-a@x')
+
+    def test_use_of_the_locked_account_is_allowed(self):
+        self.run_cmd('lock', '0')
+        self.run_cmd('use', 'a@x')
+        self.assertEqual(self.live_token(), 't-a@x')
+        self.assertEqual(switch.locked_key(), 'a@x#o1')
+
+    def test_unlock_resumes_switching(self):
+        self.run_cmd('lock', '0')
+        self.run_cmd('unlock')
+        self.assertFalse(os.path.exists(switch.LOCK))
+        self.run_cmd('use', 'b@x')
+        self.assertEqual(self.live_token(), 't-b@x')
+
+    def test_unlock_with_nothing_locked_is_harmless(self):
+        self.run_cmd('unlock')
+        self.assertIsNone(switch.locked_key())
+
+    def test_corrupt_or_odd_lock_file_reads_unlocked(self):
+        for text in ('{ not json', '{"key": 5}', '[]', '{"key": null}', '{"key": "gone@x#o9"}'):
+            with open(switch.LOCK, 'w', encoding='utf-8') as f:
+                f.write(text)
+            switch.activate(self.a)
+            self.run_cmd('use', 'b@x')
+            self.assertEqual(self.live_token(), 't-b@x', text)
+
+
 if __name__ == '__main__':
     unittest.main()
